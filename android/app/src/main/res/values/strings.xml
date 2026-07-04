@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_description">Abacad throwaway probe. Reads the UI tree, injects one tap, and captures a screenshot to verify agent-control feasibility. Not for production use.</string>
+</resources>

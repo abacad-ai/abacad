@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The three capability flags below are what a single Accessibility grant buys us:
+    canRetrieveWindowContent -> getRootInActiveWindow()  (the UI tree)
+    canPerformGestures       -> dispatchGesture()        (tap / swipe injection)
+    canTakeScreenshot        -> takeScreenshot()          (pixels, no MediaProjection)
+  Missing canTakeScreenshot => SecurityException "Services don't have the capability".
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagReportViewIds"
+    android:canRetrieveWindowContent="true"
+    android:canPerformGestures="true"
+    android:canTakeScreenshot="true"
+    android:description="@string/accessibility_description"
+    android:notificationTimeout="100" />
