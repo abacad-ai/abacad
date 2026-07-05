@@ -1,3 +1,5 @@
 node_modules/
-dist/
+# The frontend build output is generated; the *embedded* copy under
+# backend/internal/web/dist IS committed so `go build` works on a fresh clone.
+/frontend/dist/
 *.log

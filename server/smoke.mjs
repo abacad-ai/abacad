@@ -1,14 +1,22 @@
 // End-to-end smoke test: acts as the AGENT (MCP client), connects to the server
-// over Streamable HTTP, lists tools, and calls each one. With mock-device.mjs
+// over Streamable HTTP, lists tools, and calls each one. With a mock device
 // connected, this proves the full loop: agent -> MCP -> relay -> device -> back.
-// Run: node smoke.mjs   (set MCP_URL to override)
+//
+// The Go server requires auth. Provide the account's MCP token so this client
+// can authenticate; the mock device must be connected with that account's device
+// token (see README):
+//   node smoke.mjs   (set MCP_URL and MCP_TOKEN to override)
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 const url = new URL(process.env.MCP_URL ?? "http://localhost:8848/mcp");
+const token = process.env.MCP_TOKEN ?? "";
+const transportOpts = token
+  ? { requestInit: { headers: { Authorization: `Bearer ${token}` } } }
+  : undefined;
 
 const client = new Client({ name: "abacad-smoke", version: "0.0.0" });
-await client.connect(new StreamableHTTPClientTransport(url));
+await client.connect(new StreamableHTTPClientTransport(url, transportOpts));
 
 const { tools } = await client.listTools();
 console.log("tools:", tools.map((t) => t.name).join(", "));

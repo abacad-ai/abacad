@@ -1,0 +1,126 @@
+package store
+
+import (
+	"path/filepath"
+	"testing"
+	"time"
+
+	"abacad/internal/auth"
+)
+
+func openTemp(t *testing.T) *Store {
+	t.Helper()
+	s, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s
+}
+
+func TestAccountsAndSessions(t *testing.T) {
+	s := openTemp(t)
+	a, err := s.CreateAccount("a@b.com", "hash")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := s.CreateAccount("a@b.com", "hash2"); err != ErrEmailTaken {
+		t.Fatalf("want ErrEmailTaken, got %v", err)
+	}
+	got, err := s.AccountByEmail("a@b.com")
+	if err != nil || got.ID != a.ID {
+		t.Fatalf("by email: %v %+v", err, got)
+	}
+
+	sid, err := s.CreateSession(a.ID, "ua", time.Hour)
+	if err != nil {
+		t.Fatalf("session: %v", err)
+	}
+	if acc, err := s.AccountBySession(sid); err != nil || acc.ID != a.ID {
+		t.Fatalf("by session: %v %+v", err, acc)
+	}
+	// Expired session must not resolve.
+	expired, _ := s.CreateSession(a.ID, "ua", -time.Hour)
+	if _, err := s.AccountBySession(expired); err != ErrNotFound {
+		t.Fatalf("expired want ErrNotFound, got %v", err)
+	}
+	_ = s.DeleteSession(sid)
+	if _, err := s.AccountBySession(sid); err != ErrNotFound {
+		t.Fatalf("deleted want ErrNotFound, got %v", err)
+	}
+}
+
+func TestDevicesAndTokens(t *testing.T) {
+	s := openTemp(t)
+	a, _ := s.CreateAccount("d@e.com", "h")
+	other, _ := s.CreateAccount("x@y.com", "h")
+
+	d1, tok1, err := s.CreateDevice(a.ID, "Pixel")
+	if err != nil {
+		t.Fatalf("create device: %v", err)
+	}
+	// Token resolves to the device.
+	if got, err := s.DeviceByTokenHash(auth.HashToken(tok1)); err != nil || got.ID != d1.ID {
+		t.Fatalf("by token: %v %+v", err, got)
+	}
+	// Ownership is enforced.
+	if _, err := s.DeviceOwnedBy(d1.ID, other.ID); err != ErrNotFound {
+		t.Fatalf("cross-account want ErrNotFound, got %v", err)
+	}
+	// Rotation invalidates the old token.
+	tok2, err := s.RotateDeviceToken(d1.ID, a.ID)
+	if err != nil {
+		t.Fatalf("rotate: %v", err)
+	}
+	if _, err := s.DeviceByTokenHash(auth.HashToken(tok1)); err != ErrNotFound {
+		t.Fatalf("old token should be dead, got %v", err)
+	}
+	if _, err := s.DeviceByTokenHash(auth.HashToken(tok2)); err != nil {
+		t.Fatalf("new token should work: %v", err)
+	}
+
+	// last_seen ordering: create d2, touch it, expect it first.
+	d2, _, _ := s.CreateDevice(a.ID, "Old")
+	s.TouchDevice(d2.ID)
+	list, err := s.DevicesByAccount(a.ID)
+	if err != nil || len(list) != 2 {
+		t.Fatalf("list: %v n=%d", err, len(list))
+	}
+	if list[0].ID != d2.ID {
+		t.Fatalf("touched device should sort first, got %s", list[0].ID)
+	}
+
+	if err := s.DeleteDevice(d1.ID, a.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := s.DeviceOwnedBy(d1.ID, a.ID); err != ErrNotFound {
+		t.Fatalf("deleted want ErrNotFound, got %v", err)
+	}
+}
+
+func TestMCPTokens(t *testing.T) {
+	s := openTemp(t)
+	a, _ := s.CreateAccount("m@n.com", "h")
+
+	if info, _ := s.MCPToken(a.ID); info.Exists {
+		t.Fatalf("no token yet")
+	}
+	tok, err := s.RotateMCPToken(a.ID)
+	if err != nil {
+		t.Fatalf("rotate: %v", err)
+	}
+	if acc, err := s.AccountByMCPTokenHash(auth.HashToken(tok)); err != nil || acc.ID != a.ID {
+		t.Fatalf("resolve: %v %+v", err, acc)
+	}
+	// Re-rotate replaces (one token per account) and kills the old one.
+	tok2, _ := s.RotateMCPToken(a.ID)
+	if _, err := s.AccountByMCPTokenHash(auth.HashToken(tok)); err != ErrNotFound {
+		t.Fatalf("old mcp token should be dead, got %v", err)
+	}
+	if _, err := s.AccountByMCPTokenHash(auth.HashToken(tok2)); err != nil {
+		t.Fatalf("new mcp token should work: %v", err)
+	}
+	if info, _ := s.MCPToken(a.ID); !info.Exists || info.LastUsed == 0 {
+		t.Fatalf("info should exist and show last_used after resolve: %+v", info)
+	}
+}
