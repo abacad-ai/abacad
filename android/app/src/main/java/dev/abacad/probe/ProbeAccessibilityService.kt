@@ -209,8 +209,8 @@ class ProbeAccessibilityService : AccessibilityService() {
             done(CmdResult.Err("tap requires non-negative x,y"))
             return
         }
-        val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
-        dispatchStroke(path, 60L, done)
+        // Jittered pixel + log-normal hold, after a short "think-time" dwell (see Humanize).
+        afterDwell { dispatchStroke(Humanize.pointPath(x, y), Humanize.tapHoldMs(), done) }
     }
 
     private fun longPressAt(x: Int, y: Int, durationMs: Long, done: (CmdResult) -> Unit) {
@@ -218,8 +218,8 @@ class ProbeAccessibilityService : AccessibilityService() {
             done(CmdResult.Err("long_press requires non-negative x,y"))
             return
         }
-        val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
-        dispatchStroke(path, durationMs.coerceIn(100L, 5000L), done)
+        val hold = Humanize.jitterDuration(durationMs).coerceIn(100L, 5000L)
+        afterDwell { dispatchStroke(Humanize.pointPath(x, y), hold, done) }
     }
 
     private fun swipeAt(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long, done: (CmdResult) -> Unit) {
@@ -227,11 +227,15 @@ class ProbeAccessibilityService : AccessibilityService() {
             done(CmdResult.Err("swipe requires non-negative coords"))
             return
         }
-        val path = Path().apply {
-            moveTo(x1.toFloat(), y1.toFloat())
-            lineTo(x2.toFloat(), y2.toFloat())
-        }
-        dispatchStroke(path, durationMs.coerceIn(50L, 3000L), done)
+        // Bowed, tremored trajectory with jittered endpoints and a jittered duration.
+        val path = Humanize.swipePath(x1, y1, x2, y2)
+        val dur = Humanize.jitterDuration(durationMs).coerceIn(50L, 3000L)
+        afterDwell { dispatchStroke(path, dur, done) }
+    }
+
+    /** Run [action] after a short log-normal pre-action dwell, so touches aren't back-to-back. */
+    private fun afterDwell(action: () -> Unit) {
+        handler.postDelayed(action, Humanize.preActionDwellMs())
     }
 
     /** Dispatch a single-stroke gesture ([path] held for [durationMs]) and report acceptance. */
