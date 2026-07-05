@@ -35,4 +35,7 @@ dependencies {
     // OkHttp: outbound WebSocket to the Abacad server. Everything else stays on
     // framework APIs (no AndroidX).
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // ZXing core: pure-Java QR decoder. Paired with the framework Camera2 API so
+    // we can scan the connection QR without pulling in CameraX/ML Kit (AndroidX).
+    implementation("com.google.zxing:core:3.5.3")
 }

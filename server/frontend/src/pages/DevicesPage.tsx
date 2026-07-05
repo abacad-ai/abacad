@@ -13,6 +13,15 @@ interface Reveal {
   token: string;
 }
 
+// The device connects through the same origin as this dashboard (Vite's /device
+// proxy in dev, Go in prod), so derive the URL from the browser's location
+// rather than the backend's view of Host — which is "localhost:1213" behind the
+// dev proxy and wouldn't be reachable from another device on the LAN.
+function deviceWsUrl(token: string): string {
+  const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+  return `${scheme}://${window.location.host}/device?token=${token}`;
+}
+
 export function DevicesPage() {
   const [devices, setDevices] = useState<DeviceView[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,7 +47,7 @@ export function DevicesPage() {
     const name = window.prompt("Name this device", "My phone");
     if (name === null) return;
     const d = await api.createDevice(name || "New device");
-    setReveal({ title: `Connect “${d.name}”`, wssUrl: d.wss_url, token: d.device_token });
+    setReveal({ title: `Connect “${d.name}”`, wssUrl: deviceWsUrl(d.device_token), token: d.device_token });
     void reload();
   };
 
@@ -58,7 +67,7 @@ export function DevicesPage() {
   const rotate = async (d: DeviceView) => {
     if (!window.confirm(`Rotate the token for “${d.name}”? The current one stops working.`)) return;
     const r = await api.rotateDeviceToken(d.id);
-    setReveal({ title: `New token for “${d.name}”`, wssUrl: r.wss_url, token: r.device_token });
+    setReveal({ title: `New token for “${d.name}”`, wssUrl: deviceWsUrl(r.device_token), token: r.device_token });
   };
 
   return (

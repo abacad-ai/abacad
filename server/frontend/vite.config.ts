@@ -9,6 +9,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { "@": path.resolve(__dirname, "src") } },
   server: {
+    host: true, // listen on 0.0.0.0 so the dev server is reachable via the LAN IP
     port: 1419,
     proxy: {
       "/api": "http://localhost:1213",
