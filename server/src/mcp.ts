@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { deviceHub } from "./device.js";
-import type { ScreenshotResult, SleepResult, TapResult, UiTreeResult, WakeResult } from "./protocol.js";
+import type { GestureResult, GlobalActionResult, InputTextResult, ScreenshotResult } from "./protocol.js";
 
 type ToolResult = {
   content: Array<
@@ -11,8 +11,8 @@ type ToolResult = {
   isError?: boolean;
 };
 
-// Turn device errors (no device, timeout) into a clean agent-facing message
-// instead of an exception.
+// Turn device errors (no device, timeout, locked-with-PIN) into a clean
+// agent-facing message instead of an exception.
 async function runTool(fn: () => Promise<ToolResult>): Promise<ToolResult> {
   try {
     return await fn();
@@ -25,35 +25,27 @@ export function buildMcpServer(): McpServer {
   const server = new McpServer({ name: "abacad", version: "0.1.0" });
 
   server.registerTool(
-    "ui_tree",
-    {
-      description:
-        "Read the current on-screen UI of the connected Android device as a structured accessibility tree. Returns JSON: the foreground package and a list of nodes, each with class, text, resource id, a clickable flag, and screen bounds [left, top, right, bottom]. Prefer this over screenshot to decide what to interact with; tap the center of a node's bounds.",
-      inputSchema: {},
-    },
-    () =>
-      runTool(async () => {
-        const r = (await deviceHub.send("ui_tree")) as UiTreeResult;
-        return { content: [{ type: "text", text: JSON.stringify(r, null, 2) }] };
-      }),
-  );
-
-  server.registerTool(
     "screenshot",
     {
       description:
-        "Capture the current screen of the connected Android device as a PNG image. Use when the UI tree is empty or insufficient (e.g. canvas/game screens). Note: FLAG_SECURE screens (some banking/payment views) may return black.",
-      inputSchema: {},
+        "Look at the connected Android device's screen. Returns a PNG of the current screen and, by default, the accessibility UI tree: the foreground package plus a list of nodes, each with class, text, resource id, a clickable flag, and screen bounds [left, top, right, bottom]. Use the tree to decide what to interact with — tap the center of a node's bounds. Set include_ui_tree=false for canvas/game screens where the tree is empty or noise (you still get the image). The device is woken automatically if its screen was off.",
+      inputSchema: {
+        include_ui_tree: z
+          .boolean()
+          .optional()
+          .describe("also return the accessibility UI tree (default true)"),
+      },
     },
-    () =>
+    ({ include_ui_tree }) =>
       runTool(async () => {
-        const r = (await deviceHub.send("screenshot")) as ScreenshotResult;
-        return {
-          content: [
-            { type: "image", data: r.png_base64, mimeType: "image/png" },
-            { type: "text", text: `screen ${r.w}x${r.h}` },
-          ],
-        };
+        const includeTree = include_ui_tree ?? true;
+        const r = (await deviceHub.send("screenshot", { include_ui_tree: includeTree })) as ScreenshotResult;
+        const content: ToolResult["content"] = [
+          { type: "image", data: r.png_base64, mimeType: "image/png" },
+          { type: "text", text: `screen ${r.w}x${r.h}` },
+        ];
+        if (r.tree) content.push({ type: "text", text: JSON.stringify(r.tree, null, 2) });
+        return { content };
       }),
   );
 
@@ -61,7 +53,7 @@ export function buildMcpServer(): McpServer {
     "tap",
     {
       description:
-        "Tap the connected Android device screen at absolute pixel coordinates. Get coordinates from ui_tree node bounds — tap the center of the target node.",
+        "Tap the connected Android device screen at absolute pixel coordinates. Get coordinates from a screenshot's UI tree node bounds — tap the center of the target node.",
       inputSchema: {
         x: z.number().int().describe("x pixel coordinate"),
         y: z.number().int().describe("y pixel coordinate"),
@@ -69,8 +61,27 @@ export function buildMcpServer(): McpServer {
     },
     ({ x, y }) =>
       runTool(async () => {
-        const r = (await deviceHub.send("tap", { x, y })) as TapResult;
+        const r = (await deviceHub.send("tap", { x, y })) as GestureResult;
         return { content: [{ type: "text", text: `tap dispatched=${r.dispatched} at (${x}, ${y})` }] };
+      }),
+  );
+
+  server.registerTool(
+    "long_press",
+    {
+      description:
+        "Press and hold at absolute pixel coordinates for duration_ms (default 600). Use for context menus, drag handles, and other press-and-hold interactions where a plain tap won't do.",
+      inputSchema: {
+        x: z.number().int().describe("x pixel coordinate"),
+        y: z.number().int().describe("y pixel coordinate"),
+        duration_ms: z.number().int().optional().describe("hold duration in ms (default 600)"),
+      },
+    },
+    ({ x, y, duration_ms }) =>
+      runTool(async () => {
+        const dur = duration_ms ?? 600;
+        const r = (await deviceHub.send("long_press", { x, y, duration_ms: dur })) as GestureResult;
+        return { content: [{ type: "text", text: `long_press dispatched=${r.dispatched} at (${x}, ${y}) ${dur}ms` }] };
       }),
   );
 
@@ -90,38 +101,38 @@ export function buildMcpServer(): McpServer {
     ({ x1, y1, x2, y2, duration_ms }) =>
       runTool(async () => {
         const dur = duration_ms ?? 300;
-        const r = (await deviceHub.send("swipe", { x1, y1, x2, y2, duration_ms: dur })) as { dispatched: boolean };
+        const r = (await deviceHub.send("swipe", { x1, y1, x2, y2, duration_ms: dur })) as GestureResult;
         return { content: [{ type: "text", text: `swipe dispatched=${r.dispatched} (${x1},${y1})->(${x2},${y2}) ${dur}ms` }] };
       }),
   );
 
   server.registerTool(
-    "wake",
+    "input_text",
     {
       description:
-        "Wake the connected Android device: turn the screen on and dismiss a non-secure (swipe/none) keyguard so ui_tree/screenshot/tap work. Call this FIRST when the device may be idle with the screen off. Returns whether the screen is on, whether the keyguard is secure, and whether it is now unlocked. If keyguard_secure is true the device has a PIN/pattern and CANNOT be auto-unlocked — a human must unlock it once.",
-      inputSchema: {},
+        "Type text into the currently focused input field on the connected Android device. Tap the field first to focus it, then call this. Replaces the field's current contents. For submitting/searching, follow with the on-screen action button (e.g. tap the keyboard's Enter/Search key via its node).",
+      inputSchema: {
+        text: z.string().describe("text to place into the focused field"),
+      },
     },
-    () =>
+    ({ text }) =>
       runTool(async () => {
-        const r = (await deviceHub.send("wake")) as WakeResult;
-        return { content: [{ type: "text", text: JSON.stringify(r, null, 2) }] };
+        const r = (await deviceHub.send("input_text", { text })) as InputTextResult;
+        return { content: [{ type: "text", text: `input_text set=${r.set}` }] };
       }),
   );
 
-  server.registerTool(
-    "sleep",
-    {
-      description:
-        "Put the connected Android device back to sleep (turn the screen off) between tasks to save power. Requires the one-time device-admin grant in the app; if it isn't granted this returns an error and the screen just follows its normal timeout instead.",
-      inputSchema: {},
-    },
-    () =>
+  const globalAction = (name: "back" | "home" | "recents", description: string) =>
+    server.registerTool(name, { description, inputSchema: {} }, () =>
       runTool(async () => {
-        const r = (await deviceHub.send("sleep")) as SleepResult;
-        return { content: [{ type: "text", text: `sleep locked=${r.locked}` }] };
+        const r = (await deviceHub.send(name)) as GlobalActionResult;
+        return { content: [{ type: "text", text: `${name} performed=${r.performed}` }] };
       }),
-  );
+    );
+
+  globalAction("back", "Press the Android Back navigation key: go back one step / dismiss the current screen or keyboard.");
+  globalAction("home", "Press the Android Home navigation key: go to the launcher home screen.");
+  globalAction("recents", "Press the Android Recents (overview) navigation key: open the recent-apps switcher.");
 
   return server;
 }

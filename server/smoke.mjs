@@ -24,26 +24,48 @@ async function callWithRetry(name, args, tries = 20) {
   throw new Error(`device never connected for ${name}`);
 }
 
-const tree = await callWithRetry("ui_tree", {});
-const treeText = tree.content.find((c) => c.type === "text")?.text ?? "";
-console.log("ui_tree isError:", tree.isError, "| nodes present:", /"nodes"/.test(treeText));
+const textOf = (r) =>
+  r.content.filter((c) => c.type === "text").map((c) => c.text).join("\n");
 
-const shot = await client.callTool({ name: "screenshot", arguments: {} });
-console.log("screenshot content types:", shot.content.map((c) => c.type).join(","));
+// screenshot returns an image + (by default) the UI tree.
+const shot = await callWithRetry("screenshot", {});
+const shotText = textOf(shot);
 const hasImage = shot.content.some((c) => c.type === "image" && typeof c.data === "string" && c.data.length > 0);
+console.log("screenshot content types:", shot.content.map((c) => c.type).join(","), "| tree present:", /"nodes"/.test(shotText));
+
+// opting out of the tree still yields an image, no tree.
+const shotNoTree = await client.callTool({ name: "screenshot", arguments: { include_ui_tree: false } });
+const treeSuppressed = !/"nodes"/.test(textOf(shotNoTree));
 
 const tap = await client.callTool({ name: "tap", arguments: { x: 120, y: 130 } });
-console.log("tap:", tap.content.find((c) => c.type === "text")?.text);
+console.log("tap:", textOf(tap));
+
+const longPress = await client.callTool({ name: "long_press", arguments: { x: 120, y: 130 } });
+console.log("long_press:", textOf(longPress));
 
 const swipe = await client.callTool({ name: "swipe", arguments: { x1: 540, y1: 1400, x2: 540, y2: 400 } });
-console.log("swipe:", swipe.content.find((c) => c.type === "text")?.text);
+console.log("swipe:", textOf(swipe));
+
+const type = await client.callTool({ name: "input_text", arguments: { text: "hello world" } });
+console.log("input_text:", textOf(type));
+
+const back = await client.callTool({ name: "back", arguments: {} });
+const home = await client.callTool({ name: "home", arguments: {} });
+const recents = await client.callTool({ name: "recents", arguments: {} });
+console.log("nav keys:", textOf(back), "|", textOf(home), "|", textOf(recents));
 
 await client.close();
 
 const pass =
-  /"nodes"/.test(treeText) &&
   hasImage &&
-  /dispatched=true/.test(tap.content[0]?.text ?? "") &&
-  /dispatched=true/.test(swipe.content[0]?.text ?? "");
+  /"nodes"/.test(shotText) &&
+  treeSuppressed &&
+  /dispatched=true/.test(textOf(tap)) &&
+  /dispatched=true/.test(textOf(longPress)) &&
+  /dispatched=true/.test(textOf(swipe)) &&
+  /set=true/.test(textOf(type)) &&
+  /performed=true/.test(textOf(back)) &&
+  /performed=true/.test(textOf(home)) &&
+  /performed=true/.test(textOf(recents));
 console.log(pass ? "SMOKE OK" : "SMOKE FAILED");
 process.exit(pass ? 0 : 1);

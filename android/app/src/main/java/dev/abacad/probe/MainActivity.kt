@@ -1,8 +1,6 @@
 package dev.abacad.probe
 
 import android.app.Activity
-import android.app.admin.DevicePolicyManager
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -51,22 +49,7 @@ class MainActivity : Activity() {
             setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         }
 
-        // Optional, for screen-off idle: device admin lets `sleep` turn the screen off;
-        // "Display over other apps" makes the `wake` background-launch reliable on strict ROMs.
-        val adminBtn = Button(this).apply {
-            text = "Enable Screen Off (device admin)"
-            setOnClickListener {
-                val admin = ComponentName(this@MainActivity, AbacadDeviceAdmin::class.java)
-                val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
-                    .putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, admin)
-                    .putExtra(
-                        DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                        "Lets Abacad turn the screen off between tasks (force-lock only).",
-                    )
-                startActivity(intent)
-            }
-        }
-
+        // "Display over other apps" makes the auto-wake background-launch reliable on strict ROMs.
         val overlayBtn = Button(this).apply {
             text = "Allow Display Over Other Apps"
             setOnClickListener {
@@ -92,14 +75,15 @@ class MainActivity : Activity() {
                    accept the system warning.
 
                 Once connected, an agent (via the server) can read the screen,
-                inject taps, and screenshot this device.
+                type, inject taps/swipes, and screenshot this device.
 
                 For hands-off, screen-off idle (optional):
                   • Set the screen lock to None or Swipe (NOT a PIN/pattern —
                     a secure lock cannot be auto-unlocked).
-                  • Tap "Enable Screen Off" so `sleep` can turn the display off.
-                  • Tap "Allow Display Over Other Apps" so `wake` can turn it back
-                    on reliably on strict OEM ROMs.
+                  • Tap "Allow Display Over Other Apps" so auto-wake can turn the
+                    screen back on reliably on strict OEM ROMs.
+                The device sleeps on its own display timeout; the agent wakes it
+                automatically when it needs the screen.
                 See docs/power-lockscreen.md for the full support matrix.
 
                 Logs:  adb logcat -s ABACAD
@@ -109,7 +93,6 @@ class MainActivity : Activity() {
         root.addView(urlField)
         root.addView(connectBtn)
         root.addView(a11yBtn)
-        root.addView(adminBtn)
         root.addView(overlayBtn)
         root.addView(info)
         setContentView(ScrollView(this).apply { addView(root) })

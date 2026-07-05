@@ -23,21 +23,30 @@ function connect() {
     }
     let result;
     switch (cmd.method) {
-      case "ui_tree":
-        result = {
-          pkg: "com.mock.app",
-          nodes: [
-            { cls: "android.widget.TextView", text: "Hello", id: "", clickable: false, bounds: [40, 40, 300, 80] },
-            { cls: "android.widget.Button", text: "OK", id: "com.mock.app:id/ok", clickable: true, bounds: [40, 100, 200, 160] },
-          ],
-        };
-        break;
       case "screenshot":
         result = { w: 1, h: 1, png_base64: PNG_1x1 };
+        if (cmd.params?.include_ui_tree !== false) {
+          result.tree = {
+            pkg: "com.mock.app",
+            nodes: [
+              { cls: "android.widget.TextView", text: "Hello", id: "", clickable: false, bounds: [40, 40, 300, 80] },
+              { cls: "android.widget.Button", text: "OK", id: "com.mock.app:id/ok", clickable: true, bounds: [40, 100, 200, 160] },
+            ],
+          };
+        }
         break;
       case "tap":
+      case "long_press":
       case "swipe":
         result = { dispatched: true };
+        break;
+      case "input_text":
+        result = { set: true };
+        break;
+      case "back":
+      case "home":
+      case "recents":
+        result = { performed: true };
         break;
       default:
         ws.send(JSON.stringify({ id: cmd.id, ok: false, error: `unknown method ${cmd.method}` }));

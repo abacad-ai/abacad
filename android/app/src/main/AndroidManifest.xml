@@ -44,7 +44,7 @@
         </service>
 
         <!-- Invisible waker: turns the screen on + dismisses a non-secure keyguard when a
-             `wake` command arrives on a dark device. Launched only by our own service. -->
+             command arrives on a dark device. Launched only by our own service. -->
         <activity
             android:name=".WakerActivity"
             android:exported="false"
@@ -52,18 +52,5 @@
             android:showWhenLocked="true"
             android:turnScreenOn="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
-
-        <!-- Device admin (force-lock only) so `sleep` can turn the screen back off. -->
-        <receiver
-            android:name=".AbacadDeviceAdmin"
-            android:exported="false"
-            android:permission="android.permission.BIND_DEVICE_ADMIN">
-            <meta-data
-                android:name="android.app.device_admin"
-                android:resource="@xml/device_admin" />
-            <intent-filter>
-                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
-            </intent-filter>
-        </receiver>
     </application>
 </manifest>
