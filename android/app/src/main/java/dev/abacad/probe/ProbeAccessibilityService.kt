@@ -12,6 +12,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.Path
+import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.hardware.HardwareBuffer
 import android.os.Build
@@ -22,6 +23,9 @@ import android.os.PowerManager
 import android.util.Base64
 import android.util.Log
 import android.view.Display
+import android.view.Gravity
+import android.view.View
+import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import org.json.JSONArray
@@ -59,11 +63,18 @@ class ProbeAccessibilityService : AccessibilityService() {
         // whole thing stays inside the server's 15s per-command deadline.
         const val SCREENSHOT_MAX_RETRIES = 3
         const val SCREENSHOT_RETRY_DELAY_MS = 1100L
+
+        /** How long the keep-awake overlay lingers after the last command before the screen may sleep. */
+        const val SESSION_KEEPALIVE_MS = 180_000L
     }
 
     private val handler = Handler(Looper.getMainLooper())
     private var device: DeviceClient? = null
     private var wakeLock: PowerManager.WakeLock? = null
+
+    /** A 1px, invisible, non-interactive overlay carrying FLAG_KEEP_SCREEN_ON; see [keepScreenAwake]. */
+    private var keepAwakeView: View? = null
+    private val dropKeepAwake = Runnable { releaseScreenAwake() }
 
     private val reconnectReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -89,6 +100,8 @@ class ProbeAccessibilityService : AccessibilityService() {
 
     override fun onUnbind(intent: Intent?): Boolean {
         try { unregisterReceiver(reconnectReceiver) } catch (_: Exception) {}
+        handler.removeCallbacks(dropKeepAwake)
+        releaseScreenAwake()
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
         device?.close()
@@ -117,6 +130,9 @@ class ProbeAccessibilityService : AccessibilityService() {
         handler.post {
             ensureAwake(
                 onReady = {
+                    // Hold the display awake for the session so we don't churn the waker (and
+                    // steal the foreground) on every command while the agent thinks between them.
+                    keepScreenAwake()
                     try {
                         when (method) {
                             "screenshot" -> captureScreenshot(params.optBoolean("include_ui_tree", true), done)
@@ -354,5 +370,53 @@ class ProbeAccessibilityService : AccessibilityService() {
                 onFail(CmdResult.Err("could not start waker activity: ${e.message}"))
             }
         }
+    }
+
+    /**
+     * Keep the display lit for the duration of an active session, then let it sleep again.
+     *
+     * The waker ([ensureAwake]) can turn a *dark* screen on, but it's a foreground activity — so
+     * firing it on every command (whenever the phone's display timeout beat the gap between the
+     * agent's commands) flashed Abacad to the front and stole focus from the app being driven.
+     * Instead we add a 1px, invisible, untouchable [WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY]
+     * window carrying [WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON] — the same well-supported
+     * primitive video players use, and one an AccessibilityService may add with no SYSTEM_ALERT_WINDOW
+     * grant. While it's up the screen never sleeps, so the (non-secure) keyguard never re-arms and the
+     * waker doesn't fire. Called on every command with a sliding [SESSION_KEEPALIVE_MS] timeout, so once
+     * the agent stops driving the overlay drops and the device returns to normal screen-off idle.
+     *
+     * FLAG_KEEP_SCREEN_ON only *keeps* a lit screen on; it can't wake a dark one — so the first
+     * command after real idle still wakes via the activity once. After that this suppresses repeats.
+     */
+    private fun keepScreenAwake() {
+        handler.removeCallbacks(dropKeepAwake)
+        handler.postDelayed(dropKeepAwake, SESSION_KEEPALIVE_MS)
+        if (keepAwakeView != null) return
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val params = WindowManager.LayoutParams(
+            1, 1,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+            PixelFormat.TRANSLUCENT,
+        ).apply { gravity = Gravity.TOP or Gravity.START }
+        val view = View(this)
+        try {
+            wm.addView(view, params)
+            keepAwakeView = view
+            Log.i(TAG, "keep-awake overlay up")
+        } catch (e: Exception) {
+            Log.w(TAG, "keep-awake overlay failed: ${e.message}")
+        }
+    }
+
+    private fun releaseScreenAwake() {
+        val view = keepAwakeView ?: return
+        keepAwakeView = null
+        try {
+            (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(view)
+            Log.i(TAG, "keep-awake overlay down")
+        } catch (_: Exception) {}
     }
 }
