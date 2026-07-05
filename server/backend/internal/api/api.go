@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"abacad/internal/auth"
+	"abacad/internal/protocol"
 	"abacad/internal/relay"
 	"abacad/internal/store"
 )
@@ -45,6 +47,7 @@ func (a *API) Handler() http.Handler {
 	mux.Handle("PATCH /api/devices/{id}", a.auth(a.renameDevice))
 	mux.Handle("DELETE /api/devices/{id}", a.auth(a.deleteDevice))
 	mux.Handle("POST /api/devices/{id}/rotate-token", a.auth(a.rotateDeviceToken))
+	mux.Handle("GET /api/devices/{id}/screenshot", a.auth(a.deviceScreenshot))
 	mux.Handle("GET /api/mcp-token", a.auth(a.getMCPToken))
 	mux.Handle("POST /api/mcp-token/rotate", a.auth(a.rotateMCPToken))
 
@@ -220,6 +223,45 @@ func (a *API) rotateDeviceToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"device_token": token, "wss_url": wsURL(r, token)})
+}
+
+// deviceScreenshot proxies a live screenshot from the device: it asks the
+// connected device for a PNG (no UI tree — the dashboard only needs the image)
+// and streams the decoded bytes back so the frontend can use it as an <img> src.
+func (a *API) deviceScreenshot(w http.ResponseWriter, r *http.Request) {
+	d, err := a.Store.DeviceOwnedBy(r.PathValue("id"), account(r).ID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeErr(w, http.StatusNotFound, "device not found")
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not load device")
+		return
+	}
+	dc, ok := a.Hub.Get(d.ID)
+	if !ok {
+		writeErr(w, http.StatusServiceUnavailable, "device offline")
+		return
+	}
+	raw, err := dc.Send(r.Context(), protocol.MethodScreenshot, map[string]any{"include_ui_tree": false}, 0)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	var res protocol.ScreenshotResult
+	if err := json.Unmarshal(raw, &res); err != nil {
+		writeErr(w, http.StatusBadGateway, "device returned a malformed screenshot")
+		return
+	}
+	png, err := base64.StdEncoding.DecodeString(res.PNGBase64)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "device returned a malformed screenshot")
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(png)
 }
 
 // --- MCP token handlers ---

@@ -71,6 +71,7 @@ export const api = {
   deleteDevice: (id: string) => req<void>(`/api/devices/${id}`, { method: "DELETE" }),
   rotateDeviceToken: (id: string) =>
     req<{ device_token: string; wss_url: string }>(`/api/devices/${id}/rotate-token`, { method: "POST" }),
+  deviceScreenshotUrl: (id: string) => `/api/devices/${id}/screenshot`,
 
   mcpToken: () => req<McpTokenInfo>("/api/mcp-token"),
   rotateMcpToken: () => req<{ mcp_token: string; mcp_url: string }>("/api/mcp-token/rotate", { method: "POST" }),

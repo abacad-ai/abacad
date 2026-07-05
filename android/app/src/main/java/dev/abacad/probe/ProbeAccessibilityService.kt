@@ -52,6 +52,13 @@ class ProbeAccessibilityService : AccessibilityService() {
         const val PREFS = "abacad"
         const val KEY_SERVER_URL = "server_url"
         const val ACTION_RECONNECT = "dev.abacad.probe.RECONNECT"
+
+        // The accessibility screenshot API rejects calls that arrive within its
+        // rate-limit window (~1s) with ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT.
+        // We retry a few times, each after slightly more than the window, so the
+        // whole thing stays inside the server's 15s per-command deadline.
+        const val SCREENSHOT_MAX_RETRIES = 3
+        const val SCREENSHOT_RETRY_DELAY_MS = 1100L
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -140,7 +147,7 @@ class ProbeAccessibilityService : AccessibilityService() {
 
     // ---- perceive --------------------------------------------------------------
 
-    private fun captureScreenshot(includeTree: Boolean, done: (CmdResult) -> Unit) {
+    private fun captureScreenshot(includeTree: Boolean, done: (CmdResult) -> Unit, attempt: Int = 0) {
         takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
             override fun onSuccess(result: ScreenshotResult) {
                 var hb: HardwareBuffer? = null
@@ -168,6 +175,19 @@ class ProbeAccessibilityService : AccessibilityService() {
                 }
             }
             override fun onFailure(errorCode: Int) {
+                // The platform rate-limits accessibility screenshots to one per
+                // ACCESSIBILITY_TAKE_SCREENSHOT interval (~1s). A request that lands
+                // too soon fails with ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT rather
+                // than a real failure — wait out the interval and retry a few times so
+                // rapid callers (e.g. the dashboard's live preview) just get the next
+                // frame instead of an error.
+                if (errorCode == ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT && attempt < SCREENSHOT_MAX_RETRIES) {
+                    handler.postDelayed(
+                        { captureScreenshot(includeTree, done, attempt + 1) },
+                        SCREENSHOT_RETRY_DELAY_MS,
+                    )
+                    return
+                }
                 done(CmdResult.Err("screenshot error code $errorCode"))
             }
         })
