@@ -8,7 +8,16 @@ primitives over an outbound WebSocket to the Abacad server:
 |---|---|
 | `ui_tree` | `getRootInActiveWindow()` — structured tree (text, ids, bounds, clickable) |
 | `tap(x,y)` | `dispatchGesture()` — injected tap |
+| `swipe` | `dispatchGesture()` — injected drag (scroll/navigation) |
 | `screenshot` | `AccessibilityService.takeScreenshot()` — consent-free on Android 11+ |
+| `wake` | `WakerActivity` — turn screen on + dismiss a non-secure keyguard |
+| `sleep` | device-admin `lockNow()` — turn the screen off between tasks |
+
+`wake`/`sleep` exist so the phone can idle with the **screen off** (battery/lifespan) and only
+light up when the agent calls. The catch: a **secure lock (PIN/pattern/biometric) can't be
+auto-unlocked** — hands-off use needs a None/Swipe lock. See
+[`../docs/power-lockscreen.md`](../docs/power-lockscreen.md) for the full support matrix and the
+setup checklist.
 
 All three were verified on real hardware (see the earlier throwaway probe). This is the
 **device half** of the loop; the agent talks to [`../server`](../server), which relays
@@ -46,3 +55,6 @@ Logs: `adb logcat -s ABACAD`.
 ## Not in v0
 Cloud relay / NAT traversal, auth/pairing, approval gating, `type`, tap-by-node-id,
 reboot self-heal / OEM battery survival — additive next steps behind the same contract.
+
+On-battery Doze latency (a `wake` during a Doze gap can be delayed) needs a battery-optimization
+exemption and/or server-side queue-until-reconnect; see `../docs/power-lockscreen.md`.

@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { deviceHub } from "./device.js";
-import type { ScreenshotResult, TapResult, UiTreeResult } from "./protocol.js";
+import type { ScreenshotResult, SleepResult, TapResult, UiTreeResult, WakeResult } from "./protocol.js";
 
 type ToolResult = {
   content: Array<
@@ -92,6 +92,34 @@ export function buildMcpServer(): McpServer {
         const dur = duration_ms ?? 300;
         const r = (await deviceHub.send("swipe", { x1, y1, x2, y2, duration_ms: dur })) as { dispatched: boolean };
         return { content: [{ type: "text", text: `swipe dispatched=${r.dispatched} (${x1},${y1})->(${x2},${y2}) ${dur}ms` }] };
+      }),
+  );
+
+  server.registerTool(
+    "wake",
+    {
+      description:
+        "Wake the connected Android device: turn the screen on and dismiss a non-secure (swipe/none) keyguard so ui_tree/screenshot/tap work. Call this FIRST when the device may be idle with the screen off. Returns whether the screen is on, whether the keyguard is secure, and whether it is now unlocked. If keyguard_secure is true the device has a PIN/pattern and CANNOT be auto-unlocked — a human must unlock it once.",
+      inputSchema: {},
+    },
+    () =>
+      runTool(async () => {
+        const r = (await deviceHub.send("wake")) as WakeResult;
+        return { content: [{ type: "text", text: JSON.stringify(r, null, 2) }] };
+      }),
+  );
+
+  server.registerTool(
+    "sleep",
+    {
+      description:
+        "Put the connected Android device back to sleep (turn the screen off) between tasks to save power. Requires the one-time device-admin grant in the app; if it isn't granted this returns an error and the screen just follows its normal timeout instead.",
+      inputSchema: {},
+    },
+    () =>
+      runTool(async () => {
+        const r = (await deviceHub.send("sleep")) as SleepResult;
+        return { content: [{ type: "text", text: `sleep locked=${r.locked}` }] };
       }),
   );
 

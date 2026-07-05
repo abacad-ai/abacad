@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Minimal device-admin policy: force-lock ONLY. This is what lets `sleep`
+  call DevicePolicyManager.lockNow() to turn the display off between tasks.
+  No wipe, no password policy, no camera disable — nothing else is requested.
+-->
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-policies>
+        <force-lock />
+    </uses-policies>
+</device-admin>

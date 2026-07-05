@@ -1,7 +1,7 @@
 // The wire protocol between the server and the Android device, over the
 // /device WebSocket. This tiny file is the seed of the future `contract/`.
 
-export type Method = "ui_tree" | "screenshot" | "tap" | "swipe";
+export type Method = "ui_tree" | "screenshot" | "tap" | "swipe" | "wake" | "sleep";
 
 /** Agent -> phone. `id` correlates the reply. */
 export interface Command {
@@ -39,4 +39,15 @@ export interface ScreenshotResult {
 
 export interface TapResult {
   dispatched: boolean;
+}
+
+export interface WakeResult {
+  screen_on: boolean;
+  keyguard_secure: boolean;
+  unlocked: boolean;
+  note: string;
+}
+
+export interface SleepResult {
+  locked: boolean;
 }

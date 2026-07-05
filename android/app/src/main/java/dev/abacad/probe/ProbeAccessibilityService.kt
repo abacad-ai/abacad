@@ -5,7 +5,9 @@ import android.accessibilityservice.AccessibilityService.GestureResultCallback
 import android.accessibilityservice.AccessibilityService.ScreenshotResult
 import android.accessibilityservice.AccessibilityService.TakeScreenshotCallback
 import android.accessibilityservice.GestureDescription
+import android.app.admin.DevicePolicyManager
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -16,6 +18,7 @@ import android.hardware.HardwareBuffer
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.util.Base64
 import android.util.Log
 import android.view.Display
@@ -48,6 +51,7 @@ class ProbeAccessibilityService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var device: DeviceClient? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
     private val reconnectReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -73,6 +77,8 @@ class ProbeAccessibilityService : AccessibilityService() {
 
     override fun onUnbind(intent: Intent?): Boolean {
         try { unregisterReceiver(reconnectReceiver) } catch (_: Exception) {}
+        wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock = null
         device?.close()
         device = null
         return super.onUnbind(intent)
@@ -103,6 +109,8 @@ class ProbeAccessibilityService : AccessibilityService() {
                         params.optInt("x2", -1), params.optInt("y2", -1),
                         params.optLong("duration_ms", 300L), done,
                     )
+                    "wake" -> wake(done)
+                    "sleep" -> sleep(done)
                     else -> done(CmdResult.Err("unknown method: $method"))
                 }
             } catch (e: Exception) {
@@ -182,6 +190,79 @@ class ProbeAccessibilityService : AccessibilityService() {
             }
         }, null)
         if (!accepted) done(CmdResult.Err("gesture not dispatched"))
+    }
+
+    // ---- power / lock (screen-off idle; see docs/power-lockscreen.md) ----------
+
+    /**
+     * Turn the screen on and dismiss a non-secure keyguard so the primitives can run on a
+     * dark device. Holds a short CPU wakelock (so the process survives from packet-arrival
+     * through the launch) and delegates the actual screen-on + unlock to [WakerActivity].
+     * A SECURE keyguard can't be dismissed — that's reported, not an error.
+     */
+    private fun wake(done: (CmdResult) -> Unit) {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock?.let { if (it.isHeld) it.release() }
+        @Suppress("DEPRECATION")
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "abacad:wake").apply {
+            setReferenceCounted(false)
+            acquire(60_000L)
+        }
+
+        var settled = false
+        val settle: (CmdResult) -> Unit = { r -> if (!settled) { settled = true; done(r) } }
+
+        val timeout = Runnable {
+            WakerActivity.onResult = null
+            settle(CmdResult.Err("wake activity did not start in 4s — likely an OEM background-activity-launch restriction; grant this app \"Display over other apps\""))
+        }
+        handler.postDelayed(timeout, 4000L)
+
+        WakerActivity.onResult = { o ->
+            handler.removeCallbacks(timeout)
+            settle(
+                CmdResult.Ok(
+                    JSONObject()
+                        .put("screen_on", o.screenOn)
+                        .put("keyguard_secure", o.keyguardSecure)
+                        .put("unlocked", o.unlocked)
+                        .put("note", o.note),
+                ),
+            )
+        }
+
+        try {
+            startActivity(
+                Intent(this, WakerActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION),
+            )
+        } catch (e: Exception) {
+            handler.removeCallbacks(timeout)
+            WakerActivity.onResult = null
+            settle(CmdResult.Err("could not start waker activity: ${e.message}"))
+        }
+    }
+
+    /**
+     * Turn the screen off between tasks via `DevicePolicyManager.lockNow()`. Requires the
+     * one-time device-admin grant ([AbacadDeviceAdmin]); without it we can't power the
+     * display off, so we report that and let the normal display timeout handle it.
+     */
+    private fun sleep(done: (CmdResult) -> Unit) {
+        val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val admin = ComponentName(this, AbacadDeviceAdmin::class.java)
+        if (!dpm.isAdminActive(admin)) {
+            done(CmdResult.Err("device admin not enabled — open the app and tap \"Enable screen off\"; until then the screen just follows the system display timeout"))
+            return
+        }
+        wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock = null
+        try {
+            dpm.lockNow()
+            done(CmdResult.Ok(JSONObject().put("locked", true)))
+        } catch (e: Exception) {
+            done(CmdResult.Err("lockNow failed: ${e.message}"))
+        }
     }
 
     private fun captureScreenshot(done: (CmdResult) -> Unit) {
