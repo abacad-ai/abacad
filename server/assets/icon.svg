@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#ffffff"/>
+  <!-- single-story "a": bowl + stem, bright blue -->
+  <g fill="#13a7f5">
+    <circle cx="228" cy="266" r="150"/>
+    <rect x="342" y="120" width="56" height="292" rx="28"/>
+  </g>
+  <!-- counter -->
+  <circle cx="228" cy="266" r="82" fill="#ffffff"/>
+  <!-- coral accent dot (live/eye) -->
+  <circle cx="228" cy="266" r="46" fill="#fd605e"/>
+</svg>
