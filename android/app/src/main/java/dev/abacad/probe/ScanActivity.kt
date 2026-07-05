@@ -3,6 +3,7 @@ package dev.abacad.probe
 import android.Manifest
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.ImageFormat
@@ -272,7 +273,7 @@ class ScanActivity : Activity() {
     }
 
     private fun deliver(text: String) {
-        setResult(RESULT_OK, intent.putExtra(RESULT_TEXT, text))
+        setResult(RESULT_OK, Intent().putExtra(RESULT_TEXT, text))
         finish()
     }
 

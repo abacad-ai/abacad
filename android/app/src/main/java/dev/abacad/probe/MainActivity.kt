@@ -19,6 +19,13 @@ import android.widget.Toast
  * screen only configures the connection.
  */
 class MainActivity : Activity() {
+
+    private companion object {
+        const val REQ_SCAN = 1
+    }
+
+    private lateinit var urlField: EditText
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val prefs = getSharedPreferences(ProbeAccessibilityService.PREFS, Context.MODE_PRIVATE)
@@ -29,9 +36,16 @@ class MainActivity : Activity() {
             setPadding(pad, pad, pad, pad)
         }
 
-        val urlField = EditText(this).apply {
+        urlField = EditText(this).apply {
             hint = "ws://<server-ip>:8848/device"
             setText(prefs.getString(ProbeAccessibilityService.KEY_SERVER_URL, ""))
+        }
+
+        val scanBtn = Button(this).apply {
+            text = "Scan QR"
+            setOnClickListener {
+                startActivityForResult(Intent(this@MainActivity, ScanActivity::class.java), REQ_SCAN)
+            }
         }
 
         val connectBtn = Button(this).apply {
@@ -67,10 +81,11 @@ class MainActivity : Activity() {
             text = """
                 Abacad — device agent
 
-                1. Enter your server URL:
+                1. Tap Scan QR and point at the connection QR on the
+                   Abacad dashboard — or type the URL by hand:
                    ws://<server-ip>:8848/device
                    (server machine + this phone on the same Wi-Fi)
-                2. Tap Save & Connect.
+                2. Tap Save & Connect (scanning connects for you).
                 3. Enable "Abacad Probe" under Accessibility (button below);
                    accept the system warning.
 
@@ -91,10 +106,24 @@ class MainActivity : Activity() {
         }
 
         root.addView(urlField)
+        root.addView(scanBtn)
         root.addView(connectBtn)
         root.addView(a11yBtn)
         root.addView(overlayBtn)
         root.addView(info)
         setContentView(ScrollView(this).apply { addView(root) })
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQ_SCAN || resultCode != RESULT_OK) return
+        val url = data?.getStringExtra(ScanActivity.RESULT_TEXT)?.trim().orEmpty()
+        if (url.isEmpty()) return
+        urlField.setText(url)
+        // Scanning is an explicit "connect me" gesture — save + reconnect straight away.
+        getSharedPreferences(ProbeAccessibilityService.PREFS, Context.MODE_PRIVATE)
+            .edit().putString(ProbeAccessibilityService.KEY_SERVER_URL, url).apply()
+        sendBroadcast(Intent(ProbeAccessibilityService.ACTION_RECONNECT).setPackage(packageName))
+        Toast.makeText(this, "Scanned. Connecting to $url", Toast.LENGTH_SHORT).show()
     }
 }
