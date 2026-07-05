@@ -1,55 +1,48 @@
-# Abacad — Android capability probe
+# Abacad — Android device agent
 
-A **throwaway** app that verifies the three capabilities Abacad's Android wedge
-depends on, all from a **single Accessibility grant** (no root, no ADB privilege,
-no MediaProjection):
+A normal sideloaded app that turns the phone into something a remote agent can see and
+control, from a **single accessibility grant** (no root, no ADB). It exposes three
+primitives over an outbound WebSocket to the Abacad server:
 
-| Test | API | Pass signal (Logcat tag `ABACAD_PROBE`) |
-|------|-----|------------------------------------------|
-| UI tree | `getRootInActiveWindow()` | `TREE: … nodes=N withText=… clickable=…` with real numbers |
-| Tap inject | `dispatchGesture()` | `TAP: onCompleted` |
-| Screenshot | `AccessibilityService.takeScreenshot()` | `SHOT: SUCCESS WxH nonBlack=true` **and no consent dialog ever shown** |
+| Primitive | Android API |
+|---|---|
+| `ui_tree` | `getRootInActiveWindow()` — structured tree (text, ids, bounds, clickable) |
+| `tap(x,y)` | `dispatchGesture()` — injected tap |
+| `screenshot` | `AccessibilityService.takeScreenshot()` — consent-free on Android 11+ |
 
-This is **not** the product. No relay, no MCP, no persistence. Delete after verifying.
+All three were verified on real hardware (see the earlier throwaway probe). This is the
+**device half** of the loop; the agent talks to [`../server`](../server), which relays
+commands here.
 
-## Requirements
-
-- An **Android 11+ (API 30)** device. `takeScreenshot()` does not exist below API 30.
-- No Google Play, no signing setup — a debug APK sideloads fine.
-
-## Build
-
-```bash
-# from android/
-./gradlew assembleDebug
-# output: app/build/outputs/apk/debug/app-debug.apk
+```
+agent ──MCP──▶ server ──WebSocket (this app dials out)──▶ device
 ```
 
-Needs JDK 17 and an Android SDK (`platform android-34`, `build-tools 34.0.0`).
-Point Gradle at the SDK via `local.properties` (`sdk.dir=/path/to/sdk`) or the
-`ANDROID_HOME` env var.
+## Requirements
+- **Android 11+ (API 30)** — `takeScreenshot()` doesn't exist below it.
+- Server machine and this phone on the **same Wi-Fi** (v0 is LAN + cleartext `ws://`).
 
-## Run & verify
+## Build & install
+```bash
+cd android
+export ANDROID_HOME=$HOME/Library/Android/sdk   # or just open android/ in Android Studio
+./gradlew installDebug
+```
+Needs a JDK 17+ — Android Studio bundles one:
+`export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"`.
 
-1. Install: `adb install -r app-debug.apk` (or copy the APK to the phone and tap it).
-2. Open **Abacad Probe** → tap **Open Accessibility Settings** → enable **Abacad Probe**.
-3. Accept the system warning. The probe runs immediately and re-runs on each
-   screen change.
-4. Watch results:
+## Use
+1. Start the server: `cd ../server && npm install && npm start` — note the machine's LAN IP.
+2. Open **Abacad Probe**, enter `ws://<server-ip>:8848/device`, tap **Save & Connect**.
+3. Enable **Abacad Probe** under Accessibility; accept the system warning.
+   (`curl http://localhost:8848/health` should now show `deviceConnected:true`.)
+4. Register the MCP endpoint with your agent, then drive it:
    ```bash
-   adb logcat -s ABACAD_PROBE
-   ```
-5. Re-run on demand (e.g. after switching to a different app):
-   ```bash
-   adb shell am broadcast -a dev.abacad.probe.RUN
-   ```
-6. Inspect the captured frame:
-   ```bash
-   adb pull /sdcard/Android/data/dev.abacad.probe/files/probe_shot.png
+   claude mcp add --transport http abacad http://localhost:8848/mcp
    ```
 
-### Verdict
+Logs: `adb logcat -s ABACAD`.
 
-**PASS** if you see, from only the accessibility toggle:
-`TREE` with real node counts, `SHOT: SUCCESS … nonBlack=true`, `TAP: onCompleted`
-— **and no screen-capture consent dialog appeared at any point.**
+## Not in v0
+Cloud relay / NAT traversal, auth/pairing, approval gating, `type`/`swipe`, tap-by-node-id,
+reboot self-heal / OEM battery survival — additive next steps behind the same contract.

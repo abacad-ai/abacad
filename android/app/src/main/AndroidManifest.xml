@@ -2,15 +2,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!--
-      NOTE: there are NO <uses-permission> entries. Everything this probe does
-      (read UI tree, inject a tap, capture the screen) is unlocked by the single
-      Accessibility toggle the user flips once. That is the whole thesis.
+      Accessibility itself needs NO manifest permission — it's the one-time
+      toggle, and it's what unlocks tree + tap + screenshot. INTERNET (and
+      cleartext, for LAN ws://) are only to reach the Abacad server.
     -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="false"
         android:icon="@android:drawable/ic_menu_compass"
         android:label="Abacad Probe"
+        android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.DeviceDefault.Light">
 
         <activity

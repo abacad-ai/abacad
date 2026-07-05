@@ -1,64 +1,75 @@
 package dev.abacad.probe
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 
 /**
- * Deliberately minimal: one button to jump to Accessibility settings, plus
- * on-screen instructions. All actual probe RESULTS go to Logcat (tag
- * ABACAD_PROBE), not the UI — this screen only exists to enable the service.
+ * Minimal setup screen: enter the Abacad server URL, save it, and enable the
+ * accessibility service. All control happens over the network afterward; this
+ * screen only configures the connection.
  */
 class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
+        val prefs = getSharedPreferences(ProbeAccessibilityService.PREFS, Context.MODE_PRIVATE)
         val pad = (24 * resources.displayMetrics.density).toInt()
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad, pad, pad)
         }
 
-        val button = Button(this).apply {
-            text = "Open Accessibility Settings"
+        val urlField = EditText(this).apply {
+            hint = "ws://<server-ip>:8848/device"
+            setText(prefs.getString(ProbeAccessibilityService.KEY_SERVER_URL, ""))
+        }
+
+        val connectBtn = Button(this).apply {
+            text = "Save & Connect"
             setOnClickListener {
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                val url = urlField.text.toString().trim()
+                prefs.edit().putString(ProbeAccessibilityService.KEY_SERVER_URL, url).apply()
+                sendBroadcast(Intent(ProbeAccessibilityService.ACTION_RECONNECT).setPackage(packageName))
+                Toast.makeText(this@MainActivity, "Saved. Connecting to $url", Toast.LENGTH_SHORT).show()
             }
+        }
+
+        val a11yBtn = Button(this).apply {
+            text = "Open Accessibility Settings"
+            setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         }
 
         val info = TextView(this).apply {
             textSize = 13f
             text = """
-                Abacad — capability probe (throwaway)
+                Abacad — device agent
 
-                Setup
-                  1. Tap the button above.
-                  2. Enable "Abacad Probe" under Accessibility.
-                     (accept the system permission warning)
-                  3. Probe runs immediately, then again each time
-                     you open a new app/screen.
+                1. Enter your server URL:
+                   ws://<server-ip>:8848/device
+                   (server machine + this phone on the same Wi-Fi)
+                2. Tap Save & Connect.
+                3. Enable "Abacad Probe" under Accessibility (button below);
+                   accept the system warning.
 
-                Read results over USB
-                  adb logcat -s ABACAD_PROBE
+                Once connected, an agent (via the server) can read the screen,
+                inject taps, and screenshot this device.
 
-                Re-run manually
-                  adb shell am broadcast -a dev.abacad.probe.RUN
-
-                Pull the captured screenshot
-                  adb pull /sdcard/Android/data/dev.abacad.probe/files/probe_shot.png
-
-                PASS = tree has real nodes, SHOT SUCCESS + nonBlack=true,
-                TAP onCompleted — and NO screen-capture consent dialog
-                ever appeared.
+                Logs:  adb logcat -s ABACAD
             """.trimIndent()
         }
 
-        root.addView(button)
+        root.addView(urlField)
+        root.addView(connectBtn)
+        root.addView(a11yBtn)
         root.addView(info)
         setContentView(ScrollView(this).apply { addView(root) })
     }

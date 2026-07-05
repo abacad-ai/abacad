@@ -11,8 +11,8 @@ android {
         applicationId = "dev.abacad.probe"
         minSdk = 30          // Android 11 — AccessibilityService.takeScreenshot() lives here
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1-probe"
+        versionCode = 2
+        versionName = "0.2-agent"
     }
 
     buildTypes {
@@ -31,5 +31,8 @@ android {
     }
 }
 
-// No dependencies on purpose: framework widgets + framework APIs only,
-// so the build has the fewest possible moving parts.
+dependencies {
+    // OkHttp: outbound WebSocket to the Abacad server. Everything else stays on
+    // framework APIs (no AndroidX).
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+}

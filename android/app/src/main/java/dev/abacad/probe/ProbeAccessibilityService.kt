@@ -16,201 +16,171 @@ import android.hardware.HardwareBuffer
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
+import android.util.Base64
 import android.util.Log
 import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import java.io.File
-import java.io.FileOutputStream
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+
+/** Result of executing one agent command. */
+sealed class CmdResult {
+    data class Ok(val result: JSONObject) : CmdResult()
+    data class Err(val message: String) : CmdResult()
+}
 
 /**
- * Throwaway feasibility probe. From the SINGLE accessibility grant it exercises
- * the three capabilities Abacad depends on and logs the outcome under tag
- * ABACAD_PROBE:
- *
- *   1. TREE  - getRootInActiveWindow() richness (nodes / text / clickable / ids)
- *   2. TAP   - dispatchGesture() a center tap; did it deliver?
- *   3. SHOT  - takeScreenshot(); real pixels, non-black, and CRUCIALLY with no
- *              MediaProjection / per-session consent dialog.
- *
- * Runs on connect, on each window change (debounced past the ~1/sec screenshot
- * rate limit), and on demand via `adb shell am broadcast -a dev.abacad.probe.RUN`.
+ * The device agent. From the single accessibility grant it exposes the three
+ * primitives the agent drives — ui_tree / tap / screenshot — over a [DeviceClient]
+ * WebSocket to the Abacad server. Command-driven: no work happens until the
+ * server (on behalf of the agent) sends a command.
  */
 class ProbeAccessibilityService : AccessibilityService() {
 
     companion object {
-        const val TAG = "ABACAD_PROBE"
-        const val ACTION_RUN = "dev.abacad.probe.RUN"
-        const val MIN_INTERVAL_MS = 3000L // keep clear of takeScreenshot() rate limit
+        const val TAG = "ABACAD"
+        const val PREFS = "abacad"
+        const val KEY_SERVER_URL = "server_url"
+        const val ACTION_RECONNECT = "dev.abacad.probe.RECONNECT"
     }
 
     private val handler = Handler(Looper.getMainLooper())
-    private var lastRun = 0L
+    private var device: DeviceClient? = null
 
-    private val runReceiver = object : BroadcastReceiver() {
+    private val reconnectReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            Log.i(TAG, "broadcast RUN received")
-            runProbe("broadcast")
+            Log.i(TAG, "RECONNECT")
+            connectFromPrefs()
         }
     }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        Log.i(TAG, "==================================================")
-        Log.i(TAG, "onServiceConnected - accessibility service is LIVE")
-        Log.i(TAG, "device=${Build.MANUFACTURER} ${Build.MODEL} sdk=${Build.VERSION.SDK_INT}")
-
-        val filter = IntentFilter(ACTION_RUN)
-        // Exported so `adb shell am broadcast` can reach it. Fine for a throwaway.
+        Log.i(TAG, "service LIVE — ${Build.MANUFACTURER} ${Build.MODEL} sdk=${Build.VERSION.SDK_INT}")
+        val filter = IntentFilter(ACTION_RECONNECT)
         if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(runReceiver, filter, Context.RECEIVER_EXPORTED)
+            registerReceiver(reconnectReceiver, filter, Context.RECEIVER_EXPORTED)
         } else {
-            registerReceiver(runReceiver, filter)
+            registerReceiver(reconnectReceiver, filter)
         }
-
-        handler.postDelayed({ runProbe("onConnected") }, 1500)
+        connectFromPrefs()
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            val now = SystemClock.elapsedRealtime()
-            if (now - lastRun >= MIN_INTERVAL_MS) {
-                runProbe("windowChange:${event.packageName}")
-            }
-        }
-    }
-
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) { /* command-driven; no-op */ }
     override fun onInterrupt() {}
 
     override fun onUnbind(intent: Intent?): Boolean {
-        try {
-            unregisterReceiver(runReceiver)
-        } catch (_: Exception) {
-        }
+        try { unregisterReceiver(reconnectReceiver) } catch (_: Exception) {}
+        device?.close()
+        device = null
         return super.onUnbind(intent)
     }
 
-    private fun runProbe(trigger: String) {
-        lastRun = SystemClock.elapsedRealtime()
-        Log.i(TAG, "----- runProbe (trigger=$trigger) -----")
-        probeTree()
-        probeTap()
-        probeScreenshot()
+    private fun connectFromPrefs() {
+        val url = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_SERVER_URL, "")?.trim().orEmpty()
+        device?.close()
+        device = null
+        if (url.isEmpty()) {
+            Log.w(TAG, "no server URL set — open the app and enter ws://<host>:8848/device")
+            return
+        }
+        device = DeviceClient(url, ::execute).also { it.connect() }
     }
 
-    // 1. UI TREE ---------------------------------------------------------------
-    private fun probeTree() {
-        try {
-            val root = rootInActiveWindow
-            if (root == null) {
-                Log.w(TAG, "TREE: rootInActiveWindow == null (no window content available)")
-                return
+    /** Run [method] on the main thread; deliver the outcome via [done]. */
+    fun execute(method: String, params: JSONObject, done: (CmdResult) -> Unit) {
+        handler.post {
+            try {
+                when (method) {
+                    "ui_tree" -> done(CmdResult.Ok(buildUiTree()))
+                    "screenshot" -> captureScreenshot(done)
+                    "tap" -> tapAt(params.optInt("x", -1), params.optInt("y", -1), done)
+                    else -> done(CmdResult.Err("unknown method: $method"))
+                }
+            } catch (e: Exception) {
+                done(CmdResult.Err(e.message ?: e.toString()))
             }
-            var count = 0
-            var withText = 0
-            var clickable = 0
-            var withId = 0
-            val samples = ArrayList<String>()
+        }
+    }
 
+    // ---- capabilities (the primitives verified by the probe) -------------------
+
+    private fun buildUiTree(): JSONObject {
+        val out = JSONObject()
+        val nodes = JSONArray()
+        val root = rootInActiveWindow
+        out.put("pkg", root?.packageName?.toString() ?: "")
+        if (root != null) {
+            var count = 0
             val queue = ArrayDeque<AccessibilityNodeInfo>()
             queue.add(root)
-            while (queue.isNotEmpty() && count < 5000) {
+            while (queue.isNotEmpty() && count < 3000) {
                 val n = queue.removeFirst()
                 count++
-                val text = n.text?.toString()
-                val id = n.viewIdResourceName
-                if (!text.isNullOrBlank()) withText++
-                if (n.isClickable) clickable++
-                if (!id.isNullOrBlank()) withId++
-                if (samples.size < 8 && (!text.isNullOrBlank() || n.isClickable)) {
-                    val b = Rect()
-                    n.getBoundsInScreen(b)
-                    samples.add("<${n.className}> text='${text ?: ""}' id='${id ?: ""}' clickable=${n.isClickable} bounds=$b")
-                }
-                for (i in 0 until n.childCount) {
-                    n.getChild(i)?.let { queue.add(it) }
-                }
+                val b = Rect()
+                n.getBoundsInScreen(b)
+                nodes.put(
+                    JSONObject()
+                        .put("cls", n.className?.toString() ?: "")
+                        .put("text", n.text?.toString() ?: "")
+                        .put("id", n.viewIdResourceName ?: "")
+                        .put("clickable", n.isClickable)
+                        .put("bounds", JSONArray().put(b.left).put(b.top).put(b.right).put(b.bottom)),
+                )
+                for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
             }
-            Log.i(TAG, "TREE: pkg=${root.packageName} nodes=$count withText=$withText clickable=$clickable withResId=$withId")
-            for (s in samples) Log.i(TAG, "TREE_SAMPLE $s")
-        } catch (e: Exception) {
-            Log.e(TAG, "TREE: exception", e)
         }
+        out.put("nodes", nodes)
+        return out
     }
 
-    // 2. TAP INJECTION ----------------------------------------------------------
-    private fun probeTap() {
-        try {
-            val metrics = resources.displayMetrics
-            val cx = metrics.widthPixels / 2f
-            val cy = metrics.heightPixels / 2f
-            val path = Path().apply { moveTo(cx, cy) }
-            val stroke = GestureDescription.StrokeDescription(path, 0L, 60L)
-            val gesture = GestureDescription.Builder().addStroke(stroke).build()
-            val dispatched = dispatchGesture(gesture, object : GestureResultCallback() {
-                override fun onCompleted(gestureDescription: GestureDescription?) {
-                    Log.i(TAG, "TAP: onCompleted (gesture delivered) at ($cx,$cy)")
-                }
-
-                override fun onCancelled(gestureDescription: GestureDescription?) {
-                    Log.w(TAG, "TAP: onCancelled at ($cx,$cy)")
-                }
-            }, null)
-            Log.i(TAG, "TAP: dispatchGesture returned=$dispatched (center $cx,$cy)")
-        } catch (e: Exception) {
-            Log.e(TAG, "TAP: exception", e)
+    private fun tapAt(x: Int, y: Int, done: (CmdResult) -> Unit) {
+        if (x < 0 || y < 0) {
+            done(CmdResult.Err("tap requires non-negative x,y"))
+            return
         }
+        val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
+        val stroke = GestureDescription.StrokeDescription(path, 0L, 60L)
+        val gesture = GestureDescription.Builder().addStroke(stroke).build()
+        val accepted = dispatchGesture(gesture, object : GestureResultCallback() {
+            override fun onCompleted(g: GestureDescription?) {
+                done(CmdResult.Ok(JSONObject().put("dispatched", true)))
+            }
+            override fun onCancelled(g: GestureDescription?) {
+                done(CmdResult.Ok(JSONObject().put("dispatched", false)))
+            }
+        }, null)
+        if (!accepted) done(CmdResult.Err("gesture not dispatched"))
     }
 
-    // 3. SCREENSHOT (the crown-jewel test) --------------------------------------
-    private fun probeScreenshot() {
-        try {
-            takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
-                override fun onSuccess(result: ScreenshotResult) {
-                    var hb: HardwareBuffer? = null
-                    try {
-                        hb = result.hardwareBuffer
-                        val hw = Bitmap.wrapHardwareBuffer(hb, result.colorSpace)
-                        if (hw == null) {
-                            Log.e(TAG, "SHOT: wrapHardwareBuffer returned null")
-                            return
-                        }
-                        val bmp = hw.copy(Bitmap.Config.ARGB_8888, false)
-                        val nonBlack = isNonBlack(bmp)
-                        Log.i(TAG, "SHOT: SUCCESS ${bmp.width}x${bmp.height} nonBlack=$nonBlack  <-- no MediaProjection prompt")
-                        val out = File(getExternalFilesDir(null), "probe_shot.png")
-                        FileOutputStream(out).use { bmp.compress(Bitmap.CompressFormat.PNG, 90, it) }
-                        Log.i(TAG, "SHOT: saved -> ${out.absolutePath}")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "SHOT: onSuccess exception", e)
-                    } finally {
-                        hb?.close()
+    private fun captureScreenshot(done: (CmdResult) -> Unit) {
+        takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
+            override fun onSuccess(result: ScreenshotResult) {
+                var hb: HardwareBuffer? = null
+                try {
+                    hb = result.hardwareBuffer
+                    val hw = Bitmap.wrapHardwareBuffer(hb, result.colorSpace)
+                    if (hw == null) {
+                        done(CmdResult.Err("wrapHardwareBuffer returned null"))
+                        return
                     }
+                    val bmp = hw.copy(Bitmap.Config.ARGB_8888, false)
+                    val baos = ByteArrayOutputStream()
+                    bmp.compress(Bitmap.CompressFormat.PNG, 90, baos)
+                    val b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
+                    done(CmdResult.Ok(JSONObject().put("w", bmp.width).put("h", bmp.height).put("png_base64", b64)))
+                } catch (e: Exception) {
+                    done(CmdResult.Err(e.message ?: "screenshot failed"))
+                } finally {
+                    hb?.close()
                 }
-
-                override fun onFailure(errorCode: Int) {
-                    Log.e(TAG, "SHOT: FAILURE errorCode=$errorCode (see AccessibilityService.ERROR_TAKE_SCREENSHOT_*)")
-                }
-            })
-        } catch (e: Exception) {
-            Log.e(TAG, "SHOT: dispatch exception (missing canTakeScreenshot capability?)", e)
-        }
-    }
-
-    /** Sample a sparse grid; true if any sampled pixel has a non-zero RGB. */
-    private fun isNonBlack(bmp: Bitmap): Boolean {
-        val stepX = (bmp.width / 20).coerceAtLeast(1)
-        val stepY = (bmp.height / 40).coerceAtLeast(1)
-        var x = 0
-        while (x < bmp.width) {
-            var y = 0
-            while (y < bmp.height) {
-                if ((bmp.getPixel(x, y) and 0x00FFFFFF) != 0) return true
-                y += stepY
             }
-            x += stepX
-        }
-        return false
+            override fun onFailure(errorCode: Int) {
+                done(CmdResult.Err("screenshot error code $errorCode"))
+            }
+        })
     }
 }
