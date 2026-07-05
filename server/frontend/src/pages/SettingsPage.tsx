@@ -11,6 +11,13 @@ interface Revealed {
   url: string;
 }
 
+// Derive the MCP endpoint from the browser's location (Vite's /mcp proxy in dev,
+// Go in prod) rather than the backend's view of Host, which is "localhost:1213"
+// behind the dev proxy and unreachable from another machine on the LAN.
+function mcpUrl(): string {
+  return `${window.location.protocol}//${window.location.host}/mcp`;
+}
+
 export function SettingsPage() {
   const [info, setInfo] = useState<McpTokenInfo | null>(null);
   const [revealed, setRevealed] = useState<Revealed | null>(null);
@@ -23,12 +30,12 @@ export function SettingsPage() {
   const rotate = async () => {
     if (info?.exists && !window.confirm("Generate a new MCP token? The current one stops working.")) return;
     const r = await api.rotateMcpToken();
-    setRevealed({ token: r.mcp_token, url: r.mcp_url });
+    setRevealed({ token: r.mcp_token, url: mcpUrl() });
     void reload();
   };
 
   const cmd = (r: Revealed) =>
-    `claude mcp add --transport http --header "Authorization: Bearer ${r.token}" abacad ${r.url}`;
+    `claude mcp add --transport http abacad ${r.url} --header "Authorization: Bearer ${r.token}"`;
 
   return (
     <div>

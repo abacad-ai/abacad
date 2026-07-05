@@ -7,7 +7,7 @@ PORT ?= 1419
 # in sync with server/frontend/vite.config.ts if you change it.
 BACKEND_ADDR ?= :1213
 
-.PHONY: dev typecheck
+.PHONY: dev typecheck android android-install
 
 # Start the Go backend and the Vite frontend together in the foreground.
 # Open http://localhost:$(PORT). Ctrl-C stops both.
@@ -21,3 +21,11 @@ dev:
 typecheck:
 	cd server/backend && go build ./...
 	cd server/frontend && npm run typecheck
+
+# Build the debug APK. Output: android/app/build/outputs/apk/debug/app-debug.apk
+android:
+	cd android && ./gradlew assembleDebug
+
+# Build (via the android target) and install the debug APK onto the connected device.
+android-install: android
+	cd android && ./gradlew installDebug
