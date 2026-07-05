@@ -116,6 +116,7 @@ class ProbeAccessibilityService : AccessibilityService() {
         device = null
         if (url.isEmpty()) {
             Log.w(TAG, "no server URL set — open the app and enter ws://<host>:8848/device")
+            ProbeStatus.setState(ProbeStatus.State.DISCONNECTED, "no server URL set — open the app to connect")
             return
         }
         device = DeviceClient(url, ::execute).also { it.connect() }
@@ -198,6 +199,8 @@ class ProbeAccessibilityService : AccessibilityService() {
                 // rapid callers (e.g. the dashboard's live preview) just get the next
                 // frame instead of an error.
                 if (errorCode == ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT && attempt < SCREENSHOT_MAX_RETRIES) {
+                    Log.i(TAG, "screenshot rate-limited, retry ${attempt + 1}/$SCREENSHOT_MAX_RETRIES")
+                    ProbeStatus.event("screenshot rate-limited · retry ${attempt + 1}/$SCREENSHOT_MAX_RETRIES")
                     handler.postDelayed(
                         { captureScreenshot(includeTree, done, attempt + 1) },
                         SCREENSHOT_RETRY_DELAY_MS,
@@ -329,6 +332,10 @@ class ProbeAccessibilityService : AccessibilityService() {
             return
         }
 
+        // Screen is off or the keyguard is up: waking adds latency to this command,
+        // which is a common reason a call brushes the server's 15s deadline. Surface it.
+        Log.i(TAG, "waking screen before command (interactive=${pm.isInteractive} locked=${km.isKeyguardLocked})")
+        ProbeStatus.event("waking screen…")
         wakeLock?.let { if (it.isHeld) it.release() }
         @Suppress("DEPRECATION")
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "abacad:wake").apply {

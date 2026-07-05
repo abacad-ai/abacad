@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"abacad/internal/auth"
+	"abacad/internal/events"
 	"abacad/internal/protocol"
 	"abacad/internal/relay"
 	"abacad/internal/store"
@@ -23,8 +24,9 @@ const sessionTTL = 30 * 24 * time.Hour
 
 // API holds dependencies for the dashboard endpoints.
 type API struct {
-	Store *store.Store
-	Hub   *relay.Hub
+	Store  *store.Store
+	Hub    *relay.Hub
+	Events *events.Log // per-device activity log
 }
 
 type ctxKey int
@@ -48,6 +50,7 @@ func (a *API) Handler() http.Handler {
 	mux.Handle("DELETE /api/devices/{id}", a.auth(a.deleteDevice))
 	mux.Handle("POST /api/devices/{id}/rotate-token", a.auth(a.rotateDeviceToken))
 	mux.Handle("GET /api/devices/{id}/screenshot", a.auth(a.deviceScreenshot))
+	mux.Handle("GET /api/devices/{id}/events", a.auth(a.deviceEvents))
 	mux.Handle("GET /api/mcp-token", a.auth(a.getMCPToken))
 	mux.Handle("POST /api/mcp-token/rotate", a.auth(a.rotateMCPToken))
 
@@ -243,7 +246,10 @@ func (a *API) deviceScreenshot(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, "device offline")
 		return
 	}
-	raw, err := dc.Send(r.Context(), protocol.MethodScreenshot, map[string]any{"include_ui_tree": false}, 0)
+	// Tag this as a dashboard-originated command so the activity log can tell it
+	// apart from the agent's own screenshots.
+	ctx := relay.WithSource(r.Context(), "dashboard")
+	raw, err := dc.Send(ctx, protocol.MethodScreenshot, map[string]any{"include_ui_tree": false}, 0)
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
@@ -264,8 +270,30 @@ func (a *API) deviceScreenshot(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(png)
 }
 
-// --- MCP token handlers ---
+// deviceEvents returns the device's recent activity log (connects, disconnects
+// with reason, and per-command timing/outcome) so the dashboard can show what's
+// happening — and why a call timed out or the device dropped.
+func (a *API) deviceEvents(w http.ResponseWriter, r *http.Request) {
+	d, err := a.Store.DeviceOwnedBy(r.PathValue("id"), account(r).ID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeErr(w, http.StatusNotFound, "device not found")
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not load device")
+		return
+	}
+	var evs []events.Event
+	if a.Events != nil {
+		evs = a.Events.Recent(d.ID, 0) // newest first
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"online": a.Hub.Online(d.ID),
+		"events": evs,
+	})
+}
 
+// --- MCP token handlers ---
 func (a *API) getMCPToken(w http.ResponseWriter, r *http.Request) {
 	info, err := a.Store.MCPToken(account(r).ID)
 	if err != nil {

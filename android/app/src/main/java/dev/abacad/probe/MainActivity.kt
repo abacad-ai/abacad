@@ -3,20 +3,27 @@ package dev.abacad.probe
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import android.text.format.DateFormat
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import java.util.Date
 
 /**
  * Minimal setup screen: enter the Abacad server URL, save it, and enable the
  * accessibility service. All control happens over the network afterward; this
  * screen only configures the connection.
+ *
+ * It also shows a live connection-status panel fed by [ProbeStatus], so the
+ * user can see whether the device is connected, reconnecting, or stuck — and the
+ * recent command/error activity — without reaching for `adb logcat`.
  */
 class MainActivity : Activity() {
 
@@ -25,6 +32,11 @@ class MainActivity : Activity() {
     }
 
     private lateinit var urlField: EditText
+    private lateinit var statusView: TextView
+    private lateinit var activityView: TextView
+
+    // Re-render the panel whenever ProbeStatus changes (called off the UI thread).
+    private val statusListener: () -> Unit = { runOnUiThread { renderStatus() } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -34,6 +46,22 @@ class MainActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad, pad, pad)
+        }
+
+        // --- live connection status panel (top of screen) ---
+        val statusHeader = TextView(this).apply {
+            text = "Connection"
+            setTypeface(typeface, Typeface.BOLD)
+        }
+        statusView = TextView(this).apply {
+            textSize = 15f
+            setPadding(0, (4 * resources.displayMetrics.density).toInt(), 0, 0)
+        }
+        activityView = TextView(this).apply {
+            textSize = 12f
+            typeface = Typeface.MONOSPACE
+            setTextColor(0xFF64748B.toInt())
+            setPadding(0, (6 * resources.displayMetrics.density).toInt(), 0, pad)
         }
 
         urlField = EditText(this).apply {
@@ -105,6 +133,9 @@ class MainActivity : Activity() {
             """.trimIndent()
         }
 
+        root.addView(statusHeader)
+        root.addView(statusView)
+        root.addView(activityView)
         root.addView(urlField)
         root.addView(scanBtn)
         root.addView(connectBtn)
@@ -112,6 +143,39 @@ class MainActivity : Activity() {
         root.addView(overlayBtn)
         root.addView(info)
         setContentView(ScrollView(this).apply { addView(root) })
+    }
+
+    override fun onResume() {
+        super.onResume()
+        ProbeStatus.addListener(statusListener)
+        renderStatus()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        ProbeStatus.removeListener(statusListener)
+    }
+
+    /** Paint the current [ProbeStatus] state (colored headline) and recent activity. */
+    private fun renderStatus() {
+        val s = ProbeStatus.state
+        statusView.text = "● ${s.name.lowercase()} — ${ProbeStatus.detail}"
+        statusView.setTextColor(
+            when (s) {
+                ProbeStatus.State.CONNECTED -> 0xFF16A34A.toInt() // green
+                ProbeStatus.State.CONNECTING, ProbeStatus.State.RECONNECTING -> 0xFFCA8A04.toInt() // amber
+                ProbeStatus.State.DISCONNECTED -> 0xFFDC2626.toInt() // red
+            },
+        )
+        val lines = ProbeStatus.recentLines()
+        activityView.text = if (lines.isEmpty()) {
+            "No activity yet."
+        } else {
+            // Newest first, capped so the panel stays readable.
+            lines.asReversed().take(12).joinToString("\n") { line ->
+                "${DateFormat.format("HH:mm:ss", Date(line.ts))}  ${line.text}"
+            }
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

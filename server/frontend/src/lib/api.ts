@@ -27,6 +27,22 @@ export interface Me {
   email: string;
 }
 
+// One entry of a device's activity log (mirrors the Go events.Event).
+export interface DeviceEvent {
+  ts: number; // unix millis
+  kind: "connected" | "disconnected" | "command";
+  method?: string;
+  source?: string; // agent | dashboard
+  duration_ms?: number;
+  outcome?: string; // ok | timeout | device_gone | canceled | error
+  detail?: string;
+}
+
+export interface DeviceEvents {
+  online: boolean;
+  events: DeviceEvent[];
+}
+
 async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch(path, {
     credentials: "include",
@@ -72,6 +88,7 @@ export const api = {
   rotateDeviceToken: (id: string) =>
     req<{ device_token: string; wss_url: string }>(`/api/devices/${id}/rotate-token`, { method: "POST" }),
   deviceScreenshotUrl: (id: string) => `/api/devices/${id}/screenshot`,
+  deviceEvents: (id: string) => req<DeviceEvents>(`/api/devices/${id}/events`),
 
   mcpToken: () => req<McpTokenInfo>("/api/mcp-token"),
   rotateMcpToken: () => req<{ mcp_token: string; mcp_url: string }>("/api/mcp-token/rotate", { method: "POST" }),

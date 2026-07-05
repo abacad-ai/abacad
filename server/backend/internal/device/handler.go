@@ -8,9 +8,11 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/coder/websocket"
 
+	"abacad/internal/events"
 	"abacad/internal/relay"
 )
 
@@ -29,9 +31,10 @@ type Seen func(deviceID string)
 
 // Handler builds the /device HTTP handler.
 type Handler struct {
-	Hub      *relay.Hub
-	Resolve  Resolver
-	OnSeen   Seen
+	Hub     *relay.Hub
+	Resolve Resolver
+	OnSeen  Seen
+	Events  *events.Log // per-device activity log; may be nil
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -52,12 +55,33 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.OnSeen != nil {
 		h.OnSeen(deviceID)
 	}
-	log.Printf("[device] connected: %s", deviceID)
+	log.Printf("[device] connected: %s from %s", deviceID, r.RemoteAddr)
 
 	dc := relay.NewDeviceConn(deviceID, c)
+	if h.Events != nil {
+		dc.SetCommandObserver(func(rec relay.CommandRecord) {
+			h.Events.Append(rec.DeviceID, events.Event{
+				Kind:       events.KindCommand,
+				Method:     rec.Method,
+				Source:     rec.Source,
+				DurationMs: rec.Duration.Milliseconds(),
+				Outcome:    rec.Outcome,
+				Detail:     rec.Detail,
+			})
+		})
+		h.Events.Append(deviceID, events.Event{Kind: events.KindConnected})
+	}
 	h.Hub.Register(dc)
+
 	// ReadPump blocks until the socket closes.
+	start := time.Now()
 	dc.ReadPump(context.Background())
 	h.Hub.Remove(dc)
-	log.Printf("[device] disconnected: %s", deviceID)
+
+	reason := dc.CloseReason()
+	uptime := time.Since(start).Round(time.Second)
+	log.Printf("[device] disconnected: %s reason=%q after=%s", deviceID, reason, uptime)
+	if h.Events != nil {
+		h.Events.Append(deviceID, events.Event{Kind: events.KindDisconnected, Detail: reason})
+	}
 }

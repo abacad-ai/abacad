@@ -1,11 +1,24 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Plus, RefreshCw, Trash2, Pencil, Smartphone, ImageOff } from "lucide-react";
-import { api, type DeviceView } from "@/lib/api";
+import {
+  Plus,
+  RefreshCw,
+  Trash2,
+  Pencil,
+  Smartphone,
+  ImageOff,
+  Activity,
+} from "lucide-react";
+import { api, type DeviceView, type DeviceEvent } from "@/lib/api";
+import { relativeTime, clockTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/Modal";
 import { CopyField } from "@/components/CopyField";
+
+// How often the device list re-polls, so online/offline and last-seen stay live
+// instead of frozen at mount.
+const DEVICES_POLL_MS = 5000;
 
 interface Reveal {
   title: string;
@@ -112,25 +125,149 @@ function DeviceScreenshot({ device }: { device: DeviceView }) {
   );
 }
 
+// How often the activity feed re-polls while its modal is open.
+const ACTIVITY_POLL_MS = 3000;
+
+// outcomeStyle colors a command row by how it ended: green ok, amber for a
+// dropped/canceled connection, red for a timeout or error.
+function outcomeStyle(outcome?: string): { dot: string; text: string } {
+  switch (outcome) {
+    case "ok":
+      return { dot: "bg-emerald-400", text: "text-emerald-300" };
+    case "timeout":
+    case "error":
+      return { dot: "bg-red-400", text: "text-red-300" };
+    case "device_gone":
+    case "canceled":
+      return { dot: "bg-amber-400", text: "text-amber-300" };
+    default:
+      return { dot: "bg-slate-500", text: "text-slate-300" };
+  }
+}
+
+// eventLabel renders one activity row's human text.
+function eventLabel(e: DeviceEvent): string {
+  if (e.kind === "connected") return "Connected";
+  if (e.kind === "disconnected") return `Disconnected${e.detail ? ` — ${e.detail}` : ""}`;
+  // command
+  const src = e.source ? `${e.source} · ` : "";
+  const dur = e.duration_ms != null ? ` · ${e.duration_ms}ms` : "";
+  const outcome = e.outcome ?? "?";
+  const detail = e.outcome === "error" && e.detail ? ` — ${e.detail}` : "";
+  return `${src}${e.method}${dur} · ${outcome}${detail}`;
+}
+
+// eventDot picks the status color for a row, keyed on kind then command outcome.
+function eventDot(e: DeviceEvent): string {
+  if (e.kind === "connected") return "bg-emerald-400";
+  if (e.kind === "disconnected") return "bg-amber-400";
+  return outcomeStyle(e.outcome).dot;
+}
+
+// DeviceActivity is the per-device activity feed: recent connects, disconnects
+// (with reason), and every command with its source, duration, and outcome. It
+// polls while open so a live session updates in place — the visual answer to
+// "why did that time out?" / "why did it drop?".
+function DeviceActivity({ device, onClose }: { device: DeviceView; onClose: () => void }) {
+  const [events, setEvents] = useState<DeviceEvent[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const load = async () => {
+      try {
+        const r = await api.deviceEvents(device.id);
+        if (!alive) return;
+        setEvents(r.events);
+        setError(null);
+      } catch (e) {
+        if (alive) setError((e as Error).message);
+      } finally {
+        if (alive) timer = setTimeout(load, ACTIVITY_POLL_MS);
+      }
+    };
+    void load();
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [device.id]);
+
+  return (
+    <Modal open onClose={onClose} title={`Activity — ${device.name}`}>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center gap-2 text-xs text-slate-400">
+          <span
+            className={`h-2 w-2 rounded-full ${device.online ? "bg-emerald-400" : "bg-slate-600"}`}
+          />
+          {device.online ? "Online" : "Offline"}
+          {device.last_seen && !device.online && (
+            <span>· last seen {relativeTime(device.last_seen)}</span>
+          )}
+        </div>
+
+        {error && <p className="text-sm text-red-400">{error}</p>}
+
+        {events === null ? (
+          <p className="text-sm text-slate-500">Loading…</p>
+        ) : events.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            No activity yet. Events appear here as the device connects and the agent drives it.
+          </p>
+        ) : (
+          <ul className="max-h-80 divide-y divide-slate-800/70 overflow-y-auto rounded-lg border border-slate-800 text-sm">
+            {events.map((e, i) => (
+              <li key={`${e.ts}-${i}`} className="flex items-start gap-2.5 px-3 py-2">
+                <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${eventDot(e)}`} />
+                <div className="min-w-0 flex-1">
+                  <div
+                    className={`truncate ${
+                      e.kind === "command" ? outcomeStyle(e.outcome).text : "text-slate-200"
+                    }`}
+                  >
+                    {eventLabel(e)}
+                  </div>
+                </div>
+                <span className="shrink-0 font-mono text-xs text-slate-500">
+                  {clockTime(e.ts)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 export function DevicesPage() {
   const [devices, setDevices] = useState<DeviceView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reveal, setReveal] = useState<Reveal | null>(null);
+  // Which device's activity feed is open (by id, so it tracks list updates).
+  const [activityId, setActivityId] = useState<string | null>(null);
+  const loadedOnce = useRef(false);
 
   const reload = async () => {
     try {
       setDevices(await api.devices());
       setError(null);
     } catch (e) {
-      setError((e as Error).message);
+      // Don't blank the list on a transient poll failure once we have data.
+      if (!loadedOnce.current) setError((e as Error).message);
     } finally {
+      loadedOnce.current = true;
       setLoading(false);
     }
   };
 
   useEffect(() => {
     void reload();
+    // Re-poll so online/offline and last-seen stay live without a manual refresh.
+    const t = setInterval(() => void reload(), DEVICES_POLL_MS);
+    return () => clearInterval(t);
   }, []);
 
   const addDevice = async () => {
@@ -194,10 +331,19 @@ export function DevicesPage() {
                   />
                   <div className="min-w-0">
                     <div className="truncate font-medium text-slate-100">{d.name}</div>
-                    <div className="truncate font-mono text-xs text-slate-500">{d.id}</div>
+                    <div className="truncate text-xs text-slate-500">
+                      {d.online
+                        ? "online"
+                        : d.last_seen
+                          ? `offline · last seen ${relativeTime(d.last_seen)}`
+                          : "offline · never connected"}
+                    </div>
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center">
+                  <Button variant="ghost" size="icon" onClick={() => setActivityId(d.id)} title="Activity">
+                    <Activity size={15} />
+                  </Button>
                   <Button variant="ghost" size="icon" onClick={() => rename(d)} title="Rename">
                     <Pencil size={15} />
                   </Button>
@@ -234,6 +380,12 @@ export function DevicesPage() {
           </div>
         )}
       </Modal>
+
+      {activityId &&
+        (() => {
+          const d = devices.find((x) => x.id === activityId);
+          return d ? <DeviceActivity device={d} onClose={() => setActivityId(null)} /> : null;
+        })()}
     </div>
   );
 }

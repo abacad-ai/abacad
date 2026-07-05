@@ -10,6 +10,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -19,6 +21,38 @@ import (
 
 	"abacad/internal/protocol"
 )
+
+// CommandRecord is the outcome of one device command, handed to a CommandObserver
+// for the activity log. It mirrors what gets logged.
+type CommandRecord struct {
+	DeviceID string
+	Method   string
+	Source   string // agent | dashboard
+	Duration time.Duration
+	Outcome  string // ok | timeout | device_gone | canceled | error
+	Detail   string // error message when Outcome == error
+}
+
+// CommandObserver is notified when a device command completes. It runs inline on
+// the caller's goroutine, so it must be cheap and non-blocking. nil disables it.
+type CommandObserver func(CommandRecord)
+
+// sourceKey tags a request context with who is driving (agent vs dashboard), so
+// the activity log can tell an agent's tap from the dashboard's screenshot poll.
+type sourceKey struct{}
+
+// WithSource returns a context that labels commands issued under it. Empty src is
+// ignored (Send defaults to "agent").
+func WithSource(ctx context.Context, src string) context.Context {
+	return context.WithValue(ctx, sourceKey{}, src)
+}
+
+func sourceFrom(ctx context.Context) string {
+	if s, ok := ctx.Value(sourceKey{}).(string); ok && s != "" {
+		return s
+	}
+	return "agent"
+}
 
 // Errors surfaced to the MCP layer. The "no device connected" phrasing is load-
 // bearing: smoke.mjs retries the first tool call while it still matches, to
@@ -44,6 +78,11 @@ type DeviceConn struct {
 	mu      sync.Mutex
 	pending map[string]chan protocol.Reply
 
+	onCmd CommandObserver // may be nil; notified on every Send completion
+
+	reasonMu    sync.Mutex
+	closeReason string // why ReadPump exited; read after the pump returns
+
 	closeOnce sync.Once
 	closed    chan struct{}
 }
@@ -58,10 +97,37 @@ func NewDeviceConn(deviceID string, ws *websocket.Conn) *DeviceConn {
 	}
 }
 
+// SetCommandObserver installs (or clears) the per-command observer. Call before
+// ReadPump starts.
+func (c *DeviceConn) SetCommandObserver(obs CommandObserver) { c.onCmd = obs }
+
 // Send issues a command and waits for the correlated reply. It returns the raw
 // result JSON on success, or ErrTimeout / ErrDeviceGone / a device-reported
 // error. timeout <= 0 uses DefaultTimeout.
-func (c *DeviceConn) Send(ctx context.Context, method protocol.Method, params map[string]any, timeout time.Duration) (json.RawMessage, error) {
+//
+// Every call is logged and (if an observer is set) recorded — this is the single
+// choke point that makes a hung or failed command visible instead of silent.
+func (c *DeviceConn) Send(ctx context.Context, method protocol.Method, params map[string]any, timeout time.Duration) (result json.RawMessage, err error) {
+	start := time.Now()
+	defer func() {
+		dur := time.Since(start)
+		outcome, detail := classify(err)
+		src := sourceFrom(ctx)
+		if detail != "" {
+			log.Printf("[cmd] device=%s src=%s method=%s dur=%dms result=%s: %s",
+				c.DeviceID, src, method, dur.Milliseconds(), outcome, detail)
+		} else {
+			log.Printf("[cmd] device=%s src=%s method=%s dur=%dms result=%s",
+				c.DeviceID, src, method, dur.Milliseconds(), outcome)
+		}
+		if c.onCmd != nil {
+			c.onCmd(CommandRecord{
+				DeviceID: c.DeviceID, Method: string(method), Source: src,
+				Duration: dur, Outcome: outcome, Detail: detail,
+			})
+		}
+	}()
+
 	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
@@ -114,6 +180,24 @@ func (c *DeviceConn) Send(ctx context.Context, method protocol.Method, params ma
 	}
 }
 
+// classify maps a Send error to an activity-log outcome + optional detail. The
+// sentinels get clean labels; anything else is a device-reported error whose
+// message is worth keeping.
+func classify(err error) (outcome, detail string) {
+	switch {
+	case err == nil:
+		return "ok", ""
+	case errors.Is(err, ErrTimeout):
+		return "timeout", ""
+	case errors.Is(err, ErrDeviceGone):
+		return "device_gone", ""
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return "canceled", err.Error()
+	default:
+		return "error", err.Error()
+	}
+}
+
 // ReadPump reads replies until the socket closes, delivering each to the waiting
 // Send by id. It blocks; run it in the connection's own goroutine. On return the
 // connection is closed and all in-flight Sends have been failed.
@@ -122,6 +206,7 @@ func (c *DeviceConn) ReadPump(ctx context.Context) {
 	for {
 		typ, data, err := c.ws.Read(ctx)
 		if err != nil {
+			c.setCloseReason(err)
 			return
 		}
 		if typ != websocket.MessageText {
@@ -155,3 +240,33 @@ func (c *DeviceConn) close() {
 
 // Close terminates the connection (used when the hub evicts a stale conn).
 func (c *DeviceConn) Close() { c.close() }
+
+// setCloseReason records why ReadPump exited, translating a clean WebSocket close
+// into "close <code> <reason>" and leaving raw I/O errors (network drop, read
+// limit) as-is.
+func (c *DeviceConn) setCloseReason(err error) {
+	reason := err.Error()
+	var ce websocket.CloseError
+	if errors.As(err, &ce) {
+		if ce.Reason != "" {
+			reason = fmt.Sprintf("close %d (%s)", ce.Code, ce.Reason)
+		} else {
+			reason = fmt.Sprintf("close %d", ce.Code)
+		}
+	}
+	c.reasonMu.Lock()
+	c.closeReason = reason
+	c.reasonMu.Unlock()
+}
+
+// CloseReason returns why the connection dropped, once ReadPump has returned. It
+// reads "connection closed" if nothing more specific was captured (e.g. an
+// eviction closed the socket from our side).
+func (c *DeviceConn) CloseReason() string {
+	c.reasonMu.Lock()
+	defer c.reasonMu.Unlock()
+	if c.closeReason == "" {
+		return "connection closed"
+	}
+	return c.closeReason
+}

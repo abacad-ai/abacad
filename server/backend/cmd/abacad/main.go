@@ -17,6 +17,7 @@ import (
 	"abacad/internal/auth"
 	"abacad/internal/config"
 	"abacad/internal/device"
+	"abacad/internal/events"
 	"abacad/internal/mcp"
 	"abacad/internal/relay"
 	"abacad/internal/resolver"
@@ -40,6 +41,7 @@ func main() {
 	}
 
 	hub := relay.NewHub()
+	evlog := events.NewLog()
 	factory := &resolver.Factory{Store: st, Hub: hub}
 
 	// /device: authenticate the device by its ?token=, register under its real
@@ -58,6 +60,7 @@ func main() {
 			return d.ID, nil
 		},
 		OnSeen: st.TouchDevice,
+		Events: evlog,
 	}
 
 	// /mcp: authenticate the agent by its bearer MCP token -> account -> resolver.
@@ -75,7 +78,7 @@ func main() {
 		},
 	}
 
-	apiHandler := (&api.API{Store: st, Hub: hub}).Handler()
+	apiHandler := (&api.API{Store: st, Hub: hub, Events: evlog}).Handler()
 
 	spa, err := web.New()
 	if err != nil {
