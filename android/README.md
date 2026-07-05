@@ -44,5 +44,5 @@ Needs a JDK 17+ — Android Studio bundles one:
 Logs: `adb logcat -s ABACAD`.
 
 ## Not in v0
-Cloud relay / NAT traversal, auth/pairing, approval gating, `type`/`swipe`, tap-by-node-id,
+Cloud relay / NAT traversal, auth/pairing, approval gating, `type`, tap-by-node-id,
 reboot self-heal / OEM battery survival — additive next steps behind the same contract.

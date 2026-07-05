@@ -11,8 +11,8 @@ android {
         applicationId = "dev.abacad.probe"
         minSdk = 30          // Android 11 — AccessibilityService.takeScreenshot() lives here
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.2-agent"
+        versionCode = 3
+        versionName = "0.3-swipe"
     }
 
     buildTypes {

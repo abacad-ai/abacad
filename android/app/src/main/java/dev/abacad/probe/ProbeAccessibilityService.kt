@@ -98,6 +98,11 @@ class ProbeAccessibilityService : AccessibilityService() {
                     "ui_tree" -> done(CmdResult.Ok(buildUiTree()))
                     "screenshot" -> captureScreenshot(done)
                     "tap" -> tapAt(params.optInt("x", -1), params.optInt("y", -1), done)
+                    "swipe" -> swipeAt(
+                        params.optInt("x1", -1), params.optInt("y1", -1),
+                        params.optInt("x2", -1), params.optInt("y2", -1),
+                        params.optLong("duration_ms", 300L), done,
+                    )
                     else -> done(CmdResult.Err("unknown method: $method"))
                 }
             } catch (e: Exception) {
@@ -144,6 +149,29 @@ class ProbeAccessibilityService : AccessibilityService() {
         }
         val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
         val stroke = GestureDescription.StrokeDescription(path, 0L, 60L)
+        val gesture = GestureDescription.Builder().addStroke(stroke).build()
+        val accepted = dispatchGesture(gesture, object : GestureResultCallback() {
+            override fun onCompleted(g: GestureDescription?) {
+                done(CmdResult.Ok(JSONObject().put("dispatched", true)))
+            }
+            override fun onCancelled(g: GestureDescription?) {
+                done(CmdResult.Ok(JSONObject().put("dispatched", false)))
+            }
+        }, null)
+        if (!accepted) done(CmdResult.Err("gesture not dispatched"))
+    }
+
+    private fun swipeAt(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long, done: (CmdResult) -> Unit) {
+        if (x1 < 0 || y1 < 0 || x2 < 0 || y2 < 0) {
+            done(CmdResult.Err("swipe requires non-negative coords"))
+            return
+        }
+        val path = Path().apply {
+            moveTo(x1.toFloat(), y1.toFloat())
+            lineTo(x2.toFloat(), y2.toFloat())
+        }
+        val dur = durationMs.coerceIn(50L, 3000L)
+        val stroke = GestureDescription.StrokeDescription(path, 0L, dur)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
         val accepted = dispatchGesture(gesture, object : GestureResultCallback() {
             override fun onCompleted(g: GestureDescription?) {

@@ -74,5 +74,26 @@ export function buildMcpServer(): McpServer {
       }),
   );
 
+  server.registerTool(
+    "swipe",
+    {
+      description:
+        "Swipe/drag on the connected Android device from (x1,y1) to (x2,y2) over duration_ms (default 300). Use for scrolling and navigation — e.g. to advance a vertical video feed, swipe from a lower point to a higher point (bottom -> top); a shorter duration flings faster. Absolute pixels; get screen size from a screenshot.",
+      inputSchema: {
+        x1: z.number().int().describe("start x pixel"),
+        y1: z.number().int().describe("start y pixel"),
+        x2: z.number().int().describe("end x pixel"),
+        y2: z.number().int().describe("end y pixel"),
+        duration_ms: z.number().int().optional().describe("gesture duration in ms (default 300)"),
+      },
+    },
+    ({ x1, y1, x2, y2, duration_ms }) =>
+      runTool(async () => {
+        const dur = duration_ms ?? 300;
+        const r = (await deviceHub.send("swipe", { x1, y1, x2, y2, duration_ms: dur })) as { dispatched: boolean };
+        return { content: [{ type: "text", text: `swipe dispatched=${r.dispatched} (${x1},${y1})->(${x2},${y2}) ${dur}ms` }] };
+      }),
+  );
+
   return server;
 }

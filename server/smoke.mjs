@@ -35,8 +35,15 @@ const hasImage = shot.content.some((c) => c.type === "image" && typeof c.data ==
 const tap = await client.callTool({ name: "tap", arguments: { x: 120, y: 130 } });
 console.log("tap:", tap.content.find((c) => c.type === "text")?.text);
 
+const swipe = await client.callTool({ name: "swipe", arguments: { x1: 540, y1: 1400, x2: 540, y2: 400 } });
+console.log("swipe:", swipe.content.find((c) => c.type === "text")?.text);
+
 await client.close();
 
-const pass = /"nodes"/.test(treeText) && hasImage && /dispatched=true/.test(tap.content[0]?.text ?? "");
+const pass =
+  /"nodes"/.test(treeText) &&
+  hasImage &&
+  /dispatched=true/.test(tap.content[0]?.text ?? "") &&
+  /dispatched=true/.test(swipe.content[0]?.text ?? "");
 console.log(pass ? "SMOKE OK" : "SMOKE FAILED");
 process.exit(pass ? 0 : 1);

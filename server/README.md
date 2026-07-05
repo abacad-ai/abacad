@@ -45,5 +45,5 @@ node smoke.mjs             # acts as the agent; prints "SMOKE OK"
 - **Stateless MCP** (`sessionIdGenerator: undefined`). If a client needs session IDs, switch
   `src/index.ts` to stateful mode.
 - **Cleartext `ws://` on LAN** — fine here; a hosted deployment should use `wss://`.
-- Not in v0: cloud relay / NAT traversal, auth/pairing, approval gating, `type`/`swipe`,
+- Not in v0: cloud relay / NAT traversal, auth/pairing, approval gating, `type`,
   tap-by-node-id. Each is additive behind the same `src/protocol.ts` contract.

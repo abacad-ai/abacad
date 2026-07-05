@@ -36,6 +36,7 @@ function connect() {
         result = { w: 1, h: 1, png_base64: PNG_1x1 };
         break;
       case "tap":
+      case "swipe":
         result = { dispatched: true };
         break;
       default:
