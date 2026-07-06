@@ -57,13 +57,6 @@ class ProbeAccessibilityService : AccessibilityService() {
         const val KEY_SERVER_URL = "server_url"
         const val ACTION_RECONNECT = "dev.abacad.probe.RECONNECT"
 
-        // The accessibility screenshot API rejects calls that arrive within its
-        // rate-limit window (~1s) with ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT.
-        // We retry a few times, each after slightly more than the window, so the
-        // whole thing stays inside the server's 15s per-command deadline.
-        const val SCREENSHOT_MAX_RETRIES = 3
-        const val SCREENSHOT_RETRY_DELAY_MS = 1100L
-
         /** How long the keep-awake overlay lingers after the last command before the screen may sleep. */
         const val SESSION_KEEPALIVE_MS = 180_000L
     }
@@ -164,7 +157,7 @@ class ProbeAccessibilityService : AccessibilityService() {
 
     // ---- perceive --------------------------------------------------------------
 
-    private fun captureScreenshot(includeTree: Boolean, done: (CmdResult) -> Unit, attempt: Int = 0) {
+    private fun captureScreenshot(includeTree: Boolean, done: (CmdResult) -> Unit) {
         takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
             override fun onSuccess(result: ScreenshotResult) {
                 var hb: HardwareBuffer? = null
@@ -192,22 +185,19 @@ class ProbeAccessibilityService : AccessibilityService() {
                 }
             }
             override fun onFailure(errorCode: Int) {
-                // The platform rate-limits accessibility screenshots to one per
-                // ACCESSIBILITY_TAKE_SCREENSHOT interval (~1s). A request that lands
-                // too soon fails with ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT rather
-                // than a real failure — wait out the interval and retry a few times so
-                // rapid callers (e.g. the dashboard's live preview) just get the next
-                // frame instead of an error.
-                if (errorCode == ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT && attempt < SCREENSHOT_MAX_RETRIES) {
-                    Log.i(TAG, "screenshot rate-limited, retry ${attempt + 1}/$SCREENSHOT_MAX_RETRIES")
-                    ProbeStatus.event("screenshot rate-limited · retry ${attempt + 1}/$SCREENSHOT_MAX_RETRIES")
-                    handler.postDelayed(
-                        { captureScreenshot(includeTree, done, attempt + 1) },
-                        SCREENSHOT_RETRY_DELAY_MS,
-                    )
-                    return
+                // Honest and stateless: take one shot, report whatever the platform says.
+                // ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT (the ~333ms rate limit) is just
+                // another failure here — the caller (dashboard / agent) paces its own requests,
+                // so we don't retry or hold any timing state on the device.
+                val reason = when (errorCode) {
+                    ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT -> "rate-limited (interval too short)"
+                    ERROR_TAKE_SCREENSHOT_SECURE_WINDOW -> "secure window (FLAG_SECURE)"
+                    ERROR_TAKE_SCREENSHOT_NO_ACCESSIBILITY_ACCESS -> "no accessibility access"
+                    ERROR_TAKE_SCREENSHOT_INVALID_DISPLAY -> "invalid display"
+                    ERROR_TAKE_SCREENSHOT_INTERNAL_ERROR -> "internal error"
+                    else -> "error code $errorCode"
                 }
-                done(CmdResult.Err("screenshot error code $errorCode"))
+                done(CmdResult.Err("screenshot failed: $reason"))
             }
         })
     }

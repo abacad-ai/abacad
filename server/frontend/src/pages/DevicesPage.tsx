@@ -20,6 +20,12 @@ import { CopyField } from "@/components/CopyField";
 // instead of frozen at mount.
 const DEVICES_POLL_MS = 5000;
 
+// The gap between one screenshot finishing and the next one starting. The next
+// fetch is scheduled only inside onload/onerror, so this is a true idle gap after
+// each capture settles — not a fixed polling period — and requests never stack.
+// The client owns this cadence (the device is stateless).
+const SCREENSHOT_GAP_MS = 2000;
+
 interface Reveal {
   title: string;
   wssUrl: string;
@@ -36,9 +42,13 @@ function deviceWsUrl(token: string): string {
 }
 
 // DeviceScreenshot is the card cover: a live PNG pulled from the device. Each
-// fetch is a round-trip to the phone, so it auto-refreshes ~10s AFTER the previous
-// capture settles (never firing a new request while one is in flight) and lets
+// fetch is a round-trip to the phone; when one settles we wait SCREENSHOT_GAP_MS
+// and fetch again (never firing a new request while one is in flight) and let
 // the user refresh on demand. Offline devices skip it.
+//
+// The device itself is honest and stateless — it takes one shot per request and
+// reports a failure (e.g. the ~333ms accessibility rate limit) rather than retrying.
+// Pacing lives here, on the client, so the cadence is a UI concern, not device state.
 //
 // Frames are preloaded off-screen and only swapped into the visible <img> once
 // they actually decode, so a failed capture leaves the last good frame on screen
@@ -70,12 +80,12 @@ function DeviceScreenshot({ device }: { device: DeviceView }) {
         if (!alive) return;
         setSrc(url); // already decoded → visible swap is instant, no flicker
         setFailed(false);
-        timer = setTimeout(loadNext, 10000);
+        timer = setTimeout(loadNext, SCREENSHOT_GAP_MS);
       };
       img.onerror = () => {
         if (!alive) return;
         setFailed(true); // ignored once we have a frame; keeps the old one up
-        timer = setTimeout(loadNext, 10000);
+        timer = setTimeout(loadNext, SCREENSHOT_GAP_MS);
       };
       img.src = url;
     };
