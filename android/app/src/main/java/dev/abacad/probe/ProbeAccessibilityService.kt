@@ -59,6 +59,11 @@ class ProbeAccessibilityService : AccessibilityService() {
 
         /** How long the keep-awake overlay lingers after the last command before the screen may sleep. */
         const val SESSION_KEEPALIVE_MS = 180_000L
+
+        /** A screenshot requested within this window of the last capture is served from cache, so the
+         *  dashboard's poll and the agent's captures coalesce instead of each paying a fresh (main-
+         *  thread) encode. Any drive command invalidates it — see [invalidateShotCache]. */
+        const val SCREENSHOT_CACHE_MS = 1000L
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -68,6 +73,22 @@ class ProbeAccessibilityService : AccessibilityService() {
     /** A 1px, invisible, non-interactive overlay carrying FLAG_KEEP_SCREEN_ON; see [keepScreenAwake]. */
     private var keepAwakeView: View? = null
     private val dropKeepAwake = Runnable { releaseScreenAwake() }
+
+    // Short-lived screenshot cache + single-flight (main-thread only, so no locks). At most one
+    // takeScreenshot runs at a time; near-simultaneous requests (dashboard poll + agent) queue as
+    // waiters and share its result, and a repeat within SCREENSHOT_CACHE_MS reuses the last frame.
+    // shotGen is bumped by every drive command so a post-action capture never serves a pre-action frame.
+    private var shotW = 0
+    private var shotH = 0
+    private var shotB64: String? = null
+    private var shotTree: JSONObject? = null
+    private var shotStampNs = 0L
+    private var shotGen = 0          // screen-mutation generation; ++ on every drive command
+    private var shotCacheGen = -1    // gen the cached frame belongs to
+    private var shotCaptureGen = 0   // gen the in-flight capture was started at
+    private var shotCapturing = false
+    private data class ShotWaiter(val includeTree: Boolean, val done: (CmdResult) -> Unit)
+    private val shotWaiters = ArrayList<ShotWaiter>()
 
     private val reconnectReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -127,6 +148,9 @@ class ProbeAccessibilityService : AccessibilityService() {
                     // Hold the display awake for the session so we don't churn the waker (and
                     // steal the foreground) on every command while the agent thinks between them.
                     keepScreenAwake()
+                    // Every command other than a read is about to change the screen, so drop the
+                    // screenshot cache: the next capture must be fresh, never a pre-action frame.
+                    if (method != "screenshot") invalidateShotCache()
                     try {
                         when (method) {
                             "screenshot" -> captureScreenshot(params.optBoolean("include_ui_tree", true), done)
@@ -157,7 +181,28 @@ class ProbeAccessibilityService : AccessibilityService() {
 
     // ---- perceive --------------------------------------------------------------
 
+    /**
+     * Serve a screenshot, coalescing near-simultaneous requests. A cache hit (a capture within
+     * [SCREENSHOT_CACHE_MS], same screen generation, and carrying a tree if this caller wants one)
+     * returns immediately. Otherwise the caller is queued and a single capture is kicked ([startShotCapture])
+     * whose result fans out to everyone waiting — so the dashboard's 2s poll and the agent's captures
+     * never pile independent PNG encodes onto the main thread or collide on the platform's ~333ms limit.
+     */
     private fun captureScreenshot(includeTree: Boolean, done: (CmdResult) -> Unit) {
+        val fresh = shotB64 != null && shotCacheGen == shotGen &&
+            (System.nanoTime() - shotStampNs) < SCREENSHOT_CACHE_MS * 1_000_000L
+        if (fresh && (!includeTree || shotTree != null)) {
+            done(CmdResult.Ok(shotResponse(includeTree)))
+            return
+        }
+        shotWaiters.add(ShotWaiter(includeTree, done))
+        if (!shotCapturing) startShotCapture()
+    }
+
+    /** Kick one fresh capture; its outcome is delivered to every queued [shotWaiters]. */
+    private fun startShotCapture() {
+        shotCapturing = true
+        shotCaptureGen = shotGen
         takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
             override fun onSuccess(result: ScreenshotResult) {
                 var hb: HardwareBuffer? = null
@@ -165,30 +210,39 @@ class ProbeAccessibilityService : AccessibilityService() {
                     hb = result.hardwareBuffer
                     val hw = Bitmap.wrapHardwareBuffer(hb, result.colorSpace)
                     if (hw == null) {
-                        done(CmdResult.Err("wrapHardwareBuffer returned null"))
+                        failShotWaiters("wrapHardwareBuffer returned null")
                         return
                     }
                     val bmp = hw.copy(Bitmap.Config.ARGB_8888, false)
                     val baos = ByteArrayOutputStream()
                     bmp.compress(Bitmap.CompressFormat.PNG, 90, baos)
                     val b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
-                    val out = JSONObject()
-                        .put("w", bmp.width)
-                        .put("h", bmp.height)
-                        .put("png_base64", b64)
-                    if (includeTree) out.put("tree", buildUiTree())
-                    done(CmdResult.Ok(out))
+                    // A drive command landed while we were capturing: this frame predates it and is
+                    // stale for the queued waiters. Recapture, paced past the platform's ~333ms limit.
+                    if (shotCaptureGen != shotGen) {
+                        handler.postDelayed({ startShotCapture() }, 350L)
+                        return
+                    }
+                    shotW = bmp.width
+                    shotH = bmp.height
+                    shotB64 = b64
+                    shotTree = if (shotWaiters.any { it.includeTree }) buildUiTree() else null
+                    shotCacheGen = shotCaptureGen
+                    shotStampNs = System.nanoTime()
+                    shotCapturing = false
+                    val serve = ArrayList(shotWaiters)
+                    shotWaiters.clear()
+                    for (w in serve) w.done(CmdResult.Ok(shotResponse(w.includeTree)))
                 } catch (e: Exception) {
-                    done(CmdResult.Err(e.message ?: "screenshot failed"))
+                    failShotWaiters(e.message ?: "screenshot failed")
                 } finally {
                     hb?.close()
                 }
             }
             override fun onFailure(errorCode: Int) {
-                // Honest and stateless: take one shot, report whatever the platform says.
-                // ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT (the ~333ms rate limit) is just
-                // another failure here — the caller (dashboard / agent) paces its own requests,
-                // so we don't retry or hold any timing state on the device.
+                // Report whatever the platform says. Single-flight means we no longer collide with our
+                // own captures, so ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT (the ~333ms rate limit) is
+                // now rare; when it does happen the caller can just ask again.
                 val reason = when (errorCode) {
                     ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT -> "rate-limited (interval too short)"
                     ERROR_TAKE_SCREENSHOT_SECURE_WINDOW -> "secure window (FLAG_SECURE)"
@@ -197,9 +251,32 @@ class ProbeAccessibilityService : AccessibilityService() {
                     ERROR_TAKE_SCREENSHOT_INTERNAL_ERROR -> "internal error"
                     else -> "error code $errorCode"
                 }
-                done(CmdResult.Err("screenshot failed: $reason"))
+                failShotWaiters("screenshot failed: $reason")
             }
         })
+    }
+
+    /** Build the wire result from the cached frame, attaching the UI tree only when asked (and present). */
+    private fun shotResponse(includeTree: Boolean): JSONObject {
+        val out = JSONObject()
+            .put("w", shotW)
+            .put("h", shotH)
+            .put("png_base64", shotB64)
+        if (includeTree && shotTree != null) out.put("tree", shotTree)
+        return out
+    }
+
+    /** Fail every queued waiter with the same message and clear the in-flight flag. */
+    private fun failShotWaiters(message: String) {
+        shotCapturing = false
+        val serve = ArrayList(shotWaiters)
+        shotWaiters.clear()
+        for (w in serve) w.done(CmdResult.Err(message))
+    }
+
+    /** Bump the screen generation so the cached frame no longer matches; called after any drive command. */
+    private fun invalidateShotCache() {
+        shotGen++
     }
 
     private fun buildUiTree(): JSONObject {

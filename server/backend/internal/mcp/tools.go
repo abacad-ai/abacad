@@ -4,10 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"abacad/internal/protocol"
 	"abacad/internal/relay"
 )
+
+// commandTimeout bounds how long an MCP tool waits for a device reply. It is
+// generous — far longer than the dashboard's fail-fast default (relay.DefaultTimeout)
+// — because an agent's screenshot can be a heavy capture on a busy device, and a
+// late frame is far more useful to the agent than a spurious "timed out" error it
+// then retries (which only piles more work on the device).
+const commandTimeout = 60 * time.Second
 
 // DeviceResolver ties an authenticated MCP request to the devices it may reach.
 // The handler builds one per request from the bearer token; the dispatcher uses
@@ -58,7 +66,7 @@ var actionTools = []actionTool{
 			}
 			_ = json.Unmarshal(args, &a)
 			includeTree := a.IncludeUITree == nil || *a.IncludeUITree
-			raw, err := dc.Send(ctx, protocol.MethodScreenshot, map[string]any{"include_ui_tree": includeTree}, 0)
+			raw, err := dc.Send(ctx, protocol.MethodScreenshot, map[string]any{"include_ui_tree": includeTree}, commandTimeout)
 			if err != nil {
 				return errorResult(err.Error())
 			}
@@ -86,7 +94,7 @@ var actionTools = []actionTool{
 			if err := json.Unmarshal(args, &a); err != nil {
 				return errorResult("invalid args: " + err.Error())
 			}
-			raw, err := dc.Send(ctx, protocol.MethodTap, map[string]any{"x": a.X, "y": a.Y}, 0)
+			raw, err := dc.Send(ctx, protocol.MethodTap, map[string]any{"x": a.X, "y": a.Y}, commandTimeout)
 			if err != nil {
 				return errorResult(err.Error())
 			}
@@ -111,7 +119,7 @@ var actionTools = []actionTool{
 			if a.DurationMs != nil {
 				dur = *a.DurationMs
 			}
-			raw, err := dc.Send(ctx, protocol.MethodLongPress, map[string]any{"x": a.X, "y": a.Y, "duration_ms": dur}, 0)
+			raw, err := dc.Send(ctx, protocol.MethodLongPress, map[string]any{"x": a.X, "y": a.Y, "duration_ms": dur}, commandTimeout)
 			if err != nil {
 				return errorResult(err.Error())
 			}
@@ -136,7 +144,7 @@ var actionTools = []actionTool{
 			if a.DurationMs != nil {
 				dur = *a.DurationMs
 			}
-			raw, err := dc.Send(ctx, protocol.MethodSwipe, map[string]any{"x1": a.X1, "y1": a.Y1, "x2": a.X2, "y2": a.Y2, "duration_ms": dur}, 0)
+			raw, err := dc.Send(ctx, protocol.MethodSwipe, map[string]any{"x1": a.X1, "y1": a.Y1, "x2": a.X2, "y2": a.Y2, "duration_ms": dur}, commandTimeout)
 			if err != nil {
 				return errorResult(err.Error())
 			}
@@ -156,7 +164,7 @@ var actionTools = []actionTool{
 			if err := json.Unmarshal(args, &a); err != nil {
 				return errorResult("invalid args: " + err.Error())
 			}
-			raw, err := dc.Send(ctx, protocol.MethodInputText, map[string]any{"text": a.Text}, 0)
+			raw, err := dc.Send(ctx, protocol.MethodInputText, map[string]any{"text": a.Text}, commandTimeout)
 			if err != nil {
 				return errorResult(err.Error())
 			}
@@ -177,7 +185,7 @@ func globalAction(name string, method protocol.Method, description string) actio
 		description: description,
 		schema:      `{"type":"object","properties":{` + deviceIDSchema + `},"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
-			raw, err := dc.Send(ctx, method, nil, 0)
+			raw, err := dc.Send(ctx, method, nil, commandTimeout)
 			if err != nil {
 				return errorResult(err.Error())
 			}
