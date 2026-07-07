@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"strconv"
 	"sync"
@@ -78,6 +79,10 @@ type DeviceConn struct {
 	mu      sync.Mutex
 	pending map[string]chan protocol.Reply
 
+	streamSeq atomic.Uint64
+	streamsMu sync.Mutex
+	streams   map[uint64]*Stream
+
 	onCmd CommandObserver // may be nil; notified on every Send completion
 
 	reasonMu    sync.Mutex
@@ -93,6 +98,7 @@ func NewDeviceConn(deviceID string, ws *websocket.Conn) *DeviceConn {
 		DeviceID: deviceID,
 		ws:       ws,
 		pending:  make(map[string]chan protocol.Reply),
+		streams:  make(map[uint64]*Stream),
 		closed:   make(chan struct{}),
 	}
 }
@@ -100,6 +106,76 @@ func NewDeviceConn(deviceID string, ws *websocket.Conn) *DeviceConn {
 // SetCommandObserver installs (or clears) the per-command observer. Call before
 // ReadPump starts.
 func (c *DeviceConn) SetCommandObserver(obs CommandObserver) { c.onCmd = obs }
+
+// writeFrame serializes one WebSocket write. coder/websocket requires writes be
+// serialized, and commands (text) and tunnel frames (binary) share the socket,
+// so both go through here.
+func (c *DeviceConn) writeFrame(ctx context.Context, typ websocket.MessageType, data []byte) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return c.ws.Write(ctx, typ, data)
+}
+
+// OpenStream asks the device to dial target ("host:port") and returns a Stream
+// bridging to it. The dial is optimistic: OpenStream returns as soon as the OPEN
+// frame is sent, and a dial failure surfaces as an error on the first Read.
+func (c *DeviceConn) OpenStream(ctx context.Context, target string) (*Stream, error) {
+	select {
+	case <-c.closed:
+		return nil, ErrDeviceGone
+	default:
+	}
+	id := c.streamSeq.Add(1)
+	s := &Stream{
+		id:       id,
+		conn:     c,
+		in:       make(chan []byte, streamBufferFrames),
+		closed:   make(chan struct{}),
+		closeErr: io.EOF,
+	}
+	c.streamsMu.Lock()
+	c.streams[id] = s
+	c.streamsMu.Unlock()
+
+	frame := protocol.EncodeStreamFrame(protocol.StreamOpen, id, []byte(target))
+	if err := c.writeFrame(ctx, websocket.MessageBinary, frame); err != nil {
+		c.removeStream(id)
+		return nil, ErrDeviceGone
+	}
+	return s, nil
+}
+
+func (c *DeviceConn) removeStream(id uint64) {
+	c.streamsMu.Lock()
+	delete(c.streams, id)
+	c.streamsMu.Unlock()
+}
+
+// handleStreamFrame routes an inbound binary frame to its stream. Unknown ids
+// (already closed, or never opened) are dropped, matching how late command
+// replies are dropped.
+func (c *DeviceConn) handleStreamFrame(buf []byte) {
+	t, id, payload, err := protocol.DecodeStreamFrame(buf)
+	if err != nil {
+		return
+	}
+	c.streamsMu.Lock()
+	s := c.streams[id]
+	c.streamsMu.Unlock()
+	if s == nil {
+		return
+	}
+	switch t {
+	case protocol.StreamData:
+		b := make([]byte, len(payload)) // payload aliases the read buffer; copy to retain
+		copy(b, payload)
+		s.deliver(b)
+	case protocol.StreamClose:
+		s.finish(closeCause(payload), false)
+	case protocol.StreamOpen:
+		// Devices never open streams; ignore.
+	}
+}
 
 // Send issues a command and waits for the correlated reply. It returns the raw
 // result JSON on success, or ErrTimeout / ErrDeviceGone / a device-reported
@@ -209,6 +285,10 @@ func (c *DeviceConn) ReadPump(ctx context.Context) {
 			c.setCloseReason(err)
 			return
 		}
+		if typ == websocket.MessageBinary {
+			c.handleStreamFrame(data) // tunnel lane
+			continue
+		}
 		if typ != websocket.MessageText {
 			continue
 		}
@@ -227,14 +307,24 @@ func (c *DeviceConn) ReadPump(ctx context.Context) {
 }
 
 // close is idempotent: it closes the socket, signals closed, and fails all
-// pending waiters.
+// pending waiters and live streams.
 func (c *DeviceConn) close() {
 	c.closeOnce.Do(func() {
 		close(c.closed)
 		if c.ws != nil {
 			_ = c.ws.Close(websocket.StatusNormalClosure, "bye")
 		}
-		// Pending waiters observe c.closed via their select; nothing else to do.
+		// Pending command waiters observe c.closed via their select. Streams have
+		// their own close signal, so tear each down explicitly.
+		c.streamsMu.Lock()
+		live := make([]*Stream, 0, len(c.streams))
+		for _, s := range c.streams {
+			live = append(live, s)
+		}
+		c.streamsMu.Unlock()
+		for _, s := range live {
+			s.finish(ErrDeviceGone, false)
+		}
 	})
 }
 

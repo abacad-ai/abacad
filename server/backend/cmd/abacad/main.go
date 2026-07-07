@@ -16,6 +16,7 @@ import (
 	"abacad/internal/api"
 	"abacad/internal/auth"
 	"abacad/internal/config"
+	"abacad/internal/connect"
 	"abacad/internal/device"
 	"abacad/internal/events"
 	"abacad/internal/mcp"
@@ -78,6 +79,27 @@ func main() {
 		},
 	}
 
+	// /connect: a raw TCP tunnel to a device-reachable target. Same MCP-token
+	// identity as /mcp, but accepts the token as ?token= too (matching the device
+	// endpoint), since the agent-side client is a bare WebSocket that may not set
+	// an Authorization header.
+	connectHandler := &connect.Handler{
+		ResolverFor: func(r *http.Request) (mcp.DeviceResolver, error) {
+			token := auth.BearerToken(r)
+			if token == "" {
+				token = r.URL.Query().Get("token")
+			}
+			if token == "" {
+				return nil, errors.New("missing MCP token")
+			}
+			acc, err := st.AccountByMCPTokenHash(auth.HashToken(token))
+			if err != nil {
+				return nil, errors.New("invalid MCP token")
+			}
+			return factory.For(acc.ID), nil
+		},
+	}
+
 	apiHandler := (&api.API{Store: st, Hub: hub, Events: evlog}).Handler()
 
 	spa, err := web.New()
@@ -90,6 +112,7 @@ func main() {
 	mux.HandleFunc("GET /mcp", methodNotAllowedMCP)
 	mux.HandleFunc("DELETE /mcp", methodNotAllowedMCP)
 	mux.Handle("GET /device", deviceHandler)
+	mux.Handle("GET /connect", connectHandler)
 	mux.Handle("/api/", apiHandler)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -113,6 +136,7 @@ func main() {
 	go func() {
 		log.Printf("agent MCP endpoint : POST %s/mcp   (Authorization: Bearer <mcp-token>)", cfg.Addr)
 		log.Printf("device WebSocket   : %s/device?token=<device-token>", cfg.Addr)
+		log.Printf("tunnel WebSocket   : %s/connect?token=<mcp-token>&device=<id>&target=host:port", cfg.Addr)
 		log.Printf("dashboard API      : %s/api/…", cfg.Addr)
 		log.Printf("health             : GET %s/health", cfg.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
