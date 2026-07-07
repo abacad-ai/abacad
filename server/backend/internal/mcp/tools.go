@@ -58,7 +58,7 @@ type actionTool struct {
 var actionTools = []actionTool{
 	{
 		name:        "screenshot",
-		description: "Look at the connected device's screen. Returns a PNG of the current screen and, by default, the accessibility UI tree: the foreground package plus a list of nodes, each with class, text, resource id, a clickable flag, and screen bounds [left, top, right, bottom]. Use the tree to decide what to interact with — tap the center of a node's bounds. Set include_ui_tree=false for canvas/game screens where the tree is empty or noise (you still get the image). The device is woken automatically if its screen was off.",
+		description: "Look at the connected device's screen. Returns a JPEG of the current screen and, by default, the accessibility UI tree: the foreground package plus a list of nodes, each with class, text, resource id, a clickable flag, and screen bounds [left, top, right, bottom]. Use the tree to decide what to interact with — tap the center of a node's bounds. Set include_ui_tree=false for canvas/game screens where the tree is empty or noise (you still get the image). The device is woken automatically if its screen was off.",
 		schema:      `{"type":"object","properties":{"include_ui_tree":{"type":"boolean","description":"also return the accessibility UI tree (default true)"},` + deviceIDSchema + `},"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
 			var a struct {
@@ -75,7 +75,7 @@ var actionTools = []actionTool{
 				return errorResult("bad screenshot result: " + err.Error())
 			}
 			out := toolResult{Content: []content{
-				imageContent(r.PNGBase64, "image/png"),
+				imageContent(r.PNGBase64, "image/jpeg"),
 				textContent(fmt.Sprintf("screen %dx%d", r.W, r.H)),
 			}}
 			if r.Tree != nil {

@@ -17,7 +17,14 @@ import (
 )
 
 // readLimit lifts coder/websocket's 32 KiB default, which would otherwise
-// silently reject screenshot payloads (base64 PNGs are often several MB).
+// silently reject screenshot payloads (base64 JPEGs run to a few MB).
+//
+// It is a per-MESSAGE receive cap, not a transfer cap: the reader buffers a whole
+// message in memory before handing it up, so this bounds that allocation. We keep
+// it small on purpose — big transfers (files) are chunked into small messages, so
+// nothing legitimate approaches this. It also lines up with the device's okhttp
+// client, whose fixed 16 MiB *outbound* queue (RealWebSocket.MAX_QUEUE_SIZE, not
+// configurable) already caps a single device->server frame at 16 MiB regardless.
 const readLimit = 16 << 20 // 16 MiB
 
 // Resolver maps an inbound /device request to the device id it may register as.

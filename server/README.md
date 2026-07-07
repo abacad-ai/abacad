@@ -33,7 +33,9 @@ devices, and point their agent at one endpoint — `https://abacad.ai/mcp` — t
   (NAT-friendly) and holds the connection open. The per-device token maps the socket
   to an account + a unique `device_id`. The wire protocol (`{id,method,params}` /
   `{id,ok,result|error}`) is unchanged from v0, so the Android app connects with no
-  code change — just paste the `wss://…/device?token=…` URL.
+  code change — just paste the `wss://…/device?token=…` URL. The channel carries
+  **control frames only** — commands, replies, metadata; binary blobs (screenshots,
+  files) go over a generic HTTP `/blobs` pair. See [`../docs/transport.md`](../docs/transport.md).
 - **Tokens** are stored **hashed** (sha-256); the plaintext is shown once, on
   create/rotate.
 

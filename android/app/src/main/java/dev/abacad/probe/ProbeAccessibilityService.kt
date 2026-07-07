@@ -215,7 +215,12 @@ class ProbeAccessibilityService : AccessibilityService() {
                     }
                     val bmp = hw.copy(Bitmap.Config.ARGB_8888, false)
                     val baos = ByteArrayOutputStream()
-                    bmp.compress(Bitmap.CompressFormat.PNG, 90, baos)
+                    // JPEG, not PNG: PNG is lossless and ignores the quality arg, so a full-res
+                    // screen encodes to several MB — base64'd, two concurrent replies overran
+                    // okhttp's fixed 16 MiB outbound queue and it hung up the socket with close(1001).
+                    // JPEG q85 is ~5-10x smaller (screens are opaque, so no alpha lost) and keeps
+                    // frames well clear of that cap. Field stays png_base64 for wire compatibility.
+                    bmp.compress(Bitmap.CompressFormat.JPEG, 85, baos)
                     val b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
                     // A drive command landed while we were capturing: this frame predates it and is
                     // stale for the queued waiters. Recapture, paced past the platform's ~333ms limit.

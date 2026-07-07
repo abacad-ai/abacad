@@ -229,7 +229,7 @@ func (a *API) rotateDeviceToken(w http.ResponseWriter, r *http.Request) {
 }
 
 // deviceScreenshot proxies a live screenshot from the device: it asks the
-// connected device for a PNG (no UI tree — the dashboard only needs the image)
+// connected device for a JPEG (no UI tree — the dashboard only needs the image)
 // and streams the decoded bytes back so the frontend can use it as an <img> src.
 func (a *API) deviceScreenshot(w http.ResponseWriter, r *http.Request) {
 	d, err := a.Store.DeviceOwnedBy(r.PathValue("id"), account(r).ID)
@@ -264,7 +264,7 @@ func (a *API) deviceScreenshot(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, "device returned a malformed screenshot")
 		return
 	}
-	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(png)
