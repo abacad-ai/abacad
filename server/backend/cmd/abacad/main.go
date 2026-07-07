@@ -9,12 +9,14 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"abacad/internal/api"
 	"abacad/internal/auth"
+	"abacad/internal/blob"
 	"abacad/internal/config"
 	"abacad/internal/connect"
 	"abacad/internal/device"
@@ -36,6 +38,10 @@ func main() {
 		log.Fatalf("open db %q: %v", cfg.DBPath, err)
 	}
 	defer st.Close()
+
+	if err := os.MkdirAll(cfg.BlobDir, 0o755); err != nil {
+		log.Fatalf("blob dir %q: %v", cfg.BlobDir, err)
+	}
 
 	if cfg.Seed {
 		seed(st)
@@ -102,6 +108,32 @@ func main() {
 
 	apiHandler := (&api.API{Store: st, Hub: hub, Events: evlog}).Handler()
 
+	// /blobs: the data plane. Authorized by any of the server's identities —
+	// dashboard session, MCP bearer, or device token — all resolving to the
+	// owning account, since a device uploads (screenshots, files), an agent and
+	// the dashboard download, and blobs are scoped per account.
+	accountForBlob := func(r *http.Request) (store.Account, error) {
+		if acc, err := st.AccountBySession(auth.SessionID(r)); err == nil {
+			return acc, nil // dashboard session cookie
+		}
+		if tok := auth.BearerToken(r); tok != "" {
+			if acc, err := st.AccountByMCPTokenHash(auth.HashToken(tok)); err == nil {
+				return acc, nil // agent MCP bearer
+			}
+		}
+		tok := r.URL.Query().Get("token") // device token (query, matching /device)
+		if tok == "" {
+			tok = auth.BearerToken(r)
+		}
+		if tok != "" {
+			if d, err := st.DeviceByTokenHash(auth.HashToken(tok)); err == nil {
+				return st.AccountByID(d.AccountID)
+			}
+		}
+		return store.Account{}, errors.New("missing or invalid credentials (session, MCP token, or device token)")
+	}
+	blobHandler := &blob.Handler{Store: st, Dir: cfg.BlobDir, MaxBytes: cfg.MaxBlobBytes, Account: accountForBlob}
+
 	spa, err := web.New()
 	if err != nil {
 		log.Fatalf("web: %v", err)
@@ -113,6 +145,8 @@ func main() {
 	mux.HandleFunc("DELETE /mcp", methodNotAllowedMCP)
 	mux.Handle("GET /device", deviceHandler)
 	mux.Handle("GET /connect", connectHandler)
+	mux.Handle("POST /blobs", http.HandlerFunc(blobHandler.Upload))
+	mux.Handle("GET /blobs/{id}", http.HandlerFunc(blobHandler.Download))
 	mux.Handle("/api/", apiHandler)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -137,6 +171,7 @@ func main() {
 		log.Printf("agent MCP endpoint : POST %s/mcp   (Authorization: Bearer <mcp-token>)", cfg.Addr)
 		log.Printf("device WebSocket   : %s/device?token=<device-token>", cfg.Addr)
 		log.Printf("tunnel WebSocket   : %s/connect?token=<mcp-token>&device=<id>&target=host:port", cfg.Addr)
+		log.Printf("blob store         : POST %s/blobs · GET %s/blobs/{id}   (session | MCP | device token)", cfg.Addr, cfg.Addr)
 		log.Printf("dashboard API      : %s/api/…", cfg.Addr)
 		log.Printf("health             : GET %s/health", cfg.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

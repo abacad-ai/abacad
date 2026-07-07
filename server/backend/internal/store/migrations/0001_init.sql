@@ -37,3 +37,17 @@ CREATE TABLE IF NOT EXISTS account_mcp_tokens (
   created_at INTEGER NOT NULL,
   last_used  INTEGER NOT NULL DEFAULT 0
 );
+
+-- Blobs: the data-plane store. Binary payloads (files, screenshots, media) never
+-- ride the device WebSocket; they are uploaded/downloaded over HTTP /blobs and
+-- referenced by id from control frames. The bytes live on disk under the blob
+-- dir; only metadata lives here. Scoped to an account for authorization.
+CREATE TABLE IF NOT EXISTS blobs (
+  id           TEXT PRIMARY KEY,           -- blob_<random>
+  account_id   TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  content_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+  size         INTEGER NOT NULL,           -- bytes on disk
+  sha256       TEXT NOT NULL,              -- hex, for integrity checks
+  created_at   INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_blobs_account ON blobs(account_id);

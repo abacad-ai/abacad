@@ -281,8 +281,44 @@ func (s *Store) MCPToken(accountID string) (MCPTokenInfo, error) {
 	return info, nil
 }
 
-// --- helpers ---
+// --- Blobs ---
 
+// Blob is the metadata for one stored data-plane object. The bytes live on disk
+// under the blob dir, keyed by ID; this row is the addressable, account-scoped
+// handle to them.
+type Blob struct {
+	ID          string
+	AccountID   string
+	ContentType string
+	Size        int64
+	SHA256      string // hex
+	CreatedAt   int64
+}
+
+// CreateBlob records a blob's metadata. The caller has already written the bytes
+// to disk; ID must be unique (use auth.NewID("blob")).
+func (s *Store) CreateBlob(b Blob) error {
+	_, err := s.db.Exec(
+		`INSERT INTO blobs(id,account_id,content_type,size,sha256,created_at) VALUES(?,?,?,?,?,?)`,
+		b.ID, b.AccountID, b.ContentType, b.Size, b.SHA256, b.CreatedAt)
+	return err
+}
+
+// BlobByID returns a blob's metadata. Ownership is the caller's to enforce
+// (compare AccountID) — this does not scope by account so a 404-vs-403 decision
+// stays with the handler.
+func (s *Store) BlobByID(id string) (Blob, error) {
+	var b Blob
+	err := s.db.QueryRow(
+		`SELECT id,account_id,content_type,size,sha256,created_at FROM blobs WHERE id=?`, id).
+		Scan(&b.ID, &b.AccountID, &b.ContentType, &b.Size, &b.SHA256, &b.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Blob{}, ErrNotFound
+	}
+	return b, err
+}
+
+// --- helpers ---
 func (s *Store) affect(res sql.Result, err error) error {
 	if err != nil {
 		return err
