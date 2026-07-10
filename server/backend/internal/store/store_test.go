@@ -55,12 +55,12 @@ func TestDevicesAndTokens(t *testing.T) {
 	a, _ := s.CreateAccount("d@e.com", "h")
 	other, _ := s.CreateAccount("x@y.com", "h")
 
-	d1, tok1, err := s.CreateDevice(a.ID, "Pixel")
+	d1, tok1, err := s.CreateDevice(a.ID, "Pixel", "android")
 	if err != nil {
 		t.Fatalf("create device: %v", err)
 	}
-	// Token resolves to the device.
-	if got, err := s.DeviceByTokenHash(auth.HashToken(tok1)); err != nil || got.ID != d1.ID {
+	// Token resolves to the device, platform round-trips.
+	if got, err := s.DeviceByTokenHash(auth.HashToken(tok1)); err != nil || got.ID != d1.ID || got.Platform != "android" {
 		t.Fatalf("by token: %v %+v", err, got)
 	}
 	// Ownership is enforced.
@@ -80,7 +80,7 @@ func TestDevicesAndTokens(t *testing.T) {
 	}
 
 	// last_seen ordering: create d2, touch it, expect it first.
-	d2, _, _ := s.CreateDevice(a.ID, "Old")
+	d2, _, _ := s.CreateDevice(a.ID, "Old", "")
 	s.TouchDevice(d2.ID)
 	list, err := s.DevicesByAccount(a.ID)
 	if err != nil || len(list) != 2 {

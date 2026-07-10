@@ -198,7 +198,7 @@ func seed(st *store.Store) {
 	if err != nil {
 		log.Fatalf("seed: %v", err)
 	}
-	_, devToken, err := st.CreateDevice(acc.ID, "Seed device")
+	_, devToken, err := st.CreateDevice(acc.ID, "Seed device", "")
 	if err != nil {
 		log.Fatalf("seed device: %v", err)
 	}

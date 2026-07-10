@@ -163,14 +163,15 @@ func (a *API) listDevices(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) createDevice(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Name string `json:"name"`
+		Name     string `json:"name"`
+		Platform string `json:"platform"`
 	}
 	_ = decodeOptional(r, &body)
 	name := strings.TrimSpace(body.Name)
 	if name == "" {
 		name = "New device"
 	}
-	d, token, err := a.Store.CreateDevice(account(r).ID, name)
+	d, token, err := a.Store.CreateDevice(account(r).ID, name, strings.TrimSpace(body.Platform))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "could not create device")
 		return
@@ -178,6 +179,7 @@ func (a *API) createDevice(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"id":           d.ID,
 		"name":         d.Name,
+		"platform":     d.Platform,
 		"device_token": token, // shown once
 		"wss_url":      wsURL(r, token),
 	})

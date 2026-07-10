@@ -71,7 +71,7 @@ func (a *accountResolver) List(_ context.Context) ([]mcp.DeviceSummary, error) {
 	}
 	out := make([]mcp.DeviceSummary, 0, len(devices))
 	for _, d := range devices {
-		s := mcp.DeviceSummary{DeviceID: d.ID, Name: d.Name, Online: a.hub.Online(d.ID)}
+		s := mcp.DeviceSummary{DeviceID: d.ID, Name: d.Name, Online: a.hub.Online(d.ID), Platform: d.Platform}
 		if d.LastSeen > 0 {
 			s.LastSeen = time.Unix(d.LastSeen, 0).UTC().Format(time.RFC3339)
 		}

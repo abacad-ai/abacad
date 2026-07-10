@@ -23,6 +23,16 @@ const (
 	MethodBack       Method = "back"
 	MethodHome       Method = "home"
 	MethodRecents    Method = "recents"
+
+	// Desktop methods. A device implements the subset it supports; anything it
+	// doesn't answer comes back as a device-side "unknown method" error, so the
+	// tool surface can stay a superset without per-platform filtering.
+	MethodClick      Method = "click"
+	MethodRightClick Method = "right_click"
+	MethodDrag       Method = "drag"
+	MethodScroll     Method = "scroll"
+	MethodPressKeys  Method = "press_keys"
+	MethodComposite  Method = "composite"
 )
 
 // Command is server -> device. id correlates the reply.
@@ -77,4 +87,15 @@ type InputTextResult struct {
 // GlobalActionResult is reported by back / home / recents.
 type GlobalActionResult struct {
 	Performed bool `json:"performed"`
+}
+
+// KeyResult is reported by press_keys.
+type KeyResult struct {
+	Pressed bool `json:"pressed"`
+}
+
+// CompositeResult is reported by composite: any screenshot steps in the sequence
+// return their frames here, in step order. Empty when the sequence took no shots.
+type CompositeResult struct {
+	Shots []ScreenshotResult `json:"shots"`
 }
