@@ -1,13 +1,12 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import path from "node:path";
 
 // Dev: Go runs on :1213; proxy the API, MCP, and device WS to it so the SPA and
 // backend share an origin (cookies, no CORS). Prod: Go serves the built dist.
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  resolve: { alias: { "@": path.resolve(__dirname, "src") } },
+  resolve: { alias: { "@": new URL("./src", import.meta.url).pathname } },
   server: {
     host: true, // listen on 0.0.0.0 so the dev server is reachable via the LAN IP
     port: 1419,

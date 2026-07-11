@@ -7,7 +7,16 @@ import { SettingsPage } from "@/pages/SettingsPage";
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { me, loading } = useAuth();
-  if (loading) return <div className="p-10 text-center text-sm text-slate-500">Loading…</div>;
+  if (loading) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-canvas text-ink">
+        <div className="flex items-center gap-3 text-sm text-ink-muted">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-brand" />
+          Loading workspace
+        </div>
+      </div>
+    );
+  }
   if (!me) return <Navigate to="/login" replace />;
   return <Layout>{children}</Layout>;
 }
