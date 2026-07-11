@@ -7,7 +7,7 @@ PORT ?= 1419
 # in sync with server/frontend/vite.config.ts if you change it.
 BACKEND_ADDR ?= :1213
 
-.PHONY: dev typecheck android android-install
+.PHONY: dev typecheck android android-install macos macos-run
 
 # Start the Go backend and the Vite frontend together in the foreground.
 # Open http://localhost:$(PORT). Ctrl-C stops both.
@@ -29,3 +29,13 @@ android:
 # Build (via the android target) and install the debug APK onto the connected device.
 android-install: android
 	cd android && ./gradlew installDebug
+
+# Build the signed macOS .app bundle. Output: macos/build/AbacadAgent.app
+# Needs a Mac with the Swift/Xcode toolchain. See macos/Makefile for signing vars.
+macos:
+	cd macos && $(MAKE) app
+
+# Build (via the macos target) and launch the .app. First launch prompts for
+# Accessibility and Screen Recording — grant both, then relaunch.
+macos-run:
+	cd macos && $(MAKE) run
