@@ -13,10 +13,13 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/ssh"
+
 	"abacad/internal/auth"
 	"abacad/internal/events"
 	"abacad/internal/protocol"
 	"abacad/internal/relay"
+	"abacad/internal/sshjump"
 	"abacad/internal/store"
 )
 
@@ -24,9 +27,10 @@ const sessionTTL = 30 * 24 * time.Hour
 
 // API holds dependencies for the dashboard endpoints.
 type API struct {
-	Store  *store.Store
-	Hub    *relay.Hub
-	Events *events.Log // per-device activity log
+	Store      *store.Store
+	Hub        *relay.Hub
+	Events     *events.Log // per-device activity log
+	BaseDomain string      // domain devices are addressed under, for the ssh_host hint
 }
 
 type ctxKey int
@@ -53,6 +57,11 @@ func (a *API) Handler() http.Handler {
 	mux.Handle("GET /api/devices/{id}/events", a.auth(a.deviceEvents))
 	mux.Handle("GET /api/mcp-token", a.auth(a.getMCPToken))
 	mux.Handle("POST /api/mcp-token/rotate", a.auth(a.rotateMCPToken))
+
+	// SSH keys authorize the jump host (ssh <device>.<base-domain>).
+	mux.Handle("GET /api/ssh-keys", a.auth(a.listSSHKeys))
+	mux.Handle("POST /api/ssh-keys", a.auth(a.addSSHKey))
+	mux.Handle("DELETE /api/ssh-keys/{id}", a.auth(a.deleteSSHKey))
 
 	return mux
 }
@@ -146,6 +155,7 @@ type deviceView struct {
 	Online    bool   `json:"online"`
 	LastSeen  string `json:"last_seen,omitempty"`
 	CreatedAt string `json:"created_at"`
+	SSHHost   string `json:"ssh_host,omitempty"` // ssh <ssh_host> reaches this device via the jump
 }
 
 func (a *API) listDevices(w http.ResponseWriter, r *http.Request) {
@@ -321,6 +331,85 @@ func (a *API) rotateMCPToken(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"mcp_token": token, "mcp_url": httpURL(r, "/mcp")})
 }
 
+// --- SSH key handlers ---
+
+type sshKeyView struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Fingerprint string `json:"fingerprint"`
+	PublicKey   string `json:"public_key"`
+	CreatedAt   string `json:"created_at"`
+	LastUsed    string `json:"last_used,omitempty"`
+}
+
+func (a *API) listSSHKeys(w http.ResponseWriter, r *http.Request) {
+	keys, err := a.Store.SSHKeysByAccount(account(r).ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not list ssh keys")
+		return
+	}
+	out := make([]sshKeyView, 0, len(keys))
+	for _, k := range keys {
+		v := sshKeyView{
+			ID: k.ID, Name: k.Name, Fingerprint: k.Fingerprint, PublicKey: k.PublicKey,
+			CreatedAt: time.Unix(k.CreatedAt, 0).UTC().Format(time.RFC3339),
+		}
+		if k.LastUsed > 0 {
+			v.LastUsed = time.Unix(k.LastUsed, 0).UTC().Format(time.RFC3339)
+		}
+		out = append(out, v)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (a *API) addSSHKey(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name      string `json:"name"`
+		PublicKey string `json:"public_key"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	// Parse the pasted authorized_keys line; derive a canonical fingerprint and a
+	// normalized single-line form to store.
+	pub, comment, _, _, err := ssh.ParseAuthorizedKey([]byte(strings.TrimSpace(body.PublicKey)))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "could not parse public key (paste an OpenSSH authorized_keys line)")
+		return
+	}
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		name = comment // fall back to the key's trailing comment (often user@host)
+	}
+	normalized := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(pub)))
+	k, err := a.Store.AddSSHKey(account(r).ID, name, ssh.FingerprintSHA256(pub), normalized)
+	if errors.Is(err, store.ErrKeyExists) {
+		writeErr(w, http.StatusConflict, "that key is already registered")
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not add ssh key")
+		return
+	}
+	writeJSON(w, http.StatusCreated, sshKeyView{
+		ID: k.ID, Name: k.Name, Fingerprint: k.Fingerprint, PublicKey: k.PublicKey,
+		CreatedAt: time.Unix(k.CreatedAt, 0).UTC().Format(time.RFC3339),
+	})
+}
+
+func (a *API) deleteSSHKey(w http.ResponseWriter, r *http.Request) {
+	err := a.Store.DeleteSSHKey(r.PathValue("id"), account(r).ID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeErr(w, http.StatusNotFound, "ssh key not found")
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not delete ssh key")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // --- session cookie ---
 
 func (a *API) startSession(w http.ResponseWriter, r *http.Request, acc store.Account) {
@@ -357,6 +446,9 @@ func (a *API) viewDevice(d store.Device) deviceView {
 	}
 	if d.LastSeen > 0 {
 		v.LastSeen = time.Unix(d.LastSeen, 0).UTC().Format(time.RFC3339)
+	}
+	if a.BaseDomain != "" {
+		v.SSHHost = sshjump.HostForDevice(d.ID, a.BaseDomain)
 	}
 	return v
 }

@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/Modal";
 import { CopyField } from "@/components/CopyField";
+import { SshKeysCard } from "@/components/SshKeysCard";
 
 interface Revealed {
   token: string;
@@ -73,8 +74,8 @@ export function SettingsPage() {
     <div>
       <PageHeader
         eyebrow="Workspace settings"
-        title="Agent connection"
-        description="Configure the single MCP credential your agents use to reach every device in this workspace."
+        title="Access & credentials"
+        description="Manage the MCP credential your agents use and the SSH keys that reach your devices directly."
       />
 
       {error && (
@@ -145,6 +146,8 @@ export function SettingsPage() {
           </div>
         </section>
       </div>
+
+      <SshKeysCard />
 
       <Modal
         open={confirmRotate}

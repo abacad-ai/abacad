@@ -8,6 +8,8 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
+	"sort"
 	"strings"
 	"time"
 
@@ -81,13 +83,32 @@ func Open(path string) (*Store, error) {
 
 func (s *Store) Close() error { return s.db.Close() }
 
+// migrate runs every migrations/*.sql file in lexical order. All statements are
+// idempotent (CREATE TABLE IF NOT EXISTS ...), so re-running the whole set on
+// each boot is safe — this doubles as the "apply new migrations" path without a
+// version table.
 func (s *Store) migrate() error {
-	sqlBytes, err := migrationsFS.ReadFile("migrations/0001_init.sql")
+	entries, err := fs.ReadDir(migrationsFS, "migrations")
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(string(sqlBytes))
-	return err
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".sql") {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		sqlBytes, err := migrationsFS.ReadFile("migrations/" + name)
+		if err != nil {
+			return err
+		}
+		if _, err := s.db.Exec(string(sqlBytes)); err != nil {
+			return fmt.Errorf("migration %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func now() int64 { return time.Now().Unix() }
@@ -317,6 +338,85 @@ func (s *Store) BlobByID(id string) (Blob, error) {
 		return Blob{}, ErrNotFound
 	}
 	return b, err
+}
+
+// --- SSH keys (authorize the jump server) ---
+
+// ErrKeyExists is returned when adding an SSH key whose fingerprint is already
+// registered (to any account).
+var ErrKeyExists = errors.New("ssh key already registered")
+
+// SSHKey is one authorized public key. The public key is not a secret; it is
+// stored in full (normalized authorized_keys line) and indexed by fingerprint.
+type SSHKey struct {
+	ID          string
+	AccountID   string
+	Name        string
+	Fingerprint string
+	PublicKey   string
+	CreatedAt   int64
+	LastUsed    int64
+}
+
+// AddSSHKey registers a public key for an account. fingerprint is the caller's
+// precomputed ssh.FingerprintSHA256; publicKey is the normalized authorized_keys
+// line. Returns ErrKeyExists if the fingerprint is already known.
+func (s *Store) AddSSHKey(accountID, name, fingerprint, publicKey string) (SSHKey, error) {
+	k := SSHKey{
+		ID: auth.NewID("sshk"), AccountID: accountID, Name: name,
+		Fingerprint: fingerprint, PublicKey: publicKey, CreatedAt: now(),
+	}
+	_, err := s.db.Exec(
+		`INSERT INTO ssh_keys(id,account_id,name,fingerprint,public_key,created_at,last_used)
+		 VALUES(?,?,?,?,?,?,0)`,
+		k.ID, k.AccountID, k.Name, k.Fingerprint, k.PublicKey, k.CreatedAt)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return SSHKey{}, ErrKeyExists
+		}
+		return SSHKey{}, err
+	}
+	return k, nil
+}
+
+// AccountBySSHKeyFingerprint resolves a public-key fingerprint to its owning
+// account and records last_used. This is the jump server's authorization lookup.
+func (s *Store) AccountBySSHKeyFingerprint(fingerprint string) (Account, error) {
+	var accountID string
+	err := s.db.QueryRow(`SELECT account_id FROM ssh_keys WHERE fingerprint=?`, fingerprint).Scan(&accountID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Account{}, ErrNotFound
+	}
+	if err != nil {
+		return Account{}, err
+	}
+	_, _ = s.db.Exec(`UPDATE ssh_keys SET last_used=? WHERE fingerprint=?`, now(), fingerprint)
+	return s.AccountByID(accountID)
+}
+
+// SSHKeysByAccount lists an account's registered public keys, newest first.
+func (s *Store) SSHKeysByAccount(accountID string) ([]SSHKey, error) {
+	rows, err := s.db.Query(
+		`SELECT id,account_id,name,fingerprint,public_key,created_at,last_used
+		   FROM ssh_keys WHERE account_id=? ORDER BY created_at DESC`, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SSHKey
+	for rows.Next() {
+		var k SSHKey
+		if err := rows.Scan(&k.ID, &k.AccountID, &k.Name, &k.Fingerprint, &k.PublicKey, &k.CreatedAt, &k.LastUsed); err != nil {
+			return nil, err
+		}
+		out = append(out, k)
+	}
+	return out, rows.Err()
+}
+
+// DeleteSSHKey removes one of an account's keys.
+func (s *Store) DeleteSSHKey(id, accountID string) error {
+	return s.affect(s.db.Exec(`DELETE FROM ssh_keys WHERE id=? AND account_id=?`, id, accountID))
 }
 
 // --- helpers ---

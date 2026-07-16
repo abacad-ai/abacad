@@ -1,0 +1,17 @@
+# Build context hygiene: keep node_modules, generated artifacts, and local state
+# out of the Docker context (the image rebuilds dist and the binary from source).
+**/node_modules
+frontend/dist
+backend/internal/web/dist
+backend/abacad
+backend/abacad-blobs/
+*.db
+*.db-wal
+*.db-shm
+*.log
+
+# Dev-only tooling that isn't needed to build the image.
+node_modules
+*.mjs
+run-tunnel-test.sh
+build.sh

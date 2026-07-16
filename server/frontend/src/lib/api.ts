@@ -7,6 +7,16 @@ export interface DeviceView {
   online: boolean;
   last_seen?: string;
   created_at: string;
+  ssh_host?: string; // ssh <ssh_host> reaches this device via the jump host
+}
+
+export interface SshKey {
+  id: string;
+  name: string;
+  fingerprint: string;
+  public_key: string;
+  created_at: string;
+  last_used?: string;
 }
 
 export interface NewDevice {
@@ -92,4 +102,9 @@ export const api = {
 
   mcpToken: () => req<McpTokenInfo>("/api/mcp-token"),
   rotateMcpToken: () => req<{ mcp_token: string; mcp_url: string }>("/api/mcp-token/rotate", { method: "POST" }),
+
+  sshKeys: () => req<SshKey[]>("/api/ssh-keys"),
+  addSshKey: (name: string, public_key: string) =>
+    req<SshKey>("/api/ssh-keys", { method: "POST", body: JSON.stringify({ name, public_key }) }),
+  deleteSshKey: (id: string) => req<void>(`/api/ssh-keys/${id}`, { method: "DELETE" }),
 };

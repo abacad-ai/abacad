@@ -38,6 +38,13 @@ devices, and point their agent at one endpoint — `https://abacad.ai/mcp` — t
   files) go over a generic HTTP `/blobs` pair. See [`../docs/transport.md`](../docs/transport.md).
 - **Tokens** are stored **hashed** (sha-256); the plaintext is shown once, on
   create/rotate.
+- **SSH jump host** (opt-in, `-ssh-addr`) — makes each device reachable as
+  `ssh <device>.<base-domain>` for a **stock `ssh` client with nothing installed** (one
+  `ProxyJump` line in `~/.ssh/config`). The client's public key (registered under
+  Settings) identifies the account; the jump routes only to that account's online
+  devices and bridges into the device tunnel to its own `127.0.0.1:22`. The inner SSH
+  session stays end-to-end encrypted — the relay holds no keys. See
+  [`../docs/ssh.md`](../docs/ssh.md).
 
 ## Build & run
 
@@ -49,7 +56,8 @@ Requires Go and Node.
 ```
 
 Flags: `-addr :8848`, `-db abacad.db`, `-dev-cors` (local dev), `-seed` (mint a dev
-account/device/MCP token and print them).
+account/device/MCP token and print them). SSH jump host (opt-in): `-ssh-addr :22,:443`,
+`-ssh-host-key <path>`, `-base-domain abacad.ai` — see [`../docs/ssh.md`](../docs/ssh.md).
 
 Register the endpoint with your agent:
 

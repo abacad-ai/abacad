@@ -95,6 +95,10 @@ You could move a file *through* the tunnel with `rsync`, but that's reaching a h
 storing an app object. Screenshots and app files use `/blobs`; reaching services uses
 `/connect`.
 
+The **SSH jump host** ([`ssh.md`](ssh.md)) is a third consumer of the same device tunnel:
+it fronts `OpenStream` with an SSH server so a **stock `ssh` client with no helper** can
+reach a device's `sshd` as `ssh <device>.<base-domain>`. Same blind byte-mover underneath.
+
 ---
 
 ## How each feature maps onto it

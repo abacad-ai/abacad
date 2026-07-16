@@ -7,12 +7,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 
 	"abacad/internal/api"
 	"abacad/internal/auth"
@@ -24,6 +29,7 @@ import (
 	"abacad/internal/mcp"
 	"abacad/internal/relay"
 	"abacad/internal/resolver"
+	"abacad/internal/sshjump"
 	"abacad/internal/store"
 	"abacad/internal/web"
 )
@@ -106,7 +112,7 @@ func main() {
 		},
 	}
 
-	apiHandler := (&api.API{Store: st, Hub: hub, Events: evlog}).Handler()
+	apiHandler := (&api.API{Store: st, Hub: hub, Events: evlog, BaseDomain: cfg.BaseDomain}).Handler()
 
 	// /blobs: the data plane. Authorized by any of the server's identities —
 	// dashboard session, MCP bearer, or device token — all resolving to the
@@ -163,6 +169,53 @@ func main() {
 	}
 
 	srv := &http.Server{Addr: cfg.Addr, Handler: handler, ReadHeaderTimeout: 10 * time.Second}
+
+	// SSH jump host: makes ssh <device>.<base-domain> route to a device's own
+	// sshd for a stock ProxyJump client. Opt-in via -ssh-addr / ABACAD_SSH_ADDR,
+	// which may list several addresses (e.g. ":22,:443") so networks that only
+	// allow egress on 443 can still reach it.
+	if cfg.SSHAddr != "" {
+		signer, err := sshjump.LoadOrCreateHostKey(cfg.SSHHostKey)
+		if err != nil {
+			log.Fatalf("ssh host key %q: %v", cfg.SSHHostKey, err)
+		}
+		jump := &sshjump.Server{
+			BaseDomain: cfg.BaseDomain,
+			HostSigner: signer,
+			// Authorize the connection by public key -> account.
+			AccountForKey: func(key ssh.PublicKey) (string, error) {
+				acc, err := st.AccountBySSHKeyFingerprint(ssh.FingerprintSHA256(key))
+				if err != nil {
+					return "", err
+				}
+				return acc.ID, nil
+			},
+			// Route only to an owned, online device; pin the target to its sshd.
+			OpenTunnel: func(ctx context.Context, accountID, deviceID string) (io.ReadWriteCloser, error) {
+				dc, err := factory.For(accountID).Resolve(ctx, deviceID)
+				if err != nil {
+					return nil, err
+				}
+				return dc.OpenStream(ctx, "127.0.0.1:22")
+			},
+		}
+		for _, addr := range strings.Split(cfg.SSHAddr, ",") {
+			addr = strings.TrimSpace(addr)
+			if addr == "" {
+				continue
+			}
+			ln, err := net.Listen("tcp", addr)
+			if err != nil {
+				log.Fatalf("ssh jump listen %q: %v", addr, err)
+			}
+			log.Printf("ssh jump host      : ssh <device>.%s  (listening on %s)", cfg.BaseDomain, addr)
+			go func(ln net.Listener) {
+				if err := jump.Serve(ln); err != nil {
+					log.Fatalf("ssh jump host: %v", err)
+				}
+			}(ln)
+		}
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
