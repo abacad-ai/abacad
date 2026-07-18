@@ -13,17 +13,10 @@
          from the (background) accessibility service. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <!-- Foreground service: run the accessibility service at foreground priority
-         while connected, so OEM battery managers (esp. Samsung One UI) don't freeze
-         the process the moment the screen goes dark and kill the idle socket.
-         dataSync = "keep device state synced with the server"; needs no extra
-         prerequisite permission (unlike connectedDevice). POST_NOTIFICATIONS lets
-         the ongoing notification actually show on Android 13+. -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- Ask to be exempted from Doze/battery optimization so the held socket
-         survives screen-off idle off-charger (the setup flow always promised this). -->
+    <!-- Ask to be exempted from Doze/battery optimization so the held socket survives screen-off
+         idle off-charger (the setup flow always promised this). This — not a foreground service —
+         is the real keep-alive: the accessibility service is already a persistent, kill-resistant
+         host, so we deliberately avoid a foreground service and its permanent notification. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- CAMERA: only to scan the connection QR shown by the server dashboard. -->
     <uses-permission android:name="android.permission.CAMERA" />
@@ -56,7 +49,6 @@
         <service
             android:name=".ProbeAccessibilityService"
             android:exported="false"
-            android:foregroundServiceType="dataSync"
             android:label="Abacad Probe"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>

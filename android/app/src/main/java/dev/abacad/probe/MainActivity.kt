@@ -3,10 +3,8 @@ package dev.abacad.probe
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.Typeface
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
@@ -32,7 +30,6 @@ class MainActivity : Activity() {
 
     private companion object {
         const val REQ_SCAN = 1
-        const val REQ_NOTIF = 2
     }
 
     private lateinit var urlField: EditText
@@ -108,8 +105,8 @@ class MainActivity : Activity() {
             }
         }
 
-        // Battery-optimization exemption keeps the held socket alive through Doze off-charger; the
-        // foreground service does the rest. Deep-links straight to the system grant.
+        // Battery-optimization exemption is the real keep-alive: it lets the accessibility service's
+        // held socket survive Doze off-charger. Deep-links straight to the system grant.
         val batteryBtn = Button(this).apply {
             text = "Ignore Battery Optimization"
             setOnClickListener {
@@ -173,15 +170,6 @@ class MainActivity : Activity() {
         root.addView(batteryBtn)
         root.addView(info)
         setContentView(ScrollView(this).apply { addView(root) })
-
-        // Android 13+: the foreground-service notification needs POST_NOTIFICATIONS to be visible.
-        // The service still runs without it, but the ongoing notification is the user's signal that
-        // the device is connected, so ask once up front.
-        if (Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIF)
-        }
     }
 
     override fun onResume() {

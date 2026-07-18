@@ -8,10 +8,13 @@ OEM-dependent risk (background-launch)**.
 This doc is the source of truth for what we support and why. The behavior it describes is
 implemented by **automatic wake** (`WakerActivity`, run before every command) plus the phone's
 own display timeout for sleep, over a **held idle WebSocket**. To keep that socket alive through
-screen-off, the app runs as a **foreground service** (ongoing notification), requests a
-**battery-optimization exemption**, holds a **CPU wakelock while unplugged**, and force-reconnects
-on **screen-on / network-regained** — so a screen-off device stays *reachable* ("sleeping"), not
-offline. There is no agent-facing wake/sleep tool — power is transparent to the agent.
+screen-off *without any always-on notification*, the app leans on the accessibility service (an
+already-persistent, kill-resistant host), a **battery-optimization exemption** (beats Doze), a
+**CPU wakelock while unplugged**, and a force-reconnect on **screen-on / network-regained** — so a
+screen-off device stays *reachable* ("sleeping"), not offline. Deliberately **no foreground
+service**: it would fix the same thing but at the cost of a permanent notification, which defeats
+the "drop it in a drawer and forget it" posture. There is no agent-facing wake/sleep tool — power
+is transparent to the agent.
 
 ---
 
@@ -40,8 +43,9 @@ Two hard facts constrain the whole space:
 ## How idle & wake work
 
 - **Idle connection.** The app dials out and holds one long-lived WebSocket (20s pings, no work
-  until a command arrives). A **foreground service** keeps the process (and this socket) off the
-  OEM idle/kill path; on a charger it stays alive indefinitely at near-zero cost.
+  until a command arrives). The **accessibility service** hosting it is a persistent, kill-resistant
+  component — the system keeps it bound and re-binds it if it's ever killed — so it holds the socket
+  without needing a foreground service. On a charger it stays alive indefinitely at near-zero cost.
 - **Doze (battery only).** Unplugged + screen-off + stationary triggers Doze, which suspends
   network for non-exempt apps. We counter it: the app requests a **battery-optimization exemption**
   (so Doze doesn't defer its network) and holds a **`PARTIAL_WAKE_LOCK` while unplugged** (so the
@@ -67,9 +71,10 @@ Two hard facts constrain the whole space:
 
 Concretely, once set up and connected:
 
-- **A permanent notification.** While connected, an ongoing, low-priority notification sits in the
-  shade: *"Abacad — Keeping this device reachable for the agent."* It can't be swiped away (that's
-  the foreground service staying alive) and won't make sound. This is the one always-visible cost.
+- **No persistent notification, no app in your face.** By design the app shows **nothing** while it
+  sits connected — no ongoing notification, no status-bar icon of its own. It's meant to disappear
+  into a drawer. (The only always-visible sign the phone has an accessibility service enabled is
+  whatever the OS itself shows for that; Abacad adds none of its own.)
 - **The screen still turns off on its own.** The app does **not** keep the screen on while idle —
   after the system display timeout the screen goes dark normally. (It only holds the screen awake
   *during* an active session: for ~3 min after the last command, via a 1px invisible overlay, so it
@@ -93,7 +98,7 @@ Concretely, once set up and connected:
   keep the socket healthy through Doze, which adds meaningful drain — the plugged-in drawer phone is
   the intended posture.
 
-Net: a connected phone looks *asleep* (dark screen, one quiet notification), stays reachable, and
+Net: a connected phone looks *asleep* (dark screen, nothing on-screen), stays reachable, and
 briefly lights up to do work when the agent calls — returning to dark on its own afterward.
 
 ---
@@ -112,17 +117,20 @@ briefly lights up to do work when the agent calls — returning to dark on its o
 | Battery | **Off** | None / Swipe | ⚠️ | Now survives Doze with the battery-optimization exemption + off-charger wakelock; the wakelock costs battery, and the most aggressive OEMs (see below) may still freeze the app. Best-effort, much improved. |
 | Battery | Off | Secure | ❌ | Same wall as charger+off+secure. |
 
-**On-battery-idle reliability:** option (a) is now **implemented** — the app runs as a foreground
-service, requests the battery-optimization exemption, and holds a CPU wakelock while unplugged, so
-the socket survives Doze off-charger. Option (b), server-side queue-until-reconnect, remains
-deferred; it (plus an FCM push-wake channel) is what would let the phone *fully* deep-sleep with
-the socket down and still revive — the next step if aggressive OEMs kill even the foreground
-service.
+**On-battery-idle reliability:** option (a) is now **implemented** — the battery-optimization
+exemption plus a CPU wakelock held while unplugged keep the socket alive through Doze off-charger,
+hosted by the persistent accessibility service (no foreground service, so no notification). Option
+(b), server-side queue-until-reconnect, remains deferred; it (plus an FCM push-wake channel) is
+what would let the phone *fully* deep-sleep with the socket down and still revive — the next step
+if aggressive OEMs kill the app process outright.
 
-**Aggressive OEMs (Samsung/Xiaomi/Huawei/Oppo).** A foreground service + battery-opt exemption is
-the standard mitigation, but some ROMs sleep apps anyway. **Samsung One UI:** add the app to
-**Settings → Battery → Background usage limits → Never sleeping apps** (Device Care), or it will
-be deep-slept and the socket will drop despite everything above. See dontkillmyapp.com per brand.
+**Aggressive OEMs (Samsung/Xiaomi/Huawei/Oppo).** The battery-opt exemption + a "never sleeping"
+allowlist is the standard mitigation, and an *enabled accessibility service* is usually already
+exempt from OEM app-sleep (the system needs it running). **Samsung One UI:** if the socket still
+drops, add the app to **Settings → Battery → Background usage limits → Never sleeping apps** (Device
+Care). If some ROM kills the process anyway, the accessibility service is re-bound by the system and
+reconnects on the next screen-on. If that proves insufficient on a device, an **opt-in** foreground
+service (with its notification) is the escape hatch — kept off by default. See dontkillmyapp.com.
 
 ---
 
@@ -169,10 +177,11 @@ while charging**; the screen never sleeps and the lock question is moot.
 - **Secure keyguard** — unlock requires a human; re-locks on reboot. By design, unsolvable in SW.
 - **OEM background-activity-launch** — per-device; mitigated by the overlay permission, else fall
   back to Stay Awake.
-- **On-battery Doze latency** — countered by the foreground service + battery-opt exemption +
-  off-charger wakelock (implemented). Fully deep-sleeping the phone (socket down) and reviving it
-  still needs server queue-until-reconnect + an FCM push-wake channel (deferred).
-- **Aggressive OEM app-sleep** — Samsung/Xiaomi/etc. may freeze even a foreground service; needs a
-  per-brand "never sleeping" allowlisting by the user (Samsung step in the checklist above).
+- **On-battery Doze latency** — countered by the battery-opt exemption + off-charger wakelock
+  (implemented, no notification). Fully deep-sleeping the phone (socket down) and reviving it still
+  needs server queue-until-reconnect + an FCM push-wake channel (deferred).
+- **Aggressive OEM app-sleep** — Samsung/Xiaomi/etc. may still freeze the app; needs a per-brand
+  "never sleeping" allowlisting by the user (Samsung step above), with the accessibility-service
+  re-bind + reconnect as the safety net, and an opt-in foreground service as a last resort.
 - **Post-wake window** — the display sleeps again after the system timeout; the next command
   just auto-wakes it. Long sessions that want to avoid the wake latency should use Stay Awake.
