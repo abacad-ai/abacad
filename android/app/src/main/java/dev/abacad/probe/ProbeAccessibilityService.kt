@@ -6,10 +6,16 @@ import android.accessibilityservice.AccessibilityService.ScreenshotResult
 import android.accessibilityservice.AccessibilityService.TakeScreenshotCallback
 import android.accessibilityservice.GestureDescription
 import android.app.KeyguardManager
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.Path
 import android.graphics.PixelFormat
@@ -60,6 +66,11 @@ class ProbeAccessibilityService : AccessibilityService() {
         const val KEY_SERVER_URL = "server_url"
         const val ACTION_RECONNECT = "dev.abacad.probe.RECONNECT"
 
+        /** Foreground-service notification: keeps the process (and its idle socket) alive
+         *  through screen-off so OEM battery managers don't freeze it. */
+        private const val CHANNEL_ID = "abacad_connection"
+        private const val NOTIF_ID = 1
+
         /** How long the keep-awake overlay lingers after the last command before the screen may sleep. */
         const val SESSION_KEEPALIVE_MS = 180_000L
 
@@ -77,6 +88,7 @@ class ProbeAccessibilityService : AccessibilityService() {
      *  socket survives Doze off-charger. On a charger there's no Doze, so we skip it (see
      *  [updateSessionWakeLock]). Distinct from [wakeLock], the transient wake-from-dark hold. */
     private var sessionWakeLock: PowerManager.WakeLock? = null
+    private var isForeground = false
     private var netCallback: ConnectivityManager.NetworkCallback? = null
 
     /** A 1px, invisible, non-interactive overlay carrying FLAG_KEEP_SCREEN_ON; see [keepScreenAwake]. */
@@ -154,6 +166,7 @@ class ProbeAccessibilityService : AccessibilityService() {
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
         releaseSessionWakeLock()
+        stopForegroundConnection()
         device?.close()
         device = null
         return super.onUnbind(intent)
@@ -167,17 +180,70 @@ class ProbeAccessibilityService : AccessibilityService() {
         if (url.isEmpty()) {
             Log.w(TAG, "no server URL set — open the app and enter ws://<host>:8848/device")
             ProbeStatus.setState(ProbeStatus.State.DISCONNECTED, "no server URL set — open the app to connect")
+            stopForegroundConnection()
             releaseSessionWakeLock()
             return
         }
         device = DeviceClient(url, ::execute).also { it.connect() }
-        // Hold the socket alive through screen-off so the device stays reachable while it "sleeps".
-        // No foreground service (and no permanent notification): the accessibility service is already
-        // a persistent, kill-resistant host, and the battery-opt exemption is what beats Doze.
+        // Run at foreground-service priority + hold the socket alive through screen-off so the
+        // device stays reachable while it "sleeps" (see docs/power-lockscreen.md).
+        startForegroundConnection()
         updateSessionWakeLock()
     }
 
-    // ---- connection keep-alive: off-charger wakelock + reconnect ----
+    // ---- connection keep-alive: foreground service + off-charger wakelock + reconnect ----
+
+    /**
+     * Promote this (system-bound) accessibility service to a foreground service with an ongoing,
+     * low-importance notification while we hold a connection. A foreground service is the strongest
+     * standard signal to keep the process off the OEM idle/kill path — the main defense against
+     * Samsung One UI freezing us (and dropping the socket) when the screen goes dark.
+     */
+    private fun startForegroundConnection() {
+        if (isForeground) return
+        ensureNotificationChannel()
+        try {
+            startForeground(NOTIF_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            isForeground = true
+            Log.i(TAG, "foreground service up")
+        } catch (e: Exception) {
+            // e.g. POST_NOTIFICATIONS denied on Android 13+: the service still runs, just without
+            // a visible notification. Don't let it crash the connection.
+            Log.w(TAG, "startForeground failed: ${e.message}")
+        }
+    }
+
+    private fun stopForegroundConnection() {
+        if (!isForeground) return
+        isForeground = false
+        try { stopForeground(Service.STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}
+    }
+
+    private fun ensureNotificationChannel() {
+        val nm = getSystemService(NotificationManager::class.java)
+        if (nm.getNotificationChannel(CHANNEL_ID) == null) {
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, "Connection", NotificationManager.IMPORTANCE_LOW).apply {
+                    description = "Keeps Abacad reachable so an agent can drive this device."
+                    setShowBadge(false)
+                },
+            )
+        }
+    }
+
+    private fun buildNotification(): Notification {
+        val tap = PendingIntent.getActivity(
+            this, 0, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
+        return Notification.Builder(this, CHANNEL_ID)
+            .setContentTitle("Abacad")
+            .setContentText("Keeping this device reachable for the agent")
+            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setOngoing(true)
+            .setContentIntent(tap)
+            .build()
+    }
 
     /**
      * Hold a CPU wakelock for the life of the connection, but only off-charger. On a charger Doze
