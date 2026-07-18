@@ -30,6 +30,8 @@ class DeviceClient(
     private val handler = Handler(Looper.getMainLooper())
     private var ws: WebSocket? = null
     private var closed = false
+    private var connected = false
+    private val reconnectRunnable = Runnable { open() }
     private var backoffMs = 1000L
 
     fun connect() {
@@ -37,8 +39,23 @@ class DeviceClient(
         open()
     }
 
+    /**
+     * Bring the socket back *now* if it isn't up — called on screen-on / network-regained so a
+     * socket that died during idle doesn't wait out the backoff. Resets the backoff and, if we're
+     * not currently connected, cancels any pending delayed reconnect and dials immediately. A
+     * no-op while the socket is healthy.
+     */
+    fun forceReconnect() {
+        if (closed || connected) return
+        backoffMs = 1000L
+        handler.removeCallbacks(reconnectRunnable)
+        open()
+    }
+
     fun close() {
         closed = true
+        connected = false
+        handler.removeCallbacks(reconnectRunnable)
         try { ws?.close(1000, "bye") } catch (_: Exception) {}
         ws = null
         ProbeStatus.setState(ProbeStatus.State.DISCONNECTED, "disconnected")
@@ -57,12 +74,15 @@ class DeviceClient(
         backoffMs = (backoffMs * 2).coerceAtMost(15000L)
         Log.i(tag, "ws reconnect in ${delay}ms")
         ProbeStatus.setState(ProbeStatus.State.RECONNECTING, "reconnecting in ${delay}ms")
-        handler.postDelayed({ open() }, delay)
+        handler.removeCallbacks(reconnectRunnable)
+        handler.postDelayed(reconnectRunnable, delay)
     }
 
     private val listener = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
+            if (webSocket !== ws) return // stale socket (superseded by a forceReconnect)
             Log.i(tag, "ws open -> $url")
+            connected = true
             ProbeStatus.setState(ProbeStatus.State.CONNECTED, "connected to $url")
             backoffMs = 1000L
         }
@@ -99,6 +119,8 @@ class DeviceClient(
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            if (webSocket !== ws) return // stale socket; a newer one is already live/connecting
+            connected = false
             val reason = t.message ?: t.javaClass.simpleName
             Log.w(tag, "ws failure: $reason")
             ProbeStatus.event("connection failed: $reason")
@@ -106,6 +128,8 @@ class DeviceClient(
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            if (webSocket !== ws) return
+            connected = false
             Log.i(tag, "ws closed: $code $reason")
             ProbeStatus.event("connection closed: $code ${reason.ifEmpty { "(no reason)" }}")
             scheduleReconnect()

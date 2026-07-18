@@ -6,15 +6,24 @@ import android.accessibilityservice.AccessibilityService.ScreenshotResult
 import android.accessibilityservice.AccessibilityService.TakeScreenshotCallback
 import android.accessibilityservice.GestureDescription
 import android.app.KeyguardManager
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.hardware.HardwareBuffer
+import android.net.ConnectivityManager
+import android.net.Network
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -57,6 +66,11 @@ class ProbeAccessibilityService : AccessibilityService() {
         const val KEY_SERVER_URL = "server_url"
         const val ACTION_RECONNECT = "dev.abacad.probe.RECONNECT"
 
+        /** Foreground-service notification: keeps the process (and its idle socket) alive
+         *  through screen-off so OEM battery managers don't freeze it. */
+        private const val CHANNEL_ID = "abacad_connection"
+        private const val NOTIF_ID = 1
+
         /** How long the keep-awake overlay lingers after the last command before the screen may sleep. */
         const val SESSION_KEEPALIVE_MS = 180_000L
 
@@ -69,6 +83,13 @@ class ProbeAccessibilityService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
     private var device: DeviceClient? = null
     private var wakeLock: PowerManager.WakeLock? = null
+
+    /** Held for the life of the connection but only while unplugged, so pings keep firing and the
+     *  socket survives Doze off-charger. On a charger there's no Doze, so we skip it (see
+     *  [updateSessionWakeLock]). Distinct from [wakeLock], the transient wake-from-dark hold. */
+    private var sessionWakeLock: PowerManager.WakeLock? = null
+    private var isForeground = false
+    private var netCallback: ConnectivityManager.NetworkCallback? = null
 
     /** A 1px, invisible, non-interactive overlay carrying FLAG_KEEP_SCREEN_ON; see [keepScreenAwake]. */
     private var keepAwakeView: View? = null
@@ -97,6 +118,18 @@ class ProbeAccessibilityService : AccessibilityService() {
         }
     }
 
+    /** System power/screen signals. Screen-on & unlock force an immediate reconnect (so a socket
+     *  that died during idle comes back at once instead of waiting out the backoff); power
+     *  plugged/unplugged re-evaluates the off-charger session wakelock. */
+    private val systemReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> device?.forceReconnect()
+                Intent.ACTION_POWER_CONNECTED, Intent.ACTION_POWER_DISCONNECTED -> updateSessionWakeLock()
+            }
+        }
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         Log.i(TAG, "service LIVE — ${Build.MANUFACTURER} ${Build.MODEL} sdk=${Build.VERSION.SDK_INT}")
@@ -106,6 +139,18 @@ class ProbeAccessibilityService : AccessibilityService() {
         } else {
             registerReceiver(reconnectReceiver, filter)
         }
+        // Screen/power broadcasts are protected system actions — they can only be received via a
+        // runtime-registered receiver, never the manifest.
+        registerReceiver(
+            systemReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_USER_PRESENT)
+                addAction(Intent.ACTION_POWER_CONNECTED)
+                addAction(Intent.ACTION_POWER_DISCONNECTED)
+            },
+        )
+        registerNetworkCallback()
         connectFromPrefs()
     }
 
@@ -114,10 +159,14 @@ class ProbeAccessibilityService : AccessibilityService() {
 
     override fun onUnbind(intent: Intent?): Boolean {
         try { unregisterReceiver(reconnectReceiver) } catch (_: Exception) {}
+        try { unregisterReceiver(systemReceiver) } catch (_: Exception) {}
+        unregisterNetworkCallback()
         handler.removeCallbacks(dropKeepAwake)
         releaseScreenAwake()
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
+        releaseSessionWakeLock()
+        stopForegroundConnection()
         device?.close()
         device = null
         return super.onUnbind(intent)
@@ -131,9 +180,123 @@ class ProbeAccessibilityService : AccessibilityService() {
         if (url.isEmpty()) {
             Log.w(TAG, "no server URL set — open the app and enter ws://<host>:8848/device")
             ProbeStatus.setState(ProbeStatus.State.DISCONNECTED, "no server URL set — open the app to connect")
+            stopForegroundConnection()
+            releaseSessionWakeLock()
             return
         }
         device = DeviceClient(url, ::execute).also { it.connect() }
+        // Run at foreground-service priority + hold the socket alive through screen-off so the
+        // device stays reachable while it "sleeps" (see docs/power-lockscreen.md).
+        startForegroundConnection()
+        updateSessionWakeLock()
+    }
+
+    // ---- connection keep-alive: foreground service + off-charger wakelock + reconnect ----
+
+    /**
+     * Promote this (system-bound) accessibility service to a foreground service with an ongoing,
+     * low-importance notification while we hold a connection. A foreground service is the strongest
+     * standard signal to keep the process off the OEM idle/kill path — the main defense against
+     * Samsung One UI freezing us (and dropping the socket) when the screen goes dark.
+     */
+    private fun startForegroundConnection() {
+        if (isForeground) return
+        ensureNotificationChannel()
+        try {
+            startForeground(NOTIF_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            isForeground = true
+            Log.i(TAG, "foreground service up")
+        } catch (e: Exception) {
+            // e.g. POST_NOTIFICATIONS denied on Android 13+: the service still runs, just without
+            // a visible notification. Don't let it crash the connection.
+            Log.w(TAG, "startForeground failed: ${e.message}")
+        }
+    }
+
+    private fun stopForegroundConnection() {
+        if (!isForeground) return
+        isForeground = false
+        try { stopForeground(Service.STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}
+    }
+
+    private fun ensureNotificationChannel() {
+        val nm = getSystemService(NotificationManager::class.java)
+        if (nm.getNotificationChannel(CHANNEL_ID) == null) {
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, "Connection", NotificationManager.IMPORTANCE_LOW).apply {
+                    description = "Keeps Abacad reachable so an agent can drive this device."
+                    setShowBadge(false)
+                },
+            )
+        }
+    }
+
+    private fun buildNotification(): Notification {
+        val tap = PendingIntent.getActivity(
+            this, 0, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
+        return Notification.Builder(this, CHANNEL_ID)
+            .setContentTitle("Abacad")
+            .setContentText("Keeping this device reachable for the agent")
+            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setOngoing(true)
+            .setContentIntent(tap)
+            .build()
+    }
+
+    /**
+     * Hold a CPU wakelock for the life of the connection, but only off-charger. On a charger Doze
+     * never engages, so the socket survives without it and pinning the CPU would just waste power;
+     * unplugged, the wakelock keeps the 20s pings firing so the socket doesn't half-open in Doze.
+     * Re-evaluated on connect/disconnect and on power connected/disconnected.
+     */
+    private fun updateSessionWakeLock() {
+        if (device != null && !isPluggedIn()) acquireSessionWakeLock() else releaseSessionWakeLock()
+    }
+
+    private fun acquireSessionWakeLock() {
+        if (sessionWakeLock?.isHeld == true) return
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        @Suppress("DEPRECATION")
+        sessionWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "abacad:session").apply {
+            setReferenceCounted(false)
+            acquire()
+        }
+        Log.i(TAG, "session wakelock acquired (off-charger)")
+    }
+
+    private fun releaseSessionWakeLock() {
+        sessionWakeLock?.let { if (it.isHeld) it.release() }
+        sessionWakeLock = null
+    }
+
+    /** True when plugged into AC/USB/wireless, regardless of charge level (read from the sticky
+     *  battery broadcast so a full-but-plugged device still counts as "on charger"). */
+    private fun isPluggedIn(): Boolean {
+        val i = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)) ?: return false
+        return i.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0
+    }
+
+    private fun registerNetworkCallback() {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return
+        val cb = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                // Off-main-thread callback: hop to the main handler DeviceClient runs on.
+                handler.post { device?.forceReconnect() }
+            }
+        }
+        netCallback = cb
+        try { cm.registerDefaultNetworkCallback(cb) } catch (e: Exception) {
+            Log.w(TAG, "registerDefaultNetworkCallback failed: ${e.message}")
+            netCallback = null
+        }
+    }
+
+    private fun unregisterNetworkCallback() {
+        val cm = getSystemService(ConnectivityManager::class.java)
+        netCallback?.let { try { cm?.unregisterNetworkCallback(it) } catch (_: Exception) {} }
+        netCallback = null
     }
 
     /**

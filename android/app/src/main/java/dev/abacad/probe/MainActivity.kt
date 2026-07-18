@@ -3,9 +3,12 @@ package dev.abacad.probe
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Typeface
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.text.format.DateFormat
 import android.widget.Button
@@ -29,6 +32,7 @@ class MainActivity : Activity() {
 
     private companion object {
         const val REQ_SCAN = 1
+        const val REQ_NOTIF = 2
     }
 
     private lateinit var urlField: EditText
@@ -104,6 +108,25 @@ class MainActivity : Activity() {
             }
         }
 
+        // Battery-optimization exemption keeps the held socket alive through Doze off-charger; the
+        // foreground service does the rest. Deep-links straight to the system grant.
+        val batteryBtn = Button(this).apply {
+            text = "Ignore Battery Optimization"
+            setOnClickListener {
+                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                if (pm.isIgnoringBatteryOptimizations(packageName)) {
+                    Toast.makeText(this@MainActivity, "Already exempt from battery optimization", Toast.LENGTH_SHORT).show()
+                } else {
+                    startActivity(
+                        Intent(
+                            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                            Uri.parse("package:$packageName"),
+                        ),
+                    )
+                }
+            }
+        }
+
         val info = TextView(this).apply {
             textSize = 13f
             text = """
@@ -125,8 +148,14 @@ class MainActivity : Activity() {
                     a secure lock cannot be auto-unlocked).
                   • Tap "Allow Display Over Other Apps" so auto-wake can turn the
                     screen back on reliably on strict OEM ROMs.
-                The device sleeps on its own display timeout; the agent wakes it
-                automatically when it needs the screen.
+                  • Tap "Ignore Battery Optimization" so the connection survives
+                    Doze while the screen is off.
+                  • Samsung only: Settings → Battery → Background usage limits →
+                    add Abacad Probe to "Never sleeping apps" (One UI will otherwise
+                    sleep the app and drop the connection).
+                The device stays connected while its screen sleeps; the agent wakes
+                the screen automatically when it needs it (a one-time ~few-second cost),
+                then runs at normal latency.
                 See docs/power-lockscreen.md for the full support matrix.
 
                 Logs:  adb logcat -s ABACAD
@@ -141,8 +170,18 @@ class MainActivity : Activity() {
         root.addView(connectBtn)
         root.addView(a11yBtn)
         root.addView(overlayBtn)
+        root.addView(batteryBtn)
         root.addView(info)
         setContentView(ScrollView(this).apply { addView(root) })
+
+        // Android 13+: the foreground-service notification needs POST_NOTIFICATIONS to be visible.
+        // The service still runs without it, but the ongoing notification is the user's signal that
+        // the device is connected, so ask once up front.
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIF)
+        }
     }
 
     override fun onResume() {
