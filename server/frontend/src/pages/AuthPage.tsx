@@ -1,15 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  ArrowRight,
-  Eye,
-  EyeOff,
-  KeyRound,
-  LoaderCircle,
-  MonitorSmartphone,
-  Radio,
-  ShieldCheck,
-} from "lucide-react";
+import { ArrowRight, Eye, EyeOff, LoaderCircle, MonitorSmartphone, MoveRight } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/auth";
 import { Button } from "@/components/ui/button";
@@ -48,72 +39,42 @@ export function AuthPage() {
   };
 
   return (
-    <main className="grid min-h-dvh bg-canvas text-ink lg:grid-cols-[minmax(0,1.05fr)_minmax(440px,0.95fr)]">
-      <section className="relative hidden min-h-dvh overflow-hidden border-r border-border bg-sidebar p-12 lg:flex lg:flex-col">
-        <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-md border border-brand/25 bg-brand-soft text-brand">
-            <MonitorSmartphone size={21} strokeWidth={2.2} />
+    <main className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-canvas px-4 py-12 text-ink">
+      <div className="bg-grid pointer-events-none absolute inset-0" aria-hidden="true" />
+      <div className="glow-brand pointer-events-none absolute inset-0" aria-hidden="true" />
+
+      <div className="relative w-full max-w-[420px]">
+        <div className="mb-9 flex flex-col items-center text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-lg border border-brand/30 bg-brand-soft text-brand">
+            <MonitorSmartphone size={24} strokeWidth={2.2} />
           </span>
-          <div>
-            <p className="text-base font-bold leading-5">Abacad</p>
-            <p className="text-xs text-ink-subtle">Device relay</p>
-          </div>
-        </div>
-
-        <div className="my-auto max-w-xl py-16">
-          <p className="mb-4 text-sm font-semibold text-brand">Remote control plane</p>
-          <h1 className="max-w-lg text-4xl font-semibold leading-[1.12] text-ink">
-            Your agents, connected to the devices that do the work.
-          </h1>
-          <p className="mt-5 max-w-lg text-base leading-7 text-ink-muted">
-            Pair phones and machines once, then route agent commands through a single authenticated MCP endpoint.
+          <p className="mt-4 font-display text-[26px] font-bold uppercase leading-8 tracking-[0.28em] text-ink">
+            Abacad
           </p>
-
-          <div className="mt-10 max-w-lg rounded-lg border border-border bg-canvas/60 p-4">
-            <ConnectionRow icon={KeyRound} label="Agent" detail="MCP over HTTPS" active />
-            <div className="ml-[19px] h-5 border-l border-dashed border-border-strong" />
-            <ConnectionRow icon={Radio} label="Abacad relay" detail="Authenticated routing" active />
-            <div className="ml-[19px] h-5 border-l border-dashed border-border-strong" />
-            <ConnectionRow icon={MonitorSmartphone} label="Your devices" detail="Outbound secure connection" />
-          </div>
+          <p className="mt-1.5 font-mono text-[11px] uppercase tracking-[0.22em] text-ink-subtle">
+            device relay console
+          </p>
         </div>
 
-        <div className="flex items-center gap-2 text-xs text-ink-subtle">
-          <ShieldCheck size={16} className="text-brand" />
-          Tokens are stored as secure hashes and secrets are shown once.
-        </div>
-      </section>
-
-      <section className="flex min-h-dvh items-center justify-center px-4 py-10 sm:px-8 lg:px-12">
-        <div className="w-full max-w-[420px]">
-          <div className="mb-9 flex items-center gap-3 lg:hidden">
-            <span className="flex h-10 w-10 items-center justify-center rounded-md border border-brand/25 bg-brand-soft text-brand">
-              <MonitorSmartphone size={21} strokeWidth={2.2} />
-            </span>
-            <div>
-              <p className="font-bold leading-5">Abacad</p>
-              <p className="text-xs text-ink-subtle">Device relay</p>
-            </div>
-          </div>
-
-          <div className="mb-7">
-            <h1 className="text-2xl font-semibold text-ink">
-              {mode === "login" ? "Sign in to your workspace" : "Create your workspace"}
+        <div className="rounded-[10px] border border-border bg-surface p-6 shadow-[0_24px_64px_rgba(0,0,0,0.45)] sm:p-7">
+          <div className="mb-6">
+            <h1 className="font-display text-xl font-bold text-ink">
+              {mode === "login" ? "Sign in" : "Create account"}
             </h1>
-            <p className="mt-2 text-sm leading-6 text-ink-muted">
+            <p className="mt-1.5 text-sm leading-6 text-ink-muted">
               {mode === "login"
                 ? "Manage paired devices and your agent connection."
                 : "Set up an account, then pair your first device."}
             </p>
           </div>
 
-          <div className="mb-6 grid grid-cols-2 rounded-md border border-border bg-sidebar p-1" aria-label="Authentication mode">
+          <div className="mb-6 grid grid-cols-2 rounded-md border border-border bg-canvas p-1" aria-label="Authentication mode">
             <button
               type="button"
               onClick={() => switchMode("login")}
               className={cn(
-                "h-10 rounded-[4px] text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
-                mode === "login" ? "bg-surface-raised text-ink shadow-sm" : "text-ink-muted hover:text-ink",
+                "h-9 rounded-[4px] text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
+                mode === "login" ? "bg-surface-raised text-ink" : "text-ink-muted hover:text-ink",
               )}
               aria-pressed={mode === "login"}
             >
@@ -123,8 +84,8 @@ export function AuthPage() {
               type="button"
               onClick={() => switchMode("register")}
               className={cn(
-                "h-10 rounded-[4px] text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
-                mode === "register" ? "bg-surface-raised text-ink shadow-sm" : "text-ink-muted hover:text-ink",
+                "h-9 rounded-[4px] text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
+                mode === "register" ? "bg-surface-raised text-ink" : "text-ink-muted hover:text-ink",
               )}
               aria-pressed={mode === "register"}
             >
@@ -208,32 +169,18 @@ export function AuthPage() {
             </button>
           </p>
         </div>
-      </section>
-    </main>
-  );
-}
 
-function ConnectionRow({
-  icon: Icon,
-  label,
-  detail,
-  active = false,
-}: {
-  icon: typeof KeyRound;
-  label: string;
-  detail: string;
-  active?: boolean;
-}) {
-  return (
-    <div className="flex items-center gap-3">
-      <span className={cn("flex h-10 w-10 items-center justify-center rounded-md border", active ? "border-brand/25 bg-brand-soft text-brand" : "border-border bg-surface text-ink-muted")}>
-        <Icon size={18} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-ink">{label}</p>
-        <p className="text-xs text-ink-subtle">{detail}</p>
+        <div className="mt-8 flex items-center justify-center gap-2 font-mono text-[11px] uppercase tracking-[0.14em]">
+          <span className="rounded border border-border bg-surface px-2.5 py-1.5 text-ink-muted">agent</span>
+          <MoveRight size={15} className="shrink-0 text-brand" aria-hidden="true" />
+          <span className="rounded border border-brand/25 bg-brand-soft px-2.5 py-1.5 text-brand">relay</span>
+          <MoveRight size={15} className="shrink-0 text-brand" aria-hidden="true" />
+          <span className="rounded border border-border bg-surface px-2.5 py-1.5 text-ink-muted">devices</span>
+        </div>
+        <p className="mt-4 text-center font-mono text-[10px] uppercase tracking-[0.2em] text-ink-subtle">
+          tokens hashed · secrets shown once
+        </p>
       </div>
-      <span className={cn("h-2 w-2 rounded-full", active ? "bg-success" : "bg-ink-subtle")} aria-hidden="true" />
-    </div>
+    </main>
   );
 }

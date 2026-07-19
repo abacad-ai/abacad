@@ -76,11 +76,11 @@ export function SshKeysCard() {
     <Card className="mt-5 overflow-hidden">
       <div className="flex flex-col gap-4 border-b border-border p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6">
         <div className="flex items-start gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-brand-soft text-brand">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-brand/25 bg-brand-soft text-brand">
             <KeyRound size={19} />
           </span>
           <div>
-            <h2 className="font-semibold text-ink">SSH access keys</h2>
+            <h2 className="font-display text-lg font-bold text-ink">SSH access keys</h2>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-ink-muted">
               Authorize the public keys that may reach your devices over SSH. A key identifies
               your account at the jump host; you then <code className="font-mono text-xs text-brand">ssh</code> to any
@@ -140,8 +140,8 @@ export function SshKeysCard() {
           }}
         >
           <div>
-            <label htmlFor="ssh-key-name" className="mb-1.5 block text-xs font-semibold uppercase text-ink-subtle">
-              Label <span className="font-normal normal-case text-ink-subtle">(optional)</span>
+            <label htmlFor="ssh-key-name" className="mb-1.5 block font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-ink-subtle">
+              Label <span className="font-normal normal-case tracking-normal">(optional)</span>
             </label>
             <Input
               id="ssh-key-name"
@@ -152,7 +152,7 @@ export function SshKeysCard() {
             />
           </div>
           <div>
-            <label htmlFor="ssh-key-value" className="mb-1.5 block text-xs font-semibold uppercase text-ink-subtle">
+            <label htmlFor="ssh-key-value" className="mb-1.5 block font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-ink-subtle">
               Public key
             </label>
             <textarea
@@ -178,12 +178,12 @@ export function SshKeysCard() {
           <div className="mt-6 border-t border-border pt-5">
             <div className="mb-2 flex items-center gap-2">
               <TerminalSquare size={16} className="text-brand" />
-              <p className="text-xs font-semibold uppercase text-ink-subtle">Add to ~/.ssh/config, once</p>
+              <p className="font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-ink-subtle">Add to ~/.ssh/config, once</p>
             </div>
             <CopyField value={sshConfig} className="whitespace-pre" />
             {sshHost && (
               <>
-                <p className="mb-2 mt-4 text-xs font-semibold uppercase text-ink-subtle">Then connect</p>
+                <p className="mb-2 mt-4 font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-ink-subtle">Then connect</p>
                 <CopyField value={`ssh ${sshHost}`} />
               </>
             )}

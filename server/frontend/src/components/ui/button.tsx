@@ -7,10 +7,10 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-brand text-on-brand shadow-[0_0_0_1px_rgba(255,255,255,0.06)] hover:bg-brand-strong",
+        default: "bg-brand font-bold text-on-brand shadow-[inset_0_1px_0_rgba(255,255,255,0.28)] hover:bg-brand-strong",
         outline: "border border-border-strong bg-surface text-ink hover:border-ink-subtle hover:bg-surface-hover",
         ghost: "text-ink-muted hover:bg-surface-hover hover:text-ink",
-        destructive: "bg-danger-soft text-danger hover:bg-danger-hover",
+        destructive: "border border-danger/30 bg-danger-soft text-danger hover:bg-danger-hover",
       },
       size: {
         default: "h-11 px-4",

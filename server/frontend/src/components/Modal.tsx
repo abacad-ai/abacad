@@ -81,13 +81,13 @@ export function Modal({
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
         className={cn(
-          "modal-panel max-h-[92dvh] w-full overflow-hidden rounded-t-lg border border-border bg-surface-raised shadow-2xl sm:max-w-lg sm:rounded-lg",
+          "modal-panel max-h-[92dvh] w-full overflow-hidden rounded-t-[10px] border border-border bg-surface-raised shadow-2xl sm:max-w-lg sm:rounded-[10px]",
           className,
         )}
       >
         <header className="flex items-start justify-between gap-4 border-b border-border px-5 py-4 sm:px-6">
           <div className="min-w-0">
-            <h2 id={titleId} className="text-base font-semibold text-ink">
+            <h2 id={titleId} className="font-display text-lg font-bold text-ink">
               {title}
             </h2>
             {description && (

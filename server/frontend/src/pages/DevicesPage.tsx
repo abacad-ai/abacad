@@ -12,8 +12,6 @@ import {
   ShieldCheck,
   Smartphone,
   Trash2,
-  Wifi,
-  WifiOff,
 } from "lucide-react";
 import { api, type DeviceEvent, type DeviceView } from "@/lib/api";
 import { clockTime, relativeTime } from "@/lib/utils";
@@ -80,26 +78,28 @@ function DeviceScreenshot({ device }: { device: DeviceView }) {
   }, [device.online, device.id, manualNonce]);
 
   return (
-    <div className="relative aspect-[9/16] w-24 shrink-0 overflow-hidden rounded-md border border-border bg-canvas sm:w-28">
+    <div className="scanlines relative flex h-64 items-center justify-center overflow-hidden bg-canvas sm:h-72">
       {device.online ? (
         <>
-          {src && <img src={src} alt={`${device.name} screen`} className="h-full w-full object-contain" />}
+          {src && (
+            <img src={src} alt={`${device.name} screen`} className="h-full w-auto max-w-full object-contain" />
+          )}
           {!src && !failed && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-ink-subtle">
-              <LoaderCircle size={20} className="animate-spin" />
-              <span className="text-[11px]">Capturing</span>
+              <LoaderCircle size={22} className="animate-spin" />
+              <span className="font-mono text-[11px] uppercase tracking-wider">Capturing</span>
             </div>
           )}
           {!src && failed && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-2 text-center text-ink-subtle">
-              <ImageOff size={21} />
-              <span className="text-[11px] leading-4">Capture unavailable</span>
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-3 text-center text-ink-subtle">
+              <ImageOff size={24} />
+              <span className="font-mono text-[11px] uppercase leading-4 tracking-wider">Capture unavailable</span>
             </div>
           )}
           <button
             type="button"
             onClick={() => setManualNonce((nonce) => nonce + 1)}
-            className="absolute bottom-1.5 right-1.5 flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-black/75 text-white transition-colors hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+            className="absolute bottom-2.5 right-2.5 z-10 flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-black/75 text-white transition-colors hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
             title="Refresh screenshot"
             aria-label={`Refresh screenshot for ${device.name}`}
           >
@@ -107,11 +107,14 @@ function DeviceScreenshot({ device }: { device: DeviceView }) {
           </button>
         </>
       ) : (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-ink-subtle">
-          <Smartphone size={25} strokeWidth={1.5} />
-          <span className="text-[11px] font-medium">Offline</span>
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-ink-subtle">
+          <Smartphone size={34} strokeWidth={1.25} />
+          <span className="font-mono text-[11px] uppercase tracking-[0.2em]">Signal lost</span>
         </div>
       )}
+      <div className="absolute left-2.5 top-2.5 z-10">
+        <DeviceStatus online={device.online} />
+      </div>
     </div>
   );
 }
@@ -184,7 +187,9 @@ function DeviceActivity({ device, onClose }: { device: DeviceView; onClose: () =
     >
       <div className="mb-4 flex flex-wrap items-center gap-2 text-xs">
         <DeviceStatus online={device.online} />
-        {!device.online && device.last_seen && <span className="text-ink-subtle">Last seen {relativeTime(device.last_seen)}</span>}
+        {!device.online && device.last_seen && (
+          <span className="font-mono text-[11px] text-ink-subtle">last seen {relativeTime(device.last_seen)}</span>
+        )}
       </div>
 
       {error && (
@@ -219,7 +224,7 @@ function DeviceActivity({ device, onClose }: { device: DeviceView; onClose: () =
                 <p className="mt-1 font-mono text-[11px] text-ink-subtle">{clockTime(event.ts)}</p>
               </div>
               {event.kind === "command" && (
-                <span className={`shrink-0 rounded px-2 py-1 text-[10px] font-bold uppercase ${outcomeStyle(event.outcome).badge}`}>
+                <span className={`shrink-0 rounded px-2 py-1 font-mono text-[10px] font-bold uppercase ${outcomeStyle(event.outcome).badge}`}>
                   {event.outcome ?? "pending"}
                 </span>
               )}
@@ -330,8 +335,10 @@ export function DevicesPage() {
     <div>
       <header className="mb-7 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase text-brand">Device workspace</p>
-          <h1 className="mt-2 text-2xl font-semibold text-ink sm:text-[28px]">Connected devices</h1>
+          <p className="font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-brand">
+            console / devices
+          </p>
+          <h1 className="mt-3 font-display text-3xl font-bold leading-tight text-ink sm:text-4xl">Devices</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">
             Monitor live screens, inspect command activity, and manage connection credentials.
           </p>
@@ -343,16 +350,16 @@ export function DevicesPage() {
       </header>
 
       {!loading && !error && devices.length > 0 && (
-        <div className="mb-5 flex flex-wrap items-center gap-x-5 gap-y-2 border-y border-border py-3 text-sm">
-          <span className="flex items-center gap-2 text-ink-muted">
-            <Wifi size={16} className="text-success" />
-            <strong className="font-semibold text-ink">{onlineCount}</strong> online
+        <div className="mb-6 flex flex-wrap items-center gap-2.5">
+          <span className="inline-flex h-8 items-center gap-2 rounded-full border border-success/20 bg-success-soft px-3 font-mono text-xs font-medium text-success">
+            <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-success" />
+            {onlineCount} online
           </span>
-          <span className="flex items-center gap-2 text-ink-muted">
-            <WifiOff size={16} />
-            <strong className="font-semibold text-ink">{devices.length - onlineCount}</strong> offline
+          <span className="inline-flex h-8 items-center gap-2 rounded-full border border-border bg-surface px-3 font-mono text-xs font-medium text-ink-muted">
+            <span className="h-1.5 w-1.5 rounded-full bg-ink-subtle" />
+            {devices.length - onlineCount} offline
           </span>
-          <span className="text-xs text-ink-subtle">Status refreshes every 5 seconds</span>
+          <span className="font-mono text-[11px] text-ink-subtle">refresh · 5s</span>
         </div>
       )}
 
@@ -366,15 +373,15 @@ export function DevicesPage() {
       )}
 
       {loading ? (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label="Loading devices">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" aria-label="Loading devices">
           {[0, 1, 2].map((item) => (
-            <div key={item} className="flex gap-4 rounded-lg border border-border bg-surface p-3">
-              <div className="skeleton aspect-[9/16] w-24 shrink-0 rounded-md sm:w-28" />
-              <div className="flex flex-1 flex-col py-2">
-                <div className="skeleton h-5 w-28 rounded" />
-                <div className="skeleton mt-3 h-4 w-36 rounded" />
-                <div className="skeleton mt-2 h-4 w-24 rounded" />
-                <div className="skeleton mt-auto h-10 w-full rounded-md" />
+            <div key={item} className="overflow-hidden rounded-[10px] border border-border bg-surface">
+              <div className="skeleton h-64 sm:h-72" />
+              <div className="p-4">
+                <div className="skeleton h-5 w-32 rounded" />
+                <div className="skeleton mt-3 h-3.5 w-40 rounded" />
+                <div className="skeleton mt-2 h-3.5 w-28 rounded" />
+                <div className="skeleton mt-4 h-10 w-full rounded-md" />
               </div>
             </div>
           ))}
@@ -389,11 +396,11 @@ export function DevicesPage() {
           </Button>
         </Card>
       ) : devices.length === 0 ? (
-        <section className="rounded-lg border border-dashed border-border-strong bg-sidebar px-5 py-14 text-center sm:py-20">
-          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-md bg-brand-soft text-brand">
+        <section className="rounded-[10px] border border-dashed border-border-strong bg-surface px-5 py-14 text-center sm:py-20">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-md border border-brand/25 bg-brand-soft text-brand">
             <Smartphone size={23} />
           </span>
-          <h2 className="mt-4 text-base font-semibold text-ink">Pair your first device</h2>
+          <h2 className="mt-4 font-display text-lg font-bold text-ink">Pair your first device</h2>
           <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-ink-muted">
             Create a device credential, then scan the QR code or paste its connection URL into the Abacad app.
           </p>
@@ -403,7 +410,7 @@ export function DevicesPage() {
           </Button>
         </section>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {devices.map((device) => (
             <DeviceCard
               key={device.id}
@@ -529,11 +536,11 @@ export function DevicesPage() {
             </div>
             <div className="min-w-0 space-y-4">
               <div>
-                <p className="mb-2 text-xs font-semibold uppercase text-ink-subtle">Connection URL</p>
+                <p className="mb-2 font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-ink-subtle">Connection URL</p>
                 <CopyField value={reveal.wssUrl} />
               </div>
               <div>
-                <p className="mb-2 text-xs font-semibold uppercase text-ink-subtle">Device token</p>
+                <p className="mb-2 font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-ink-subtle">Device token</p>
                 <CopyField value={reveal.token} />
               </div>
               <div className="flex items-start gap-2.5 border-t border-border pt-4 text-xs leading-5 text-ink-subtle">
@@ -574,47 +581,63 @@ function DeviceCard({
   onRemove: () => void;
 }) {
   return (
-    <Card className="flex min-w-0 flex-col p-3">
-      <div className="flex min-w-0 gap-4">
-        <DeviceScreenshot device={device} />
-        <div className="flex min-w-0 flex-1 flex-col py-1">
-          <DeviceStatus online={device.online} />
-          <h2 className="mt-3 break-words text-base font-semibold leading-5 text-ink">{device.name}</h2>
-          <div className="mt-3 space-y-2 text-xs leading-5 text-ink-muted">
-            <p className="flex items-start gap-2">
-              <Clock3 size={14} className="mt-0.5 shrink-0 text-ink-subtle" />
-              <span>
-                {device.online
-                  ? "Connected now"
-                  : device.last_seen
-                    ? `Last seen ${relativeTime(device.last_seen)}`
-                    : "Never connected"}
-              </span>
-            </p>
-            <p className="text-ink-subtle">Added {formatDate(device.created_at)}</p>
-          </div>
-          <div className="mt-auto pt-4">
-            <span className="font-mono text-[10px] text-ink-subtle" title={device.id}>
-              {device.id.slice(0, 12)}
-            </span>
-          </div>
-        </div>
-      </div>
+    <Card className="flex min-w-0 flex-col overflow-hidden transition-colors hover:border-border-strong">
+      <DeviceScreenshot device={device} />
 
-      <div className="mt-3 grid grid-cols-[minmax(0,1fr)_44px_44px_44px] gap-2 border-t border-border pt-3">
-        <Button variant="outline" size="sm" onClick={onActivity}>
-          <Activity size={15} />
-          Activity
-        </Button>
-        <Button variant="ghost" size="icon" onClick={onRename} title="Rename device" aria-label={`Rename ${device.name}`}>
-          <Pencil size={16} />
-        </Button>
-        <Button variant="ghost" size="icon" onClick={onRotate} title="Rotate token" aria-label={`Rotate token for ${device.name}`}>
-          <RefreshCw size={16} />
-        </Button>
-        <Button variant="ghost" size="icon" onClick={onRemove} title="Remove device" aria-label={`Remove ${device.name}`} className="hover:bg-danger-soft hover:text-danger">
-          <Trash2 size={16} />
-        </Button>
+      <div className="flex min-w-0 flex-1 flex-col p-4">
+        <h2 className="break-words font-display text-lg font-bold leading-6 text-ink">{device.name}</h2>
+
+        <div className="mt-2.5 space-y-1.5 font-mono text-[11px] leading-5 text-ink-subtle">
+          <p className="flex items-center gap-2">
+            <Clock3 size={13} className="shrink-0" />
+            {device.online
+              ? "connected now"
+              : device.last_seen
+                ? `last seen ${relativeTime(device.last_seen)}`
+                : "never connected"}
+          </p>
+          <p>added {formatDate(device.created_at)}</p>
+          <p className="truncate" title={device.id}>
+            id {device.id.slice(0, 12)}
+          </p>
+        </div>
+
+        <div className="mt-4 grid grid-cols-[minmax(0,1fr)_40px_40px_40px] gap-2 border-t border-border pt-3.5">
+          <Button variant="outline" size="sm" onClick={onActivity}>
+            <Activity size={15} />
+            Activity
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onRename}
+            title="Rename device"
+            aria-label={`Rename ${device.name}`}
+            className="h-10 w-10"
+          >
+            <Pencil size={16} />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onRotate}
+            title="Rotate token"
+            aria-label={`Rotate token for ${device.name}`}
+            className="h-10 w-10"
+          >
+            <RefreshCw size={16} />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onRemove}
+            title="Remove device"
+            aria-label={`Remove ${device.name}`}
+            className="h-10 w-10 hover:bg-danger-soft hover:text-danger"
+          >
+            <Trash2 size={16} />
+          </Button>
+        </div>
       </div>
     </Card>
   );
@@ -622,9 +645,15 @@ function DeviceCard({
 
 function DeviceStatus({ online }: { online: boolean }) {
   return (
-    <span className={`inline-flex h-7 w-fit items-center gap-2 rounded-full border px-2.5 text-xs font-semibold ${online ? "border-success/20 bg-success-soft text-success" : "border-border bg-surface-raised text-ink-muted"}`}>
-      {online ? <Wifi size={13} /> : <WifiOff size={13} />}
-      {online ? "Online" : "Offline"}
+    <span
+      className={`inline-flex h-7 w-fit items-center gap-2 rounded-full border px-2.5 font-mono text-[11px] font-medium uppercase tracking-wider ${
+        online
+          ? "border-success/25 bg-success-soft text-success"
+          : "border-border bg-surface-raised text-ink-muted"
+      }`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${online ? "pulse-dot bg-success" : "bg-ink-subtle"}`} />
+      {online ? "online" : "offline"}
     </span>
   );
 }
