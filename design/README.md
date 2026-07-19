@@ -34,10 +34,15 @@ them by hand.
   `danger` = disconnected. Each scheme carries its own contrast-tuned
   tones; `*-strong` variants are the deeper fill/hover versions within a
   scheme.
-- **`brand`** (green) is the product accent — same hue as `success` by
-  design: "connected" *is* the brand promise. The launcher icon
-  (`assets/icon.svg`) keeps its own blue/coral mark; that is the logo,
-  not the UI palette.
+- **`brand`** is a **neutral, colourless accent** — silver (`#d8dade`) in
+  dark, near-black (`#1d1d1f`) in light — so buttons and selection carry no
+  hue and the **status colours are the only colour in the interface**. This
+  is deliberate: abacad's job is telling you what's alive, so "connected"
+  green should be the thing that stands out, not the chrome. `brand-strong`
+  is the pressed/hover extreme (white / pure black); `brand-soft` is the
+  low-contrast chip behind selected nav and the avatar. The launcher icon
+  (`assets/icon.svg`) keeps its own blue/coral mark; that is the logo, not
+  the UI palette.
 - **Native chrome stays native.** The macOS menu-bar panel keeps system
   materials and fonts, and Android keeps DeviceDefault (DayNight) widgets;
   tokens supply the shared semantics (status colors, spacing, canvas) on
