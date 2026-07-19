@@ -22,6 +22,29 @@ func randToken(n int) string {
 	return strings.ToLower(lowerBase32.EncodeToString(b))
 }
 
+// randLetters returns n random lowercase letters (a-z only, no digits). It uses
+// rejection sampling — bytes >= 234 (the largest multiple of 26 below 256) are
+// discarded — so every letter is equally likely, with no modulo bias.
+func randLetters(n int) string {
+	out := make([]byte, 0, n)
+	buf := make([]byte, n) // refilled as needed; usually enough in one pass
+	for len(out) < n {
+		if _, err := rand.Read(buf); err != nil {
+			panic("auth: crypto/rand failed: " + err.Error())
+		}
+		for _, x := range buf {
+			if x >= 234 {
+				continue
+			}
+			out = append(out, 'a'+x%26)
+			if len(out) == n {
+				break
+			}
+		}
+	}
+	return string(out)
+}
+
 // NewID makes a short unique identifier with the given prefix, e.g.
 // NewID("acc") -> "acc_ktp4h2n9...". Used for account, session, and similar
 // prefixed ids. Devices are the exception: they use NewDeviceID (no prefix).
@@ -29,13 +52,14 @@ func NewID(prefix string) string {
 	return prefix + "_" + randToken(10)
 }
 
-// NewDeviceID makes a bare, prefix-free identifier: a lowercase base32 random
-// string with no type tag and no dashes (e.g. "ktp4h2n9m3q7v1x8"). Devices use
-// this because their id shows up in URLs (/devices/<id>), in ssh hostnames, and
-// in the agent's device selection — places where a clean token reads best. Same
-// entropy as NewID, just without the "dev_" prefix.
+// NewDeviceID makes a bare, prefix-free identifier: a random string of lowercase
+// letters only — no type tag, no dashes, no digits (e.g. "ktphznmqvxbdfgwr").
+// Devices use this because their id shows up in URLs (/devices/<id>), in ssh
+// hostnames, and in the agent's device selection — places where a clean,
+// letters-only token reads best. 16 letters carries ~75 bits of entropy, on par
+// with NewID's 10 base32 bytes.
 func NewDeviceID() string {
-	return randToken(10)
+	return randLetters(16)
 }
 
 // NewSecret makes a longer, high-entropy secret token with the given prefix,
