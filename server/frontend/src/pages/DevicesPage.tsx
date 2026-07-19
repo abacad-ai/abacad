@@ -236,14 +236,15 @@ export function DevicesPage() {
 
 function DeviceCard({ device, factor }: { device: DeviceView; factor: FormFactor }) {
   const [aspect, setAspect] = useState<number | null>(null);
+  const [hasShot, setHasShot] = useState(false);
 
   return (
     <Link
       to={`/devices/${device.id}`}
       className="group flex min-w-0 flex-col gap-3 rounded-[1.4rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-4 focus-visible:ring-offset-canvas"
     >
-      <DeviceFrame factor={factor} aspect={aspect}>
-        <DeviceScreen device={device} factor={factor} onAspect={setAspect} />
+      <DeviceFrame factor={factor} aspect={aspect} bare={hasShot}>
+        <DeviceScreen device={device} factor={factor} onAspect={setAspect} onShot={setHasShot} />
       </DeviceFrame>
       <h3
         className="max-w-full truncate text-center font-display text-sm font-bold leading-tight text-ink transition-colors group-hover:text-brand"

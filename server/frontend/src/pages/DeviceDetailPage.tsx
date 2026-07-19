@@ -16,6 +16,7 @@ export function DeviceDetailPage() {
   const [device, setDevice] = useState<DeviceView | null>(null);
   const [events, setEvents] = useState<DeviceEvent[] | null>(null);
   const [aspect, setAspect] = useState<number | null>(null);
+  const [hasShot, setHasShot] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const loadedOnce = useRef(false);
@@ -116,9 +117,10 @@ export function DeviceDetailPage() {
             <DeviceFrame
               factor={factor}
               aspect={aspect}
+              bare={hasShot}
               maxWidth={factor === "handset" ? "max-w-[300px]" : "max-w-[640px]"}
             >
-              <DeviceScreen device={device} factor={factor} onAspect={setAspect} />
+              <DeviceScreen device={device} factor={factor} onAspect={setAspect} onShot={setHasShot} />
             </DeviceFrame>
 
             <div className="space-y-6">

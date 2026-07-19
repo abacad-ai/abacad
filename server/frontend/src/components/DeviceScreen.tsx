@@ -22,10 +22,14 @@ export function DeviceScreen({
   device,
   factor,
   onAspect,
+  onShot,
 }: {
   device: DeviceView;
   factor: FormFactor;
   onAspect: (ratio: number | null) => void;
+  // Reports whether a real screenshot is currently on screen (online or offline)
+  // vs. a placeholder — the frame drops its chrome when a screenshot is shown.
+  onShot?: (shown: boolean) => void;
 }) {
   const [liveFrame, setLiveFrame] = useState<string | null>(null);
   const [broken, setBroken] = useState(false);
@@ -77,6 +81,11 @@ export function DeviceScreen({
   const OfflineIcon = factor === "handset" ? Smartphone : Monitor;
   const shown = !broken ? liveFrame ?? savedFrame : null;
 
+  // Let the frame know whether a screenshot is up, so it can shed its chrome.
+  useEffect(() => {
+    onShot?.(!!shown);
+  }, [shown, onShot]);
+
   if (shown) {
     return (
       <img
@@ -113,30 +122,35 @@ export function DeviceScreen({
   );
 }
 
-// A lightweight frame: a hairline border and a soft shadow. When a screenshot
-// has loaded, the frame takes that image's exact aspect ratio, so the capture is
-// shown at its true shape — never cropped, never stretched. Until then (loading
-// or offline) it falls back to a device-shaped ratio: tall for a phone, wide for
-// a screen. Corner radius still signals form factor — very rounded for a phone,
-// gently rounded for a screen.
+// The screen container. With a screenshot up (`bare`), it sheds the device
+// chrome — no border, no fill — and just shows the capture with a lightly
+// rounded corner, online or offline. Without one, it keeps a hairline border
+// and fill so the "capturing"/"signal lost" placeholder reads as a device.
+// When a screenshot has loaded, the container takes that image's exact aspect
+// ratio, so the capture is shown at its true shape — never cropped, never
+// stretched. Until then it falls back to a device-shaped ratio: tall for a
+// phone, wide for a screen.
 export function DeviceFrame({
   factor,
   aspect,
   maxWidth,
+  bare,
   children,
 }: {
   factor: FormFactor;
   aspect: number | null;
   maxWidth?: string; // Tailwind max-w-* override; defaults to the grid-card cap.
+  bare?: boolean; // A screenshot is up: drop the border/fill and round less.
   children: React.ReactNode;
 }) {
-  const radius = factor === "handset" ? "rounded-[1.7rem]" : "rounded-[12px]";
+  const radius = bare ? "rounded-[10px]" : factor === "handset" ? "rounded-[1.7rem]" : "rounded-[12px]";
+  const chrome = bare ? "" : "border border-border bg-surface-raised";
   const ratio = aspect ?? (factor === "handset" ? 9 / 18.5 : 16 / 10);
   const cap = maxWidth ?? (factor === "handset" ? "max-w-[176px]" : "");
   return (
     <div className={`mx-auto w-full ${cap}`}>
       <div
-        className={`relative overflow-hidden border border-border bg-surface-raised shadow-[0_10px_24px_-16px_var(--shadow-strong)] transition-transform duration-200 hover:-translate-y-0.5 ${radius}`}
+        className={`relative overflow-hidden shadow-[0_10px_24px_-16px_var(--shadow-strong)] transition-transform duration-200 hover:-translate-y-0.5 ${chrome} ${radius}`}
         style={{ aspectRatio: ratio }}
       >
         {children}
