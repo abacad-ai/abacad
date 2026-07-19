@@ -19,6 +19,7 @@ export function DeviceDetailPage() {
   const [hasShot, setHasShot] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [needsKey, setNeedsKey] = useState(false);
   const loadedOnce = useRef(false);
 
   const load = useCallback(async () => {
@@ -54,6 +55,15 @@ export function DeviceDetailPage() {
     const timer = setInterval(() => void load(), DEVICE_POLL_MS);
     return () => clearInterval(timer);
   }, [load]);
+
+  // Only nudge users who haven't registered a key yet; SSH keys change rarely,
+  // so fetch once rather than on the device poll.
+  useEffect(() => {
+    void api
+      .sshKeys()
+      .then((k) => setNeedsKey(k.length === 0))
+      .catch(() => {});
+  }, []);
 
   const platform = device ? resolvePlatform(device) : null;
   const factor = platform?.factor ?? "desktop";
@@ -143,7 +153,16 @@ export function DeviceDetailPage() {
                     <p className="mb-2 font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-ink-subtle">
                       SSH
                     </p>
-                    <CopyField value={`ssh ${device.ssh_host}`} />
+                    <CopyField value={sshCommand(device.ssh_host)} />
+                    {needsKey && (
+                      <p className="mt-2 text-xs leading-5 text-ink-subtle">
+                        Register an{" "}
+                        <Link to="/settings" className="font-medium text-brand hover:underline">
+                          SSH key
+                        </Link>{" "}
+                        first.
+                      </p>
+                    )}
                   </div>
                 )}
               </Card>
@@ -160,6 +179,14 @@ export function DeviceDetailPage() {
       )}
     </div>
   );
+}
+
+// Self-contained ssh command for a device: the -J jump host is inlined so it
+// works with no ~/.ssh/config entry. The jump host is the ssh_host's parent
+// domain (2n6dl6v5icovhlhn.abacad.ai -> abacad.ai).
+function sshCommand(sshHost: string): string {
+  const jump = sshHost.slice(sshHost.indexOf(".") + 1);
+  return `ssh -J ${jump} ${sshHost}`;
 }
 
 function StatusPill({ online }: { online: boolean }) {

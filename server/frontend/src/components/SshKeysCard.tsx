@@ -1,18 +1,16 @@
 import { useEffect, useState } from "react";
-import { KeyRound, LoaderCircle, Plus, TerminalSquare, Trash2 } from "lucide-react";
-import { api, type DeviceView, type SshKey } from "@/lib/api";
+import { KeyRound, LoaderCircle, Plus, Trash2 } from "lucide-react";
+import { api, type SshKey } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/Modal";
-import { CopyField } from "@/components/CopyField";
 
 // SshKeysCard lets an account register the SSH public keys that authorize the
 // jump host (ssh <device>.<base-domain>). Keys are matched by fingerprint; the
 // public key is not a secret, so no reveal-once flow is needed.
 export function SshKeysCard() {
   const [keys, setKeys] = useState<SshKey[] | null>(null);
-  const [devices, setDevices] = useState<DeviceView[]>([]);
   const [name, setName] = useState("");
   const [pubkey, setPubkey] = useState("");
   const [busy, setBusy] = useState(false);
@@ -21,9 +19,7 @@ export function SshKeysCard() {
 
   const reload = async () => {
     try {
-      const [k, d] = await Promise.all([api.sshKeys(), api.devices()]);
-      setKeys(k);
-      setDevices(d);
+      setKeys(await api.sshKeys());
       setError(null);
     } catch (err) {
       setError((err as Error).message);
@@ -63,14 +59,6 @@ export function SshKeysCard() {
       setBusy(false);
     }
   };
-
-  // Derive the base domain from any device's ssh_host (e.g. dev-x.abacad.ai -> abacad.ai)
-  // to render a copy-paste-ready ssh config with the real values.
-  const sshHost = devices.find((d) => d.ssh_host)?.ssh_host;
-  const baseDomain = sshHost ? sshHost.slice(sshHost.indexOf(".") + 1) : null;
-  const sshConfig = baseDomain
-    ? `Host *.${baseDomain}\n    ProxyJump ${baseDomain}`
-    : null;
 
   return (
     <Card className="mt-5 overflow-hidden">
@@ -173,22 +161,10 @@ export function SshKeysCard() {
           </div>
         </form>
 
-        {/* Connection hint */}
-        {sshConfig && (
-          <div className="mt-6 border-t border-border pt-5">
-            <div className="mb-2 flex items-center gap-2">
-              <TerminalSquare size={16} className="text-brand" />
-              <p className="font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-ink-subtle">Add to ~/.ssh/config, once</p>
-            </div>
-            <CopyField value={sshConfig} className="whitespace-pre" />
-            {sshHost && (
-              <>
-                <p className="mb-2 mt-4 font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-ink-subtle">Then connect</p>
-                <CopyField value={`ssh ${sshHost}`} />
-              </>
-            )}
-          </div>
-        )}
+        <p className="mt-6 border-t border-border pt-5 text-sm leading-6 text-ink-muted">
+          Once a key is added, connect from any device's page — each carries a ready-to-run
+          <code className="mx-1 font-mono text-xs text-brand">ssh</code>command.
+        </p>
       </div>
 
       <Modal
