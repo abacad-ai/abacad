@@ -52,6 +52,7 @@ func (a *API) Handler() http.Handler {
 	mux.Handle("GET /api/auth/me", a.auth(a.me))
 	mux.Handle("GET /api/devices", a.auth(a.listDevices))
 	mux.Handle("POST /api/devices", a.auth(a.createDevice))
+	mux.Handle("GET /api/devices/{id}", a.auth(a.getDevice))
 	mux.Handle("PATCH /api/devices/{id}", a.auth(a.renameDevice))
 	mux.Handle("DELETE /api/devices/{id}", a.auth(a.deleteDevice))
 	mux.Handle("POST /api/devices/{id}/rotate-token", a.auth(a.rotateDeviceToken))
@@ -183,6 +184,21 @@ func (a *API) listDevices(w http.ResponseWriter, r *http.Request) {
 		out = append(out, a.viewDevice(d))
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// getDevice returns a single device the caller owns — the detail page loads it
+// directly by id so a deep link (or hard refresh) works without the full list.
+func (a *API) getDevice(w http.ResponseWriter, r *http.Request) {
+	d, err := a.Store.DeviceOwnedBy(r.PathValue("id"), account(r).ID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeErr(w, http.StatusNotFound, "device not found")
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not load device")
+		return
+	}
+	writeJSON(w, http.StatusOK, a.viewDevice(d))
 }
 
 func (a *API) createDevice(w http.ResponseWriter, r *http.Request) {

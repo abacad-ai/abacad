@@ -117,6 +117,7 @@ export const api = {
   logout: () => req<void>("/api/auth/logout", { method: "POST" }),
 
   devices: () => req<DeviceView[]>("/api/devices"),
+  device: (id: string) => req<DeviceView>(`/api/devices/${id}`),
   createDevice: (name: string) =>
     req<NewDevice>("/api/devices", { method: "POST", body: JSON.stringify({ name }) }),
   renameDevice: (id: string, name: string) =>

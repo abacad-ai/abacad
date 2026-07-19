@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from "@/auth";
 import { Layout } from "@/components/Layout";
 import { ActivitiesPage } from "@/pages/ActivitiesPage";
 import { AuthPage } from "@/pages/AuthPage";
+import { DeviceDetailPage } from "@/pages/DeviceDetailPage";
 import { DevicesPage } from "@/pages/DevicesPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 
@@ -40,6 +41,14 @@ export function App() {
             element={
               <Protected>
                 <DevicesPage />
+              </Protected>
+            }
+          />
+          <Route
+            path="/devices/:id"
+            element={
+              <Protected>
+                <DeviceDetailPage />
               </Protected>
             }
           />
