@@ -6,8 +6,9 @@
 #   1. the server — Docker image built from the local tree (linux/amd64),
 #      side-loaded over SSH and restarted via the compose project in
 #      /root/abacad.ai. No registry round-trip.
-#   2. the macOS client — .dmg built from macos/, uploaded into the served
-#      downloads dir: https://abacad.ai/downloads/abacad-macos-latest.dmg
+#   2. the macOS client — a Developer ID-signed, notarized + stapled .dmg built
+#      from macos/, uploaded into the served downloads dir:
+#      https://abacad.ai/downloads/abacad-macos-latest.dmg
 #
 # The image keeps the tag CI pushes (ghcr.io/abacad-ai/abacad:latest), so a
 # later `docker compose pull` on the host converges back to CI's build of main.
@@ -20,6 +21,11 @@ here="$(cd "$(dirname "$0")" && pwd)"
 HOST="${DEPLOY_HOST:-xyz-sg-1}"
 IMAGE="ghcr.io/abacad-ai/abacad:latest"
 COMPOSE_DIR="/root/abacad.ai"
+# macOS client signing: the team's Developer ID Application cert + a notary
+# keychain profile created once with `xcrun notarytool store-credentials
+# abacad-notary --key AuthKey_*.p8 --key-id … --issuer …`. Override via env.
+MAC_SIGN_IDENTITY="${MAC_SIGN_IDENTITY:-Developer ID Application: Beijing Xiaoyuanzhu Technology Co., Ltd. (R3845XW5FZ)}"
+MAC_NOTARY_PROFILE="${MAC_NOTARY_PROFILE:-abacad-notary}"
 # Must match the compose data volume + the ABACAD_DOWNLOADS path in the image.
 DOWNLOADS_DIR="$COMPOSE_DIR/data/abacad-downloads"
 DMG="$here/macos/build/abacad.dmg"
@@ -29,8 +35,10 @@ DMG_NAME="abacad-macos-latest.dmg"
 echo "== building server image ($IMAGE, linux/amd64) =="
 docker build --platform linux/amd64 -t "$IMAGE" -f "$here/server/Dockerfile" "$here/server"
 
-echo "== building macOS client dmg =="
-make -C "$here/macos" dmg
+echo "== building + notarizing macOS client dmg =="
+make -C "$here/macos" release \
+  SIGN_IDENTITY="$MAC_SIGN_IDENTITY" \
+  NOTARY_PROFILE="$MAC_NOTARY_PROFILE"
 
 echo "== shipping image to $HOST =="
 docker save "$IMAGE" | gzip | ssh "$HOST" 'gunzip | docker load'

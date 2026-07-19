@@ -23,21 +23,52 @@ directly to click points.
 ## Build (on a Mac — needs Swift/Xcode; a Linux box cannot build this)
 
 The bundle id is `ai.abacad.mac` (set in `Info.plist` and the `Makefile`; keep the
-two in sync if you ever change it). For distribution, set `SIGN_IDENTITY` to your
-Developer cert:
+two in sync if you ever change it).
 
 ```sh
 cd macos
 # ad-hoc signing (fine for local dev):
 make
-# or with your Developer identity (more stable TCC grants across rebuilds):
-make SIGN_IDENTITY="Apple Development: you@example.com (TEAMID)"
 open build/abacad.app
 ```
 
 > TCC (Accessibility, Screen Recording) grants are keyed to the signing identity +
 > bundle id. With ad-hoc signing (`-`), a rebuild can invalidate the grant and
-> re-prompt. A real Developer identity keeps the grant stable.
+> re-prompt. The real Developer ID identity keeps the grant stable.
+
+### Distribution build (signed + notarized)
+
+`make release` produces a Gatekeeper-clean `.dmg`: Developer ID Application
+signature, hardened runtime, secure timestamp, notarized by Apple, and the
+notarization ticket stapled onto both the `.app` and the `.dmg` (so it passes
+offline, even after the app is copied out of the image).
+
+```sh
+make release SIGN_IDENTITY="Developer ID Application: Beijing Xiaoyuanzhu Technology Co., Ltd. (R3845XW5FZ)"
+# → build/abacad.dmg   (signed, notarized, stapled)
+```
+
+Team `R3845XW5FZ`. `deploy.sh` runs this automatically (see `MAC_SIGN_IDENTITY` /
+`MAC_NOTARY_PROFILE` there).
+
+**One-time notary credential setup.** `make release` reads notary credentials
+from a keychain profile named `abacad-notary` (override with `NOTARY_PROFILE`).
+Create it once with an App Store Connect API key
+(App Store Connect → Users and Access → Integrations → Keys):
+
+```sh
+xcrun notarytool store-credentials abacad-notary \
+  --key AuthKey_XXXXXXXXXX.p8 --key-id XXXXXXXXXX \
+  --issuer 35f46605-144b-4c02-bb13-5874363169a8
+```
+
+Verify a finished build with:
+
+```sh
+spctl -a -vv build/abacad.app                                        # → accepted / Notarized Developer ID
+spctl -a -t open --context context:primary-signature -vv build/abacad.dmg
+xcrun stapler validate build/abacad.dmg                              # offline ticket check
+```
 
 ## Grant permissions (one-time, requires a human — cannot be scripted)
 
