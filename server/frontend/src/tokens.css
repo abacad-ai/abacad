@@ -1,5 +1,23 @@
 /* GENERATED from design/tokens.json — do not edit. Run: node design/generate.mjs */
+
 :root {
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-pill: 999px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 15px;
+  --text-lg: 17px;
+}
+
+/* Dark scheme — the base, and forced via data-theme="dark". */
+:root {
+  color-scheme: dark;
   --canvas: #07090d;
   --sidebar: #0b0e13;
   --surface: #0e1218;
@@ -25,16 +43,72 @@
   --danger-soft: #2b191c;
   --danger-hover: #3a1f24;
   --scrim: #000000aa;
-  --space-xs: 4px;
-  --space-sm: 8px;
-  --space-md: 12px;
-  --space-lg: 16px;
-  --space-xl: 24px;
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-pill: 999px;
-  --text-xs: 12px;
-  --text-sm: 13px;
-  --text-md: 15px;
-  --text-lg: 17px;
+  --shadow: #00000038;
+  --shadow-strong: #00000073;
+}
+
+/* Light scheme — auto (default: follow the system) … */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --canvas: #f6f7f9;
+    --sidebar: #eef0f4;
+    --surface: #ffffff;
+    --surface-raised: #f3f5f8;
+    --surface-hover: #e9edf2;
+    --border: #dce1e9;
+    --border-strong: #b8c2cf;
+    --ink: #171d26;
+    --ink-muted: #5a6577;
+    --ink-subtle: #8792a2;
+    --brand: #a16207;
+    --brand-strong: #7c4d05;
+    --brand-soft: #f8eed3;
+    --on-brand: #ffffff;
+    --success: #15803d;
+    --success-strong: #116531;
+    --success-soft: #dff3e6;
+    --warning: #b45309;
+    --warning-strong: #8f4008;
+    --warning-soft: #fbeeda;
+    --danger: #dc2626;
+    --danger-strong: #b91c1c;
+    --danger-soft: #fce8e8;
+    --danger-hover: #f8dada;
+    --scrim: #000000aa;
+    --shadow: #1b263414;
+    --shadow-strong: #1b263421;
+  }
+}
+
+/* … or forced via data-theme="light". */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --canvas: #f6f7f9;
+  --sidebar: #eef0f4;
+  --surface: #ffffff;
+  --surface-raised: #f3f5f8;
+  --surface-hover: #e9edf2;
+  --border: #dce1e9;
+  --border-strong: #b8c2cf;
+  --ink: #171d26;
+  --ink-muted: #5a6577;
+  --ink-subtle: #8792a2;
+  --brand: #a16207;
+  --brand-strong: #7c4d05;
+  --brand-soft: #f8eed3;
+  --on-brand: #ffffff;
+  --success: #15803d;
+  --success-strong: #116531;
+  --success-soft: #dff3e6;
+  --warning: #b45309;
+  --warning-strong: #8f4008;
+  --warning-soft: #fbeeda;
+  --danger: #dc2626;
+  --danger-strong: #b91c1c;
+  --danger-soft: #fce8e8;
+  --danger-hover: #f8dada;
+  --scrim: #000000aa;
+  --shadow: #1b263414;
+  --shadow-strong: #1b263421;
 }

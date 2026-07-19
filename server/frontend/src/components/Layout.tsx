@@ -4,6 +4,7 @@ import { type ReactNode } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/auth";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const navigation = [
   { to: "/", label: "Devices" },
@@ -53,26 +54,29 @@ export function Layout({ children }: { children: ReactNode }) {
             })}
           </nav>
 
-          {me && (
-            <div className="ml-auto flex items-center gap-2">
-              <span
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-brand/25 bg-brand-soft font-display text-[13px] font-bold text-brand"
-                title={me.email}
-              >
-                {me.email.slice(0, 1).toUpperCase()}
-              </span>
-              <span className="hidden max-w-44 truncate text-[13px] text-ink-muted md:block">{me.email}</span>
-              <button
-                type="button"
-                onClick={logout}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-                title="Sign out"
-                aria-label="Sign out"
-              >
-                <LogOut size={17} />
-              </button>
-            </div>
-          )}
+          <div className="ml-auto flex items-center gap-2">
+            <ThemeToggle />
+            {me && (
+              <>
+                <span
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-brand/25 bg-brand-soft font-display text-[13px] font-bold text-brand"
+                  title={me.email}
+                >
+                  {me.email.slice(0, 1).toUpperCase()}
+                </span>
+                <span className="hidden max-w-44 truncate text-[13px] text-ink-muted md:block">{me.email}</span>
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                  title="Sign out"
+                  aria-label="Sign out"
+                >
+                  <LogOut size={17} />
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </header>
 

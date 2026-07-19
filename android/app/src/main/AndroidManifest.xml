@@ -35,9 +35,10 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="Abacad Probe"
         android:usesCleartextTraffic="true"
-        android:theme="@android:style/Theme.DeviceDefault">
-        <!-- Dark DeviceDefault: matches the shared dark palette (design/tokens.json)
-             used by the dashboard and macOS agent; Theme.kt supplies the exact colors. -->
+        android:theme="@style/Theme.Abacad">
+        <!-- DayNight DeviceDefault (themes.xml): follows the system appearance, like
+             the dashboard and macOS agent; Theme.of(resources) supplies the matching
+             dark or light palette from design/tokens.json. -->
 
         <activity
             android:name=".MainActivity"
@@ -53,7 +54,7 @@
             android:name=".ScanActivity"
             android:exported="false"
             android:screenOrientation="portrait"
-            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+            android:theme="@style/Theme.Abacad.NoActionBar" />
 
         <service
             android:name=".ProbeAccessibilityService"

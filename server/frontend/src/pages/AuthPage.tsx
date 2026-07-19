@@ -56,7 +56,7 @@ export function AuthPage() {
           </p>
         </div>
 
-        <div className="rounded-[10px] border border-border bg-surface p-6 shadow-[0_24px_64px_rgba(0,0,0,0.45)] sm:p-7">
+        <div className="rounded-[10px] border border-border bg-surface p-6 shadow-[0_24px_64px_var(--shadow-strong)] sm:p-7">
           <div className="mb-6">
             <h1 className="font-display text-xl font-bold text-ink">
               {mode === "login" ? "Sign in" : "Create account"}

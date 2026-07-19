@@ -41,9 +41,10 @@
 }
 
 /* Palette + metrics live in tokens.css, generated from design/tokens.json —
-   the cross-platform source of truth shared with the Android and macOS clients. */
+   the cross-platform source of truth shared with the Android and macOS clients.
+   tokens.css also owns color-scheme; dark/light resolve from the system
+   preference (auto, the default) or a data-theme override on <html>. */
 :root {
-  color-scheme: dark;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }

@@ -62,7 +62,7 @@ class ScanActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val root = FrameLayout(this).apply { setBackgroundColor(Theme.CANVAS) }
+        val root = FrameLayout(this).apply { setBackgroundColor(Theme.of(resources).CANVAS) }
         textureView = TextureView(this)
         root.addView(
             textureView,
@@ -74,8 +74,10 @@ class ScanActivity : Activity() {
         hint = TextView(this).apply {
             text = "Point at the connection QR on the dashboard"
             textSize = Theme.TEXT_MD
-            setTextColor(Theme.INK)
-            setBackgroundColor(Theme.SCRIM)
+            // The hint floats on the scrim over the camera feed, which is dark in
+            // both schemes — pin the dark palette's ink so it stays readable.
+            setTextColor(Theme.DARK.INK)
+            setBackgroundColor(Theme.DARK.SCRIM)
             val p = (Theme.SPACE_MD * resources.displayMetrics.density).toInt()
             setPadding(p, p, p, p)
         }

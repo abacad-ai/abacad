@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DayNight DeviceDefault: system widgets follow the device appearance (auto
+     dark/light — the product default on every surface); Theme.kt supplies the
+     matching Abacad palette colors on top. -->
+<resources>
+    <style name="Theme.Abacad" parent="@android:style/Theme.DeviceDefault.DayNight" />
+
+    <style name="Theme.Abacad.NoActionBar">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>
