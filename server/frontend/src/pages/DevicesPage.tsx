@@ -78,7 +78,7 @@ function DeviceScreenshot({ device }: { device: DeviceView }) {
   }, [device.online, device.id, manualNonce]);
 
   return (
-    <div className="scanlines relative flex h-64 items-center justify-center overflow-hidden bg-canvas sm:h-72">
+    <div className="relative flex h-64 items-center justify-center overflow-hidden bg-canvas sm:h-72">
       {device.online ? (
         <>
           {src && (

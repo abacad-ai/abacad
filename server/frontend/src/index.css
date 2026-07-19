@@ -143,24 +143,6 @@ a {
   }
 }
 
-/* CRT-style scanline overlay for live device screens. */
-.scanlines {
-  position: relative;
-}
-
-.scanlines::after {
-  position: absolute;
-  inset: 0;
-  content: "";
-  pointer-events: none;
-  background: repeating-linear-gradient(
-    to bottom,
-    transparent 0 2px,
-    color-mix(in srgb, black 20%, transparent) 2px 3px
-  );
-  opacity: 0.35;
-}
-
 .skip-link {
   position: fixed;
   left: 16px;
