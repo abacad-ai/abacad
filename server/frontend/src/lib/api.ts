@@ -5,6 +5,7 @@ export interface DeviceView {
   id: string;
   name: string;
   online: boolean;
+  platform?: string; // e.g. "android", "macos"; blank if unset
   last_seen?: string;
   created_at: string;
   ssh_host?: string; // ssh <ssh_host> reaches this device via the jump host

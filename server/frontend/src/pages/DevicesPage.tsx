@@ -3,9 +3,9 @@ import { QRCodeSVG } from "qrcode.react";
 import {
   Activity,
   CheckCircle2,
-  Clock3,
   ImageOff,
   LoaderCircle,
+  Monitor,
   Pencil,
   Plus,
   RefreshCw,
@@ -37,7 +37,12 @@ function deviceWsUrl(token: string): string {
   return `${scheme}://${window.location.host}/device?token=${token}`;
 }
 
-function DeviceScreenshot({ device }: { device: DeviceView }) {
+type FormFactor = "handset" | "desktop";
+
+// The live screen — an absolutely-positioned layer that fills the frame's
+// screen cutout. The screenshot bleeds edge-to-edge (object-cover), so the
+// card reads as the device itself rather than a thumbnail in a box.
+function DeviceScreen({ device, factor }: { device: DeviceView; factor: FormFactor }) {
   const [src, setSrc] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [manualNonce, setManualNonce] = useState(0);
@@ -77,43 +82,78 @@ function DeviceScreenshot({ device }: { device: DeviceView }) {
     };
   }, [device.online, device.id, manualNonce]);
 
+  const OfflineIcon = factor === "handset" ? Smartphone : Monitor;
+
   return (
-    <div className="relative flex h-64 items-center justify-center overflow-hidden bg-canvas sm:h-72">
+    <>
       {device.online ? (
         <>
           {src && (
-            <img src={src} alt={`${device.name} screen`} className="h-full w-auto max-w-full object-contain" />
+            <img
+              src={src}
+              alt={`${device.name} screen`}
+              className="absolute inset-0 h-full w-full object-cover object-top"
+            />
           )}
           {!src && !failed && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-ink-subtle">
-              <LoaderCircle size={22} className="animate-spin" />
-              <span className="font-mono text-[11px] uppercase tracking-wider">Capturing</span>
+              <LoaderCircle size={20} className="animate-spin" />
+              <span className="font-mono text-[10px] uppercase tracking-wider">Capturing</span>
             </div>
           )}
           {!src && failed && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-3 text-center text-ink-subtle">
-              <ImageOff size={24} />
-              <span className="font-mono text-[11px] uppercase leading-4 tracking-wider">Capture unavailable</span>
+              <ImageOff size={22} />
+              <span className="font-mono text-[10px] uppercase leading-4 tracking-wider">No capture</span>
             </div>
           )}
           <button
             type="button"
             onClick={() => setManualNonce((nonce) => nonce + 1)}
-            className="absolute bottom-2.5 right-2.5 z-10 flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-black/75 text-white transition-colors hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+            className="absolute bottom-2 right-2 z-20 flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/55 text-white backdrop-blur transition-colors hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
             title="Refresh screenshot"
             aria-label={`Refresh screenshot for ${device.name}`}
           >
-            <RefreshCw size={15} />
+            <RefreshCw size={13} />
           </button>
         </>
       ) : (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-ink-subtle">
-          <Smartphone size={34} strokeWidth={1.25} />
-          <span className="font-mono text-[11px] uppercase tracking-[0.2em]">Signal lost</span>
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-ink-subtle">
+          <OfflineIcon size={factor === "handset" ? 24 : 30} strokeWidth={1.25} />
+          <span className="font-mono text-[10px] uppercase tracking-[0.22em]">Signal lost</span>
+          {device.last_seen && (
+            <span className="font-mono text-[10px]">seen {relativeTime(device.last_seen)}</span>
+          )}
         </div>
       )}
-      <div className="absolute left-2.5 top-2.5 z-10">
-        <DeviceStatus online={device.online} />
+
+      <span
+        className={`absolute z-20 inline-flex items-center gap-1.5 rounded-full px-2 py-1 font-mono text-[10px] font-medium uppercase tracking-wider backdrop-blur ${
+          factor === "handset" ? "bottom-2 left-2" : "left-2 top-2"
+        } ${
+          device.online
+            ? "bg-black/50 text-[#4ade80] ring-1 ring-[#4ade80]/30"
+            : "bg-surface/85 text-ink-muted ring-1 ring-border"
+        }`}
+      >
+        <span className={`h-1.5 w-1.5 rounded-full ${device.online ? "pulse-dot bg-[#4ade80]" : "bg-ink-subtle"}`} />
+        {device.online ? "online" : "offline"}
+      </span>
+    </>
+  );
+}
+
+// A lightweight frame: just a hairline border and a soft shadow. Form factor
+// shows through the aspect ratio and corner radius — very rounded for a phone,
+// gently rounded for a screen — while the capture bleeds to the edge.
+function DeviceFrame({ factor, children }: { factor: FormFactor; children: React.ReactNode }) {
+  const shape = factor === "handset" ? "aspect-[9/18.5] rounded-[1.7rem]" : "aspect-[16/10] rounded-[12px]";
+  return (
+    <div className={`mx-auto w-full ${factor === "handset" ? "max-w-[176px]" : ""}`}>
+      <div
+        className={`relative overflow-hidden border border-border bg-surface-raised shadow-[0_10px_24px_-16px_var(--shadow-strong)] transition-transform duration-200 hover:-translate-y-0.5 ${shape}`}
+      >
+        {children}
       </div>
     </div>
   );
@@ -329,39 +369,14 @@ export function DevicesPage() {
     });
   };
 
-  const onlineCount = devices.filter((device) => device.online).length;
-
   return (
     <div>
-      <header className="mb-7 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-brand">
-            console / devices
-          </p>
-          <h1 className="mt-3 font-display text-3xl font-bold leading-tight text-ink sm:text-4xl">Devices</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">
-            Monitor live screens, inspect command activity, and manage connection credentials.
-          </p>
-        </div>
+      <div className="mb-7 flex justify-end">
         <Button onClick={() => setAddOpen(true)}>
           <Plus size={17} />
           Add device
         </Button>
-      </header>
-
-      {!loading && !error && devices.length > 0 && (
-        <div className="mb-6 flex flex-wrap items-center gap-2.5">
-          <span className="inline-flex h-8 items-center gap-2 rounded-full border border-success/20 bg-success-soft px-3 font-mono text-xs font-medium text-success">
-            <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-success" />
-            {onlineCount} online
-          </span>
-          <span className="inline-flex h-8 items-center gap-2 rounded-full border border-border bg-surface px-3 font-mono text-xs font-medium text-ink-muted">
-            <span className="h-1.5 w-1.5 rounded-full bg-ink-subtle" />
-            {devices.length - onlineCount} offline
-          </span>
-          <span className="font-mono text-[11px] text-ink-subtle">refresh · 5s</span>
-        </div>
-      )}
+      </div>
 
       {actionError && (
         <div role="alert" className="mb-5 flex items-center justify-between gap-3 rounded-md border border-danger/25 bg-danger-soft px-4 py-3 text-sm text-danger">
@@ -373,16 +388,14 @@ export function DevicesPage() {
       )}
 
       {loading ? (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" aria-label="Loading devices">
+        <div
+          className="grid gap-x-5 gap-y-7 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]"
+          aria-label="Loading devices"
+        >
           {[0, 1, 2].map((item) => (
-            <div key={item} className="overflow-hidden rounded-[10px] border border-border bg-surface">
-              <div className="skeleton h-64 sm:h-72" />
-              <div className="p-4">
-                <div className="skeleton h-5 w-32 rounded" />
-                <div className="skeleton mt-3 h-3.5 w-40 rounded" />
-                <div className="skeleton mt-2 h-3.5 w-28 rounded" />
-                <div className="skeleton mt-4 h-10 w-full rounded-md" />
-              </div>
+            <div key={item} className="flex flex-col gap-3">
+              <div className="skeleton aspect-[16/10] rounded-[12px]" />
+              <div className="skeleton h-4 w-28 rounded" />
             </div>
           ))}
         </div>
@@ -410,19 +423,35 @@ export function DevicesPage() {
           </Button>
         </section>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {devices.map((device) => (
-            <DeviceCard
-              key={device.id}
-              device={device}
-              onActivity={() => setActivityId(device.id)}
-              onRename={() => {
-                setRenameDevice(device);
-                setRenameValue(device.name);
-              }}
-              onRotate={() => setRotateDevice(device)}
-              onRemove={() => setRemoveDevice(device)}
-            />
+        <div className="space-y-10">
+          {groupDevices(devices).map((group) => (
+            <section key={group.key}>
+              <h2 className="mb-4 font-display text-[13px] font-bold uppercase tracking-[0.16em] text-ink-muted">
+                {group.label}
+              </h2>
+              <div
+                className={
+                  group.factor === "handset"
+                    ? "grid gap-x-4 gap-y-6 [grid-template-columns:repeat(auto-fill,minmax(148px,1fr))]"
+                    : "grid gap-x-5 gap-y-7 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]"
+                }
+              >
+                {group.devices.map((device) => (
+                  <DeviceCard
+                    key={device.id}
+                    device={device}
+                    factor={group.factor}
+                    onActivity={() => setActivityId(device.id)}
+                    onRename={() => {
+                      setRenameDevice(device);
+                      setRenameValue(device.name);
+                    }}
+                    onRotate={() => setRotateDevice(device)}
+                    onRemove={() => setRemoveDevice(device)}
+                  />
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       )}
@@ -569,77 +598,80 @@ export function DevicesPage() {
 
 function DeviceCard({
   device,
+  factor,
   onActivity,
   onRename,
   onRotate,
   onRemove,
 }: {
   device: DeviceView;
+  factor: FormFactor;
   onActivity: () => void;
   onRename: () => void;
   onRotate: () => void;
   onRemove: () => void;
 }) {
+  const actions = (
+    <div className="flex shrink-0 items-center gap-0.5">
+      <IconAction icon={Activity} tip="Activity" aria={`View activity for ${device.name}`} onClick={onActivity} />
+      <IconAction icon={Pencil} tip="Rename" aria={`Rename ${device.name}`} onClick={onRename} />
+      <IconAction icon={RefreshCw} tip="Rotate token" aria={`Rotate token for ${device.name}`} onClick={onRotate} />
+      <IconAction icon={Trash2} tip="Remove" aria={`Remove ${device.name}`} onClick={onRemove} danger />
+    </div>
+  );
+
   return (
-    <Card className="flex min-w-0 flex-col overflow-hidden transition-colors hover:border-border-strong">
-      <DeviceScreenshot device={device} />
+    <div className="flex min-w-0 flex-col gap-3">
+      <DeviceFrame factor={factor}>
+        <DeviceScreen device={device} factor={factor} />
+      </DeviceFrame>
 
-      <div className="flex min-w-0 flex-1 flex-col p-4">
-        <h2 className="break-words font-display text-lg font-bold leading-6 text-ink">{device.name}</h2>
-
-        <div className="mt-2.5 space-y-1.5 font-mono text-[11px] leading-5 text-ink-subtle">
-          <p className="flex items-center gap-2">
-            <Clock3 size={13} className="shrink-0" />
-            {device.online
-              ? "connected now"
-              : device.last_seen
-                ? `last seen ${relativeTime(device.last_seen)}`
-                : "never connected"}
-          </p>
-          <p>added {formatDate(device.created_at)}</p>
-          <p className="truncate" title={device.id}>
-            id {device.id.slice(0, 12)}
-          </p>
+      {/* Narrow phone cards stack the name over the actions so it isn't crushed;
+          wider desktop cards keep name and actions on one line. */}
+      {factor === "handset" ? (
+        <div className="flex min-w-0 flex-col items-center gap-1.5">
+          <h3 className="max-w-full truncate text-center font-display text-sm font-bold leading-tight text-ink" title={device.name}>
+            {device.name}
+          </h3>
+          {actions}
         </div>
-
-        <div className="mt-4 grid grid-cols-[minmax(0,1fr)_40px_40px_40px] gap-2 border-t border-border pt-3.5">
-          <Button variant="outline" size="sm" onClick={onActivity}>
-            <Activity size={15} />
-            Activity
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onRename}
-            title="Rename device"
-            aria-label={`Rename ${device.name}`}
-            className="h-10 w-10"
-          >
-            <Pencil size={16} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onRotate}
-            title="Rotate token"
-            aria-label={`Rotate token for ${device.name}`}
-            className="h-10 w-10"
-          >
-            <RefreshCw size={16} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onRemove}
-            title="Remove device"
-            aria-label={`Remove ${device.name}`}
-            className="h-10 w-10 hover:bg-danger-soft hover:text-danger"
-          >
-            <Trash2 size={16} />
-          </Button>
+      ) : (
+        <div className="flex min-w-0 items-center gap-0.5 px-0.5">
+          <h3 className="min-w-0 flex-1 truncate font-display text-sm font-bold leading-tight text-ink" title={device.name}>
+            {device.name}
+          </h3>
+          {actions}
         </div>
-      </div>
-    </Card>
+      )}
+    </div>
+  );
+}
+
+function IconAction({
+  icon: Icon,
+  tip,
+  aria,
+  onClick,
+  danger,
+}: {
+  icon: typeof Activity;
+  tip: string;
+  aria: string;
+  onClick: () => void;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={tip}
+      aria-label={aria}
+      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-ink-subtle transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${
+        danger ? "hover:text-danger" : "hover:text-ink"
+      }`}
+    >
+      <Icon size={15} />
+    </button>
   );
 }
 
@@ -658,8 +690,84 @@ function DeviceStatus({ online }: { online: boolean }) {
   );
 }
 
-function formatDate(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "recently";
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+// --- platform grouping ---
+//
+// Devices carry a platform string (e.g. "android", "macos"). It can be blank on
+// older devices, so we fall back to inferring from the name. Everything maps to
+// a display label and a form factor, which drives both the section a device
+// lands in and the frame it wears.
+
+interface PlatformInfo {
+  label: string;
+  factor: FormFactor;
+}
+
+interface PlatformGroup extends PlatformInfo {
+  key: string;
+  devices: DeviceView[];
+}
+
+const KNOWN_PLATFORMS: Record<string, PlatformInfo> = {
+  macos: { label: "macOS", factor: "desktop" },
+  mac: { label: "macOS", factor: "desktop" },
+  darwin: { label: "macOS", factor: "desktop" },
+  osx: { label: "macOS", factor: "desktop" },
+  windows: { label: "Windows", factor: "desktop" },
+  win32: { label: "Windows", factor: "desktop" },
+  linux: { label: "Linux", factor: "desktop" },
+  android: { label: "Android", factor: "handset" },
+  ios: { label: "iOS", factor: "handset" },
+  ipados: { label: "iPadOS", factor: "handset" },
+};
+
+// Section order — desktops first, then handsets, with unrecognized labels last.
+const GROUP_ORDER = ["macOS", "Windows", "Linux", "Desktop", "iPadOS", "iOS", "Android", "Mobile", "Other"];
+
+function classifyText(text: string): PlatformInfo | null {
+  const t = text.toLowerCase();
+  if (/macbook|imac|mac ?mini|mac ?studio|\bmac\b|macos|osx|darwin/.test(t)) return { label: "macOS", factor: "desktop" };
+  if (/windows|\bwin\b|\bpc\b|thinkpad|surface/.test(t)) return { label: "Windows", factor: "desktop" };
+  if (/linux|ubuntu|debian|fedora|arch/.test(t)) return { label: "Linux", factor: "desktop" };
+  if (/iphone|ipad|\bios\b/.test(t)) return { label: "iOS", factor: "handset" };
+  if (/android|pixel|galaxy|samsung|\bzte\b|xiaomi|redmi|oneplus|oppo|vivo|nexus|moto|huawei|honor|nokia/.test(t))
+    return { label: "Android", factor: "handset" };
+  if (/phone|mobile|tablet/.test(t)) return { label: "Mobile", factor: "handset" };
+  if (/desktop|laptop|computer/.test(t)) return { label: "Desktop", factor: "desktop" };
+  return null;
+}
+
+function resolvePlatform(device: DeviceView): PlatformInfo {
+  const p = (device.platform ?? "").trim().toLowerCase();
+  return (
+    (p ? KNOWN_PLATFORMS[p] ?? classifyText(p) : null) ??
+    classifyText(device.name) ?? { label: "Other", factor: "desktop" }
+  );
+}
+
+function groupDevices(devices: DeviceView[]): PlatformGroup[] {
+  const groups = new Map<string, PlatformGroup>();
+  for (const device of devices) {
+    const info = resolvePlatform(device);
+    const key = info.label.toLowerCase();
+    let group = groups.get(key);
+    if (!group) {
+      group = { key, label: info.label, factor: info.factor, devices: [] };
+      groups.set(key, group);
+    }
+    group.devices.push(device);
+  }
+
+  const rank = (label: string) => {
+    const index = GROUP_ORDER.indexOf(label);
+    return index === -1 ? GROUP_ORDER.length : index;
+  };
+
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      devices: [...group.devices].sort(
+        (a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name),
+      ),
+    }))
+    .sort((a, b) => rank(a.label) - rank(b.label) || a.label.localeCompare(b.label));
 }

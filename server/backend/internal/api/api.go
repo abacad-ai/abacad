@@ -166,6 +166,7 @@ type deviceView struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Online    bool   `json:"online"`
+	Platform  string `json:"platform,omitempty"` // e.g. "android", "macos"; blank if unset
 	LastSeen  string `json:"last_seen,omitempty"`
 	CreatedAt string `json:"created_at"`
 	SSHHost   string `json:"ssh_host,omitempty"` // ssh <ssh_host> reaches this device via the jump
@@ -476,6 +477,7 @@ func (a *API) viewDevice(d store.Device) deviceView {
 		ID:        d.ID,
 		Name:      d.Name,
 		Online:    a.Hub.Online(d.ID),
+		Platform:  d.Platform,
 		CreatedAt: time.Unix(d.CreatedAt, 0).UTC().Format(time.RFC3339),
 	}
 	if d.LastSeen > 0 {
