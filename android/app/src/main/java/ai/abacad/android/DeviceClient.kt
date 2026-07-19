@@ -1,4 +1,4 @@
-package dev.abacad.probe
+package ai.abacad.android
 
 import android.os.Handler
 import android.os.Looper
@@ -12,7 +12,7 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /**
- * Outbound WebSocket to the Abacad server. Dials out (NAT-friendly), reconnects
+ * Outbound WebSocket to the abacad server. Dials out (NAT-friendly), reconnects
  * with backoff, and answers each incoming command by running it through
  * [executor] (the accessibility service) and sending the reply back.
  *
@@ -22,7 +22,7 @@ class DeviceClient(
     private val url: String,
     private val executor: (method: String, params: JSONObject, done: (CmdResult) -> Unit) -> Unit,
 ) {
-    private val tag = ProbeAccessibilityService.TAG
+    private val tag = AbacadAccessibilityService.TAG
     private val client = OkHttpClient.Builder()
         .pingInterval(20, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS) // long-lived socket, idle between commands
@@ -58,13 +58,13 @@ class DeviceClient(
         handler.removeCallbacks(reconnectRunnable)
         try { ws?.close(1000, "bye") } catch (_: Exception) {}
         ws = null
-        ProbeStatus.setState(ProbeStatus.State.DISCONNECTED, "disconnected")
+        AbacadStatus.setState(AbacadStatus.State.DISCONNECTED, "disconnected")
     }
 
     private fun open() {
         if (closed) return
         Log.i(tag, "ws connecting: $url")
-        ProbeStatus.setState(ProbeStatus.State.CONNECTING, "connecting to $url")
+        AbacadStatus.setState(AbacadStatus.State.CONNECTING, "connecting to $url")
         ws = client.newWebSocket(Request.Builder().url(url).build(), listener)
     }
 
@@ -73,7 +73,7 @@ class DeviceClient(
         val delay = backoffMs
         backoffMs = (backoffMs * 2).coerceAtMost(15000L)
         Log.i(tag, "ws reconnect in ${delay}ms")
-        ProbeStatus.setState(ProbeStatus.State.RECONNECTING, "reconnecting in ${delay}ms")
+        AbacadStatus.setState(AbacadStatus.State.RECONNECTING, "reconnecting in ${delay}ms")
         handler.removeCallbacks(reconnectRunnable)
         handler.postDelayed(reconnectRunnable, delay)
     }
@@ -83,7 +83,7 @@ class DeviceClient(
             if (webSocket !== ws) return // stale socket (superseded by a forceReconnect)
             Log.i(tag, "ws open -> $url")
             connected = true
-            ProbeStatus.setState(ProbeStatus.State.CONNECTED, "connected to $url")
+            AbacadStatus.setState(AbacadStatus.State.CONNECTED, "connected to $url")
             backoffMs = 1000L
         }
 
@@ -105,12 +105,12 @@ class DeviceClient(
                 when (result) {
                     is CmdResult.Ok -> {
                         Log.i(tag, "cmd $method ok ${ms}ms")
-                        ProbeStatus.event("$method · ok · ${ms}ms")
+                        AbacadStatus.event("$method · ok · ${ms}ms")
                         reply.put("ok", true).put("result", result.result)
                     }
                     is CmdResult.Err -> {
                         Log.w(tag, "cmd $method error ${ms}ms: ${result.message}")
-                        ProbeStatus.event("$method · error · ${ms}ms · ${result.message}")
+                        AbacadStatus.event("$method · error · ${ms}ms · ${result.message}")
                         reply.put("ok", false).put("error", result.message)
                     }
                 }
@@ -123,7 +123,7 @@ class DeviceClient(
             connected = false
             val reason = t.message ?: t.javaClass.simpleName
             Log.w(tag, "ws failure: $reason")
-            ProbeStatus.event("connection failed: $reason")
+            AbacadStatus.event("connection failed: $reason")
             scheduleReconnect()
         }
 
@@ -131,7 +131,7 @@ class DeviceClient(
             if (webSocket !== ws) return
             connected = false
             Log.i(tag, "ws closed: $code $reason")
-            ProbeStatus.event("connection closed: $code ${reason.ifEmpty { "(no reason)" }}")
+            AbacadStatus.event("connection closed: $code ${reason.ifEmpty { "(no reason)" }}")
             scheduleReconnect()
         }
     }

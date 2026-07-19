@@ -348,7 +348,7 @@ func textResult(s string) toolResult {
 
 // listDevicesTool describes the account's devices so the agent can pick one.
 const listDevicesName = "list_devices"
-const listDevicesDescription = "List the devices connected to your Abacad account, with their id, name, platform (e.g. android, macos), and whether they are currently online. Use the platform to pick the right verbs — mobile devices take tap/swipe, desktops take click/scroll/press_keys. Pass a device_id to any other tool to target a specific device; omit it to use your only / most-recently-active device."
+const listDevicesDescription = "List the devices connected to your abacad account, with their id, name, platform (e.g. android, macos), and whether they are currently online. Use the platform to pick the right verbs — mobile devices take tap/swipe, desktops take click/scroll/press_keys. Pass a device_id to any other tool to target a specific device; omit it to use your only / most-recently-active device."
 const listDevicesSchema = `{"type":"object","properties":{},"additionalProperties":false}`
 
 // toolInfos returns the tools/list payload (list_devices first, then the device

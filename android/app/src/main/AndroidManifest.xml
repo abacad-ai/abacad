@@ -4,7 +4,7 @@
     <!--
       Accessibility itself needs NO manifest permission — it's the one-time
       toggle, and it's what unlocks tree + tap + screenshot. INTERNET (and
-      cleartext, for LAN ws://) are only to reach the Abacad server.
+      cleartext, for LAN ws://) are only to reach the abacad server.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- WAKE_LOCK: brief CPU hold across a `wake` so the process survives from
@@ -33,7 +33,7 @@
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
-        android:label="Abacad Probe"
+        android:label="abacad"
         android:usesCleartextTraffic="true"
         android:theme="@style/Theme.Abacad">
         <!-- DayNight DeviceDefault (themes.xml): follows the system appearance, like
@@ -57,10 +57,10 @@
             android:theme="@style/Theme.Abacad.NoActionBar" />
 
         <service
-            android:name=".ProbeAccessibilityService"
+            android:name=".AbacadAccessibilityService"
             android:exported="false"
             android:foregroundServiceType="dataSync"
-            android:label="Abacad Probe"
+            android:label="abacad"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />

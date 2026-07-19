@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Abacad launcher mark: a lowercase "a" (round bowl + stem) with a coral status
+  abacad launcher mark: a lowercase "a" (round bowl + stem) with a coral status
   dot in the counter. Pure vector => infinitely sharp at every density.
   Drawn on the 108x108 adaptive canvas; the glyph sits inside the ~66dp safe
   zone so no OEM mask (circle/squircle/rounded-square) clips it.

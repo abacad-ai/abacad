@@ -1,6 +1,6 @@
 import Foundation
 
-// Outbound WebSocket to the Abacad relay's /device endpoint. The Mac dials out
+// Outbound WebSocket to the abacad relay's /device endpoint. The Mac dials out
 // (NAT-friendly; the server never connects in). Text frames carry the JSON
 // command/reply lane; binary frames carry the tunnel lane. Auto-reconnects with
 // exponential backoff, and pings to keep the idle socket alive.

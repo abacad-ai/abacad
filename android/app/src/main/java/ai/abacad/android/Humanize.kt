@@ -1,4 +1,4 @@
-package dev.abacad.probe
+package ai.abacad.android
 
 import android.graphics.Path
 import java.util.Random
@@ -27,7 +27,7 @@ import kotlin.math.min
  * tail), so we sample log-normal, not uniform, for every duration.
  *
  * What this does NOT cover: per-keystroke typing rhythm. Text is committed atomically through the
- * accessibility ACTION_SET_TEXT (see ProbeAccessibilityService.inputText); there is no per-key
+ * accessibility ACTION_SET_TEXT (see AbacadAccessibilityService.inputText); there is no per-key
  * event to jitter without shipping a custom IME. And true velocity *easing* within one stroke
  * isn't reachable either — the platform samples a gesture at arc-length-uniform-in-time, so a
  * single stroke has ~constant speed regardless of geometry. The Bézier bow still breaks the

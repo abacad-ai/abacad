@@ -1,7 +1,7 @@
 // swift-tools-version:5.9
 import PackageDescription
 
-// Abacad macOS agent — a menu-bar app that dials the Abacad relay over a
+// abacad macOS agent — a menu-bar app that dials the abacad relay over a
 // WebSocket and drives this Mac on command (AX tree, screen capture, CGEvent
 // input), the desktop analogue of the Android AccessibilityService client.
 //
@@ -11,12 +11,12 @@ import PackageDescription
 // .app bundle so TCC permissions (Accessibility, Screen Recording) attach to a
 // stable identity.
 let package = Package(
-    name: "AbacadAgent",
+    name: "abacad",
     platforms: [.macOS(.v14)], // SCScreenshotManager.captureImage needs macOS 14
     targets: [
         .executableTarget(
-            name: "AbacadAgent",
-            path: "Sources/AbacadAgent"
+            name: "abacad",
+            path: "Sources/abacad"
         )
     ]
 )

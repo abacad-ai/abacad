@@ -1,4 +1,4 @@
-package dev.abacad.probe
+package ai.abacad.android
 
 import android.content.res.Configuration
 import android.content.res.Resources
@@ -6,7 +6,7 @@ import android.content.res.Resources
 // GENERATED from design/tokens.json — do not edit. Run: node design/generate.mjs
 
 /**
- * Abacad design tokens. Colors are ARGB ints (pass straight to setTextColor /
+ * abacad design tokens. Colors are ARGB ints (pass straight to setTextColor /
  * setBackgroundColor) and come as a dark and a light [Palette] — call
  * [Theme.of] to get the one matching the current system appearance (auto
  * dark/light is the product default on every surface). SPACE_* are dp,

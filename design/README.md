@@ -1,13 +1,13 @@
-# Abacad design tokens
+# abacad design tokens
 
-`tokens.json` is the single source of truth for Abacad's visual language —
+`tokens.json` is the single source of truth for abacad's visual language —
 colors, spacing, radii, and type sizes — shared by all three surfaces:
 
 | Surface | Generated file | Consumed as |
 |---|---|---|
 | Web dashboard (`server/frontend`) | `src/tokens.css` | CSS custom properties (`--brand`, `--space-md`, …) |
-| Android probe (`android/`) | `probe/Theme.kt` | `Theme.BRAND` ARGB ints, `Theme.SPACE_MD` dp, `Theme.TEXT_MD` sp |
-| macOS agent (`macos/`) | `AbacadAgent/Theme.swift` | `Theme.brand` SwiftUI `Color`, `Theme.spaceMd` CGFloat |
+| Android app (`android/`) | `android/Theme.kt` | `Theme.BRAND` ARGB ints, `Theme.SPACE_MD` dp, `Theme.TEXT_MD` sp |
+| macOS agent (`macos/`) | `abacad/Theme.swift` | `Theme.brand` SwiftUI `Color`, `Theme.spaceMd` CGFloat |
 
 To change the palette or metrics, edit `tokens.json` and regenerate:
 

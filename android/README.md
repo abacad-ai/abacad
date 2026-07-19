@@ -1,8 +1,8 @@
-# Abacad — Android device agent
+# abacad — Android device agent
 
 A normal sideloaded app that turns the phone into something a remote agent can see and
 control, from a **single accessibility grant** (no root, no ADB). It exposes a small set
-of human-like primitives over an outbound WebSocket to the Abacad server:
+of human-like primitives over an outbound WebSocket to the abacad server:
 
 | Primitive | Android API |
 |---|---|
@@ -45,8 +45,8 @@ Needs a JDK 17+ — Android Studio bundles one:
 
 ## Use
 1. Start the server: `cd ../server && npm install && npm start` — note the machine's LAN IP.
-2. Open **Abacad Probe**, enter `ws://<server-ip>:8848/device`, tap **Save & Connect**.
-3. Enable **Abacad Probe** under Accessibility; accept the system warning.
+2. Open **abacad**, enter `ws://<server-ip>:8848/device`, tap **Save & Connect**.
+3. Enable **abacad** under Accessibility; accept the system warning.
    (`curl http://localhost:8848/health` should now show `deviceConnected:true`.)
 4. Register the MCP endpoint with your agent, then drive it:
    ```bash

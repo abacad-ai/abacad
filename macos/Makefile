@@ -1,4 +1,4 @@
-# Abacad macOS agent — build a signed .app bundle from the SwiftPM executable.
+# abacad macOS agent — build a signed .app bundle from the SwiftPM executable.
 #
 # Run on a Mac (needs Swift/Xcode toolchain). This box (Linux) cannot build it.
 #
@@ -7,16 +7,16 @@
 #                   TCC grants are less stable across rebuilds). For a durable
 #                   identity use your cert, e.g.:
 #                     make SIGN_IDENTITY="Apple Development: you@example.com (TEAMID)"
-#   BUNDLE_ID     : must match CFBundleIdentifier in Info.plist.
+#   BUNDLE_ID     : reverse-DNS id; must match CFBundleIdentifier in Info.plist.
 # ─────────────────────────────────────────────────────────────────────────────
 SIGN_IDENTITY ?= -
-BUNDLE_ID     ?= com.example.abacad.agent
+BUNDLE_ID     ?= ai.abacad.mac
 
-APP     := build/AbacadAgent.app
+APP     := build/abacad.app
 CONF    := release
-BINARY  := .build/$(CONF)/AbacadAgent
-DMG     := build/AbacadAgent.dmg
-VOLNAME := Abacad Agent
+BINARY  := .build/$(CONF)/abacad
+DMG     := build/abacad.dmg
+VOLNAME := abacad
 
 .PHONY: all app build sign clean run dmg
 
@@ -28,7 +28,7 @@ build:
 app: build
 	rm -rf "$(APP)"
 	mkdir -p "$(APP)/Contents/MacOS" "$(APP)/Contents/Resources"
-	cp "$(BINARY)" "$(APP)/Contents/MacOS/AbacadAgent"
+	cp "$(BINARY)" "$(APP)/Contents/MacOS/abacad"
 	cp Info.plist "$(APP)/Contents/Info.plist"
 	codesign --force --sign "$(SIGN_IDENTITY)" --identifier "$(BUNDLE_ID)" "$(APP)"
 	@echo "Built $(APP) (signed as $(SIGN_IDENTITY), id $(BUNDLE_ID))"

@@ -1,4 +1,4 @@
-package dev.abacad.probe
+package ai.abacad.android
 
 import android.app.Activity
 import android.app.KeyguardManager
@@ -11,7 +11,7 @@ import android.util.Log
 import android.view.WindowManager
 
 /**
- * The screen-waker. Launched by [ProbeAccessibilityService] when a `wake` command
+ * The screen-waker. Launched by [AbacadAccessibilityService] when a `wake` command
  * arrives on a dark device: it turns the display on and shows over the keyguard, then
  * dismisses a NON-SECURE (swipe / none) keyguard. A SECURE keyguard (PIN / pattern /
  * biometric) cannot be dismissed programmatically — the screen turns on but stays locked,
@@ -85,7 +85,7 @@ class WakerActivity : Activity() {
     private fun report(o: Outcome) {
         if (reported) return
         reported = true
-        Log.i(ProbeAccessibilityService.TAG, "waker: ${o.note}")
+        Log.i(AbacadAccessibilityService.TAG, "waker: ${o.note}")
         onResult?.invoke(o)
         onResult = null
         // Leave the display on (turn-screen-on latched); we just needed to bring it up.

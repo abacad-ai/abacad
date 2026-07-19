@@ -1,6 +1,6 @@
 # Power, screen, and lock screen — cases & support decisions
 
-The question this answers: **can a phone run as an Abacad device long-term, hands-off, and only
+The question this answers: **can a phone run as an abacad device long-term, hands-off, and only
 "get busy" when the agent calls it?** Short answer: **yes** — the connection idles cheaply and
 the agent wakes the screen on demand — with **one hard constraint (no secure lock)** and **one
 OEM-dependent risk (background-launch)**.
@@ -68,7 +68,7 @@ Two hard facts constrain the whole space:
 Concretely, once set up and connected:
 
 - **A permanent notification — by design.** While connected, an ongoing, low-priority notification
-  sits in the shade: *"Abacad — Keeping this device reachable for the agent."* It can't be swiped
+  sits in the shade: *"abacad — Keeping this device reachable for the agent."* It can't be swiped
   away (that's the foreground service staying alive) and won't make sound. For a drawer phone this
   is **intended, not a cost**: the whole point is an always-on, always-reachable device, and the
   notification is the honest, expected "on duty" signal (the same pattern remote-control / VPN /
@@ -80,14 +80,14 @@ Concretely, once set up and connected:
 - **Screen off ≠ offline.** This is the whole change: with the screen dark the socket stays held, so
   the dashboard keeps showing the device **online** and an agent can reach it. Before this fix the
   socket died and it went *offline* — that's the bug being closed.
-- **The Abacad app is never brought to the front.** Neither the setup screen (`MainActivity`) nor
+- **The abacad app is never brought to the front.** Neither the setup screen (`MainActivity`) nor
   anything with UI is raised when the agent works. Commands run over the accessibility service on
-  **whatever app is already foreground** — the agent drives that app in place; Abacad stays in the
+  **whatever app is already foreground** — the agent drives that app in place; abacad stays in the
   background.
 - **What waking a dark screen looks like.** When a command arrives on a dark/locked phone, a
   *transparent, empty* activity (`WakerActivity`) is launched purely to turn the display on and
   dismiss a non-secure keyguard, then it finishes after ~0.3s. It renders nothing and is excluded
-  from Recents, so you don't see an "Abacad" screen — you see the display light up to the lock
+  from Recents, so you don't see an "abacad" screen — you see the display light up to the lock
   screen / last app, then the app the agent is driving. The screen stays on for the session, then
   sleeps again ~3 min after the last command.
 - **A secure lock stops here.** If a PIN/pattern/biometric is set, the waker turns the screen on but
@@ -166,7 +166,7 @@ be deep-slept and the socket will drop despite everything above. See dontkillmya
 4. Tap **Allow Display Over Other Apps** → grant (makes auto-wake reliable on strict ROMs).
 5. Tap **Ignore Battery Optimization** → grant (keeps the held socket alive through Doze).
 6. **Samsung only:** Settings → Battery → Background usage limits → **Never sleeping apps** → add
-   Abacad Probe (One UI deep-sleeps apps otherwise and drops the socket).
+   abacad (One UI deep-sleeps apps otherwise and drops the socket).
 7. Verify: let the screen time out (or press the power button), then from the agent issue a
    `screenshot` → the screen auto-wakes & unlocks and the UI tree shows the real foreground app
    (not the lockscreen).

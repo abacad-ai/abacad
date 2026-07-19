@@ -1,6 +1,6 @@
-# Abacad macOS agent
+# abacad macOS agent
 
-The desktop counterpart to the Android app: a menu-bar app that dials the Abacad
+The desktop counterpart to the Android app: a menu-bar app that dials the abacad
 relay over a WebSocket and drives this Mac on command — read the accessibility
 tree, capture the screen, and inject mouse/keyboard input. It speaks the same wire
 contract as the phone plus the desktop-native verbs.
@@ -22,18 +22,17 @@ directly to click points.
 
 ## Build (on a Mac — needs Swift/Xcode; a Linux box cannot build this)
 
-Two placeholders to set first:
-
-1. `Info.plist` → `CFBundleIdentifier` — your reverse-DNS id.
-2. `Makefile` → `BUNDLE_ID` (match the plist) and `SIGN_IDENTITY`.
+The bundle id is `ai.abacad.mac` (set in `Info.plist` and the `Makefile`; keep the
+two in sync if you ever change it). For distribution, set `SIGN_IDENTITY` to your
+Developer cert:
 
 ```sh
 cd macos
 # ad-hoc signing (fine for local dev):
 make
 # or with your Developer identity (more stable TCC grants across rebuilds):
-make SIGN_IDENTITY="Apple Development: you@example.com (TEAMID)" BUNDLE_ID="com.you.abacad.agent"
-open build/AbacadAgent.app
+make SIGN_IDENTITY="Apple Development: you@example.com (TEAMID)"
+open build/abacad.app
 ```
 
 > TCC (Accessibility, Screen Recording) grants are keyed to the signing identity +
@@ -47,7 +46,7 @@ On first launch, open the menu-bar panel and click **Grant** for each:
 - **Accessibility** — required for the AX tree read *and* all CGEvent input.
 - **Screen Recording** — required for `screenshot`.
 
-Both open the relevant System Settings pane; flip the toggle for **AbacadAgent**,
+Both open the relevant System Settings pane; flip the toggle for **abacad**,
 then **quit and relaunch** the app so it re-reads its trust status. The panel's
 green checkmarks confirm the grants (hit **Refresh** after toggling).
 

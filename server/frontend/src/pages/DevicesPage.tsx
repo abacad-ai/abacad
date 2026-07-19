@@ -428,7 +428,7 @@ export function DevicesPage() {
           </span>
           <h2 className="mt-4 font-display text-lg font-bold text-ink">Pair your first device</h2>
           <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-ink-muted">
-            Create a device credential, then scan the QR code or paste its connection URL into the Abacad app.
+            Create a device credential, then scan the QR code or paste its connection URL into the abacad app.
           </p>
           <Button className="mt-6" onClick={() => setAddOpen(true)}>
             <Plus size={17} />

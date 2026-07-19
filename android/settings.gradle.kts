@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "AbacadProbe"
+rootProject.name = "abacad"
 include(":app")

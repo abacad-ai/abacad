@@ -1,8 +1,8 @@
-# Abacad
+# abacad
 
 **A device interface for agents. Plug any device into an agent — once, from anywhere, safely.**
 
-Abacad turns a device (starting with an old Android phone) into something a remote AI
+abacad turns a device (starting with an old Android phone) into something a remote AI
 agent can see and control. Install once, grant one permission, drop it in a drawer — and
 an agent anywhere on the internet can operate it, step by step, with a human supervising.
 
@@ -11,7 +11,7 @@ an agent anywhere on the internet can operate it, step by step, with a human sup
 ## The need (deliberately singular)
 
 > Agents are minds with no body. They can think, but they can't touch anything.
-> Abacad gives them a body — eyes and hands — in a real device.
+> abacad gives them a body — eyes and hands — in a real device.
 
 Everything else is implementation. If we ever find ourselves "building the platform"
 instead of serving this one need, that's the signal we've drifted.

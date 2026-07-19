@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy Abacad to production: `make deploy` (or ./deploy.sh).
+# Deploy abacad to production: `make deploy` (or ./deploy.sh).
 #
 # Ships two artifacts to $DEPLOY_HOST (default xyz-sg-1, an ~/.ssh/config host):
 #
@@ -22,7 +22,7 @@ IMAGE="ghcr.io/abacad-ai/abacad:latest"
 COMPOSE_DIR="/root/abacad.ai"
 # Must match the compose data volume + the ABACAD_DOWNLOADS path in the image.
 DOWNLOADS_DIR="$COMPOSE_DIR/data/abacad-downloads"
-DMG="$here/macos/build/AbacadAgent.dmg"
+DMG="$here/macos/build/abacad.dmg"
 DMG_NAME="abacad-macos-latest.dmg"
 
 # Build everything first — fail before touching the host.

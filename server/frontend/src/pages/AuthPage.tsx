@@ -49,7 +49,7 @@ export function AuthPage() {
             <MonitorSmartphone size={24} strokeWidth={2.2} />
           </span>
           <p className="mt-4 font-display text-[26px] font-bold uppercase leading-8 tracking-[0.28em] text-ink">
-            Abacad
+            abacad
           </p>
           <p className="mt-1.5 font-mono text-[11px] uppercase tracking-[0.22em] text-ink-subtle">
             device relay console
@@ -159,7 +159,7 @@ export function AuthPage() {
           </form>
 
           <p className="mt-6 text-center text-sm text-ink-muted">
-            {mode === "login" ? "New to Abacad?" : "Already have an account?"}{" "}
+            {mode === "login" ? "New to abacad?" : "Already have an account?"}{" "}
             <button
               type="button"
               className="min-h-11 rounded-md px-1 font-semibold text-brand hover:text-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"

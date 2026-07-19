@@ -3,7 +3,7 @@ import SwiftUI
 
 // GENERATED from design/tokens.json — do not edit. Run: node design/generate.mjs
 
-/// Abacad design tokens. The menu-bar panel keeps native macOS materials for
+/// abacad design tokens. The menu-bar panel keeps native macOS materials for
 /// its chrome; these tokens supply the shared semantic colors (status, brand)
 /// and metrics so the panel reads as the same product as the dashboard. Each
 /// color is appearance-dynamic — it resolves to the dark or light variant as

@@ -8,7 +8,7 @@ struct AbacadApp: App {
     @StateObject private var agent = Agent()
 
     var body: some Scene {
-        MenuBarExtra("Abacad", systemImage: agent.connected
+        MenuBarExtra("abacad", systemImage: agent.connected
                      ? "dot.radiowaves.left.and.right" : "circle.dashed") {
             AgentPanel(agent: agent)
         }
@@ -120,7 +120,7 @@ struct AgentPanel: View {
             }
 
             Divider()
-            Button("Quit Abacad Agent") { NSApplication.shared.terminate(nil) }
+            Button("Quit abacad") { NSApplication.shared.terminate(nil) }
         }
         .padding(Theme.spaceLg)
         .onAppear { agent.refreshPermissions() }

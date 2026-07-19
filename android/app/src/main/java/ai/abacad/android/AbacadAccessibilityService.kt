@@ -1,4 +1,4 @@
-package dev.abacad.probe
+package ai.abacad.android
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityService.GestureResultCallback
@@ -51,20 +51,20 @@ sealed class CmdResult {
  * The device agent. From the single accessibility grant it lets an agent drive the
  * phone the way a human would — look (screenshot + UI tree), touch (tap / long_press /
  * swipe), type (input_text), and press the nav keys (back / home / recents) — over a
- * [DeviceClient] WebSocket to the Abacad server. Command-driven: no work happens until
+ * [DeviceClient] WebSocket to the abacad server. Command-driven: no work happens until
  * the server (on behalf of the agent) sends a command.
  *
  * Power is transparent: if a command arrives on a dark/locked device the screen is woken
  * automatically (see [ensureAwake]) before the command runs. Sleeping is left to the
  * device's own display timeout — the agent never manages it.
  */
-class ProbeAccessibilityService : AccessibilityService() {
+class AbacadAccessibilityService : AccessibilityService() {
 
     companion object {
         const val TAG = "ABACAD"
         const val PREFS = "abacad"
         const val KEY_SERVER_URL = "server_url"
-        const val ACTION_RECONNECT = "dev.abacad.probe.RECONNECT"
+        const val ACTION_RECONNECT = "ai.abacad.android.RECONNECT"
 
         /** Foreground-service notification: keeps the process (and its idle socket) alive
          *  through screen-off so OEM battery managers don't freeze it. */
@@ -179,7 +179,7 @@ class ProbeAccessibilityService : AccessibilityService() {
         device = null
         if (url.isEmpty()) {
             Log.w(TAG, "no server URL set — open the app and enter ws://<host>:8848/device")
-            ProbeStatus.setState(ProbeStatus.State.DISCONNECTED, "no server URL set — open the app to connect")
+            AbacadStatus.setState(AbacadStatus.State.DISCONNECTED, "no server URL set — open the app to connect")
             stopForegroundConnection()
             releaseSessionWakeLock()
             return
@@ -224,7 +224,7 @@ class ProbeAccessibilityService : AccessibilityService() {
         if (nm.getNotificationChannel(CHANNEL_ID) == null) {
             nm.createNotificationChannel(
                 NotificationChannel(CHANNEL_ID, "Connection", NotificationManager.IMPORTANCE_LOW).apply {
-                    description = "Keeps Abacad reachable so an agent can drive this device."
+                    description = "Keeps abacad reachable so an agent can drive this device."
                     setShowBadge(false)
                 },
             )
@@ -237,7 +237,7 @@ class ProbeAccessibilityService : AccessibilityService() {
             PendingIntent.FLAG_IMMUTABLE,
         )
         return Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("Abacad")
+            .setContentTitle("abacad")
             .setContentText("Keeping this device reachable for the agent")
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setOngoing(true)
@@ -570,7 +570,7 @@ class ProbeAccessibilityService : AccessibilityService() {
         // Screen is off or the keyguard is up: waking adds latency to this command,
         // which is a common reason a call brushes the server's 15s deadline. Surface it.
         Log.i(TAG, "waking screen before command (interactive=${pm.isInteractive} locked=${km.isKeyguardLocked})")
-        ProbeStatus.event("waking screen…")
+        AbacadStatus.event("waking screen…")
         wakeLock?.let { if (it.isHeld) it.release() }
         @Suppress("DEPRECATION")
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "abacad:wake").apply {
@@ -619,7 +619,7 @@ class ProbeAccessibilityService : AccessibilityService() {
      *
      * The waker ([ensureAwake]) can turn a *dark* screen on, but it's a foreground activity — so
      * firing it on every command (whenever the phone's display timeout beat the gap between the
-     * agent's commands) flashed Abacad to the front and stole focus from the app being driven.
+     * agent's commands) flashed abacad to the front and stole focus from the app being driven.
      * Instead we add a 1px, invisible, untouchable [WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY]
      * window carrying [WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON] — the same well-supported
      * primitive video players use, and one an AccessibilityService may add with no SYSTEM_ALERT_WINDOW

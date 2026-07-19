@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the Abacad server: compile the dashboard SPA, embed it into the Go
+# Build the abacad server: compile the dashboard SPA, embed it into the Go
 # backend, and produce the single server binary.
 #
 #   ./build.sh            # full build -> backend/abacad

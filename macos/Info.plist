@@ -3,16 +3,16 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>AbacadAgent</string>
+	<string>abacad</string>
 	<key>CFBundleDisplayName</key>
-	<string>Abacad Agent</string>
+	<string>abacad</string>
 	<key>CFBundleExecutable</key>
-	<string>AbacadAgent</string>
-	<!-- PLACEHOLDER: set to your own reverse-DNS id and keep it in sync with
-	     BUNDLE_ID in the Makefile. TCC (Accessibility / Screen Recording) grants
-	     are keyed to this identity, so changing it re-triggers the prompts. -->
+	<string>abacad</string>
+	<!-- Reverse-DNS bundle id (abacad.ai). Keep it in sync with BUNDLE_ID in the
+	     Makefile. TCC (Accessibility / Screen Recording) grants are keyed to this
+	     identity, so changing it re-triggers the prompts. -->
 	<key>CFBundleIdentifier</key>
-	<string>com.example.abacad.agent</string>
+	<string>ai.abacad.mac</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -25,6 +25,6 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSScreenCaptureUsageDescription</key>
-	<string>Abacad captures this Mac's screen so a remote agent you authorized can see it.</string>
+	<string>abacad captures this Mac's screen so a remote agent you authorized can see it.</string>
 </dict>
 </plist>

@@ -1,4 +1,4 @@
-package dev.abacad.probe
+package ai.abacad.android
 
 /**
  * In-process connection + activity status, shared between the accessibility
@@ -11,7 +11,7 @@ package dev.abacad.probe
  * buffer is enough. Listeners are notified on whatever thread writes; the UI
  * listener marshals to the main thread itself.
  */
-object ProbeStatus {
+object AbacadStatus {
 
     /** Coarse connection state, drives the panel's headline + color. */
     enum class State { DISCONNECTED, CONNECTING, CONNECTED, RECONNECTING }

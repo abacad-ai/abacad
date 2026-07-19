@@ -1,4 +1,4 @@
-# Abacad server
+# abacad server
 
 A public, multi-tenant relay that lets a remote AI agent (over MCP) see and drive
 a device (an Android phone today; Mac/Linux later). Users sign up, pair their
@@ -7,7 +7,7 @@ devices, and point their agent at one endpoint — `https://abacad.ai/mcp` — t
 
 ```
                               ┌──────────────────────────────┐
-  agent ──MCP (POST /mcp)────▶│   Abacad server (Go)         │◀──WS (/device?token=)── device
+  agent ──MCP (POST /mcp)────▶│   abacad server (Go)         │◀──WS (/device?token=)── device
   Bearer <account mcp token>  │   relay · accounts · MCP     │   per-device token
                               │   dashboard (SPA + /api)     │
   human ──browser────────────▶│                              │

@@ -1,4 +1,4 @@
-package dev.abacad.probe
+package ai.abacad.android
 
 import android.Manifest
 import android.app.Activity
@@ -34,14 +34,14 @@ import com.google.zxing.qrcode.QRCodeReader
  * Camera QR scanner for the connection URL. Opens the back camera with the framework
  * Camera2 API, feeds each frame's luminance plane to ZXing's [QRCodeReader], and on the
  * first successful decode returns the text via [RESULT_TEXT] and finishes. No AndroidX —
- * this keeps the probe's framework-only footprint (see build.gradle.kts).
+ * this keeps the app's framework-only footprint (see build.gradle.kts).
  */
 class ScanActivity : Activity() {
 
     companion object {
         const val RESULT_TEXT = "scanned_text"
         private const val REQ_CAMERA = 42
-        private val TAG = ProbeAccessibilityService.TAG
+        private val TAG = AbacadAccessibilityService.TAG
     }
 
     private lateinit var textureView: TextureView

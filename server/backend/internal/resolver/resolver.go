@@ -44,7 +44,7 @@ func (a *accountResolver) Resolve(_ context.Context, deviceID string) (*relay.De
 		}
 		dc, ok := a.hub.Get(d.ID)
 		if !ok {
-			return nil, fmt.Errorf("device %q (%s) is not connected — open the Abacad app on it", d.Name, d.ID)
+			return nil, fmt.Errorf("device %q (%s) is not connected — open the abacad app on it", d.Name, d.ID)
 		}
 		return dc, nil
 	}
@@ -60,7 +60,7 @@ func (a *accountResolver) Resolve(_ context.Context, deviceID string) (*relay.De
 		}
 	}
 	// Phrasing kept compatible with the smoke retry on /no device connected/.
-	return nil, errors.New("no device connected — open the Abacad app on one of your devices and connect it, then try again (see list_devices)")
+	return nil, errors.New("no device connected — open the abacad app on one of your devices and connect it, then try again (see list_devices)")
 }
 
 // List returns the account's devices with live status for the list_devices tool.

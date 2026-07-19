@@ -1,4 +1,4 @@
-package dev.abacad.probe
+package ai.abacad.android
 
 import android.app.Activity
 import android.content.Context
@@ -20,11 +20,11 @@ import android.widget.Toast
 import java.util.Date
 
 /**
- * Minimal setup screen: enter the Abacad server URL, save it, and enable the
+ * Minimal setup screen: enter the abacad server URL, save it, and enable the
  * accessibility service. All control happens over the network afterward; this
  * screen only configures the connection.
  *
- * It also shows a live connection-status panel fed by [ProbeStatus], so the
+ * It also shows a live connection-status panel fed by [AbacadStatus], so the
  * user can see whether the device is connected, reconnecting, or stuck — and the
  * recent command/error activity — without reaching for `adb logcat`.
  */
@@ -42,12 +42,12 @@ class MainActivity : Activity() {
     // Resolved in onCreate; the activity is recreated on a uiMode (dark/light) change.
     private lateinit var theme: Theme.Palette
 
-    // Re-render the panel whenever ProbeStatus changes (called off the UI thread).
+    // Re-render the panel whenever AbacadStatus changes (called off the UI thread).
     private val statusListener: () -> Unit = { runOnUiThread { renderStatus() } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val prefs = getSharedPreferences(ProbeAccessibilityService.PREFS, Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences(AbacadAccessibilityService.PREFS, Context.MODE_PRIVATE)
         theme = Theme.of(resources)
         val dp = resources.displayMetrics.density
         val pad = (Theme.SPACE_XL * dp).toInt()
@@ -77,7 +77,7 @@ class MainActivity : Activity() {
 
         urlField = EditText(this).apply {
             hint = "ws://<server-ip>:8848/device"
-            setText(prefs.getString(ProbeAccessibilityService.KEY_SERVER_URL, ""))
+            setText(prefs.getString(AbacadAccessibilityService.KEY_SERVER_URL, ""))
         }
 
         val scanBtn = Button(this).apply {
@@ -91,8 +91,8 @@ class MainActivity : Activity() {
             text = "Save & Connect"
             setOnClickListener {
                 val url = urlField.text.toString().trim()
-                prefs.edit().putString(ProbeAccessibilityService.KEY_SERVER_URL, url).apply()
-                sendBroadcast(Intent(ProbeAccessibilityService.ACTION_RECONNECT).setPackage(packageName))
+                prefs.edit().putString(AbacadAccessibilityService.KEY_SERVER_URL, url).apply()
+                sendBroadcast(Intent(AbacadAccessibilityService.ACTION_RECONNECT).setPackage(packageName))
                 Toast.makeText(this@MainActivity, "Saved. Connecting to $url", Toast.LENGTH_SHORT).show()
             }
         }
@@ -138,14 +138,14 @@ class MainActivity : Activity() {
             textSize = Theme.TEXT_SM
             setTextColor(theme.INK_MUTED)
             text = """
-                Abacad — device agent
+                abacad — device agent
 
                 1. Tap Scan QR and point at the connection QR on the
-                   Abacad dashboard — or type the URL by hand:
+                   abacad dashboard — or type the URL by hand:
                    ws://<server-ip>:8848/device
                    (server machine + this phone on the same Wi-Fi)
                 2. Tap Save & Connect (scanning connects for you).
-                3. Enable "Abacad Probe" under Accessibility (button below);
+                3. Enable "abacad" under Accessibility (button below);
                    accept the system warning.
 
                 Once connected, an agent (via the server) can read the screen,
@@ -159,7 +159,7 @@ class MainActivity : Activity() {
                   • Tap "Ignore Battery Optimization" so the connection survives
                     Doze while the screen is off.
                   • Samsung only: Settings → Battery → Background usage limits →
-                    add Abacad Probe to "Never sleeping apps" (One UI will otherwise
+                    add abacad to "Never sleeping apps" (One UI will otherwise
                     sleep the app and drop the connection).
                 The device stays connected while its screen sleeps; the agent wakes
                 the screen automatically when it needs it (a one-time ~few-second cost),
@@ -195,27 +195,27 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        ProbeStatus.addListener(statusListener)
+        AbacadStatus.addListener(statusListener)
         renderStatus()
     }
 
     override fun onPause() {
         super.onPause()
-        ProbeStatus.removeListener(statusListener)
+        AbacadStatus.removeListener(statusListener)
     }
 
-    /** Paint the current [ProbeStatus] state (colored headline) and recent activity. */
+    /** Paint the current [AbacadStatus] state (colored headline) and recent activity. */
     private fun renderStatus() {
-        val s = ProbeStatus.state
-        statusView.text = "● ${s.name.lowercase()} — ${ProbeStatus.detail}"
+        val s = AbacadStatus.state
+        statusView.text = "● ${s.name.lowercase()} — ${AbacadStatus.detail}"
         statusView.setTextColor(
             when (s) {
-                ProbeStatus.State.CONNECTED -> theme.SUCCESS
-                ProbeStatus.State.CONNECTING, ProbeStatus.State.RECONNECTING -> theme.WARNING
-                ProbeStatus.State.DISCONNECTED -> theme.DANGER
+                AbacadStatus.State.CONNECTED -> theme.SUCCESS
+                AbacadStatus.State.CONNECTING, AbacadStatus.State.RECONNECTING -> theme.WARNING
+                AbacadStatus.State.DISCONNECTED -> theme.DANGER
             },
         )
-        val lines = ProbeStatus.recentLines()
+        val lines = AbacadStatus.recentLines()
         activityView.text = if (lines.isEmpty()) {
             "No activity yet."
         } else {
@@ -233,9 +233,9 @@ class MainActivity : Activity() {
         if (url.isEmpty()) return
         urlField.setText(url)
         // Scanning is an explicit "connect me" gesture — save + reconnect straight away.
-        getSharedPreferences(ProbeAccessibilityService.PREFS, Context.MODE_PRIVATE)
-            .edit().putString(ProbeAccessibilityService.KEY_SERVER_URL, url).apply()
-        sendBroadcast(Intent(ProbeAccessibilityService.ACTION_RECONNECT).setPackage(packageName))
+        getSharedPreferences(AbacadAccessibilityService.PREFS, Context.MODE_PRIVATE)
+            .edit().putString(AbacadAccessibilityService.KEY_SERVER_URL, url).apply()
+        sendBroadcast(Intent(AbacadAccessibilityService.ACTION_RECONNECT).setPackage(packageName))
         Toast.makeText(this, "Scanned. Connecting to $url", Toast.LENGTH_SHORT).show()
     }
 }

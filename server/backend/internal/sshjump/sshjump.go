@@ -70,7 +70,7 @@ func (s *Server) Serve(ln net.Listener) error {
 		PublicKeyCallback: func(_ ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
 			accountID, err := s.AccountForKey(key)
 			if err != nil {
-				return nil, errors.New("unauthorized key — add it to your Abacad account")
+				return nil, errors.New("unauthorized key — add it to your abacad account")
 			}
 			// Carry the account id to the channel handler via the connection's
 			// permissions (the only per-connection state ssh exposes to us).

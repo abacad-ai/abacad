@@ -1,4 +1,4 @@
-# Abacad dev tasks.
+# abacad dev tasks.
 
 # Port the dashboard (Vite dev server) is served on — the URL you open in a browser.
 PORT ?= 1419
@@ -35,7 +35,7 @@ android:
 android-install: android
 	cd android && ./gradlew installDebug
 
-# Build the signed macOS .app bundle. Output: macos/build/AbacadAgent.app
+# Build the signed macOS .app bundle. Output: macos/build/abacad.app
 # Needs a Mac with the Swift/Xcode toolchain. See macos/Makefile for signing vars.
 macos:
 	cd macos && $(MAKE) app

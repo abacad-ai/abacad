@@ -1,4 +1,4 @@
-// Command abacad is the Abacad relay server: the MCP endpoint agents talk to,
+// Command abacad is the abacad relay server: the MCP endpoint agents talk to,
 // the WebSocket relay devices dial into, the dashboard API, and (Phase 6) the
 // dashboard SPA — all on one port.
 package main
@@ -85,7 +85,7 @@ func main() {
 		ResolverFor: func(r *http.Request) (mcp.DeviceResolver, error) {
 			token := auth.BearerToken(r)
 			if token == "" {
-				return nil, errors.New("missing bearer token (add your Abacad MCP token as Authorization: Bearer …)")
+				return nil, errors.New("missing bearer token (add your abacad MCP token as Authorization: Bearer …)")
 			}
 			acc, err := st.AccountByMCPTokenHash(auth.HashToken(token))
 			if err != nil {

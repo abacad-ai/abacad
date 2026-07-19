@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# Multi-stage build of the Abacad relay: compile the dashboard SPA, embed it into
+# Multi-stage build of the abacad relay: compile the dashboard SPA, embed it into
 # the Go backend, and ship a single static binary. Mirrors server/build.sh.
 #
 # Build (context is server/):   docker build -t abacad -f server/Dockerfile server

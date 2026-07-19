@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Node test harness for the Abacad Go server: a mock device + MCP-client smoke tests.",
+  "description": "Node test harness for the abacad Go server: a mock device + MCP-client smoke tests.",
   "scripts": {
     "mock": "node mock-device.mjs",
     "smoke": "node smoke.mjs",

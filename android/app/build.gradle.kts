@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "dev.abacad.probe"
+    namespace = "ai.abacad.android"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "dev.abacad.probe"
+        applicationId = "ai.abacad.android"
         minSdk = 30          // Android 11 — AccessibilityService.takeScreenshot() lives here
         targetSdk = 34
         versionCode = 3
@@ -32,7 +32,7 @@ android {
 }
 
 dependencies {
-    // OkHttp: outbound WebSocket to the Abacad server. Everything else stays on
+    // OkHttp: outbound WebSocket to the abacad server. Everything else stays on
     // framework APIs (no AndroidX).
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // ZXing core: pure-Java QR decoder. Paired with the framework Camera2 API so

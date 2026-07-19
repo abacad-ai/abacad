@@ -59,7 +59,7 @@ func sourceFrom(ctx context.Context) string {
 // bearing: smoke.mjs retries the first tool call while it still matches, to
 // paper over the device connecting a beat after the agent.
 var (
-	ErrNoDevice   = errors.New("no device connected — open the Abacad app and connect it to this server")
+	ErrNoDevice   = errors.New("no device connected — open the abacad app and connect it to this server")
 	ErrDeviceGone = errors.New("device disconnected")
 	ErrTimeout    = errors.New("device timed out")
 )

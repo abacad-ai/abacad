@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Generate per-platform design tokens from design/tokens.json — the single
-// source of truth for Abacad's visual language across the web dashboard,
-// the Android probe, and the macOS agent.
+// source of truth for abacad's visual language across the web dashboard,
+// the Android app, and the macOS agent.
 //
 //   node design/generate.mjs
 //
@@ -12,8 +12,8 @@
 //
 // Outputs (all committed, all marked GENERATED):
 //   server/frontend/src/tokens.css                       CSS custom properties
-//   android/app/src/main/java/dev/abacad/probe/Theme.kt  Kotlin palettes (ARGB ints, dp/sp)
-//   macos/Sources/AbacadAgent/Theme.swift                SwiftUI dynamic Colors + CGFloats
+//   android/app/src/main/java/ai/abacad/android/Theme.kt  Kotlin palettes (ARGB ints, dp/sp)
+//   macos/Sources/abacad/Theme.swift                SwiftUI dynamic Colors + CGFloats
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -82,8 +82,8 @@ const camel = (name) => name.replace(/-(\w)/g, (_, c) => c.toUpperCase());
       .join("") +
     `    )\n`;
 
-  let kt = `package dev.abacad.probe\n\nimport android.content.res.Configuration\nimport android.content.res.Resources\n\n// ${HEADER}\n\n`;
-  kt += `/**\n * Abacad design tokens. Colors are ARGB ints (pass straight to setTextColor /\n * setBackgroundColor) and come as a dark and a light [Palette] — call\n * [Theme.of] to get the one matching the current system appearance (auto\n * dark/light is the product default on every surface). SPACE_* are dp,\n * TEXT_* are sp — multiply dp values by displayMetrics.density before use.\n */\nobject Theme {\n`;
+  let kt = `package ai.abacad.android\n\nimport android.content.res.Configuration\nimport android.content.res.Resources\n\n// ${HEADER}\n\n`;
+  kt += `/**\n * abacad design tokens. Colors are ARGB ints (pass straight to setTextColor /\n * setBackgroundColor) and come as a dark and a light [Palette] — call\n * [Theme.of] to get the one matching the current system appearance (auto\n * dark/light is the product default on every surface). SPACE_* are dp,\n * TEXT_* are sp — multiply dp values by displayMetrics.density before use.\n */\nobject Theme {\n`;
   kt += `    class Palette internal constructor(\n`;
   for (const name of Object.keys(dark)) kt += `        val ${upperSnake(name)}: Int,\n`;
   kt += `    )\n\n`;
@@ -94,7 +94,7 @@ const camel = (name) => name.replace(/-(\w)/g, (_, c) => c.toUpperCase());
   for (const [name, px] of Object.entries(tokens.radius)) kt += `    const val RADIUS_${upperSnake(name)} = ${px} // dp\n`;
   for (const [name, px] of Object.entries(tokens.font.size)) kt += `    const val TEXT_${upperSnake(name)} = ${px}f // sp\n`;
   kt += `}\n`;
-  writeFileSync(join(root, "android", "app", "src", "main", "java", "dev", "abacad", "probe", "Theme.kt"), kt);
+  writeFileSync(join(root, "android", "app", "src", "main", "java", "ai", "abacad", "android", "Theme.kt"), kt);
 }
 
 // --- Swift -------------------------------------------------------------
@@ -106,7 +106,7 @@ const camel = (name) => name.replace(/-(\w)/g, (_, c) => c.toUpperCase());
   };
 
   let sw = `import AppKit\nimport SwiftUI\n\n// ${HEADER}\n\n`;
-  sw += `/// Abacad design tokens. The menu-bar panel keeps native macOS materials for\n/// its chrome; these tokens supply the shared semantic colors (status, brand)\n/// and metrics so the panel reads as the same product as the dashboard. Each\n/// color is appearance-dynamic — it resolves to the dark or light variant as\n/// the system (or panel) appearance changes, so auto dark/light needs no code.\nenum Theme {\n`;
+  sw += `/// abacad design tokens. The menu-bar panel keeps native macOS materials for\n/// its chrome; these tokens supply the shared semantic colors (status, brand)\n/// and metrics so the panel reads as the same product as the dashboard. Each\n/// color is appearance-dynamic — it resolves to the dark or light variant as\n/// the system (or panel) appearance changes, so auto dark/light needs no code.\nenum Theme {\n`;
   sw += `    private typealias RGBA = (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat)\n\n`;
   sw += `    private static func dynamic(dark: RGBA, light: RGBA) -> Color {\n`;
   sw += `        Color(nsColor: NSColor(name: nil) { appearance in\n`;
@@ -123,7 +123,7 @@ const camel = (name) => name.replace(/-(\w)/g, (_, c) => c.toUpperCase());
   for (const [name, px] of Object.entries(tokens.radius)) sw += metric("radius", name, px);
   for (const [name, px] of Object.entries(tokens.font.size)) sw += metric("text", name, px);
   sw += `}\n`;
-  writeFileSync(join(root, "macos", "Sources", "AbacadAgent", "Theme.swift"), sw);
+  writeFileSync(join(root, "macos", "Sources", "abacad", "Theme.swift"), sw);
 }
 
 console.log("tokens: wrote tokens.css, Theme.kt, Theme.swift");

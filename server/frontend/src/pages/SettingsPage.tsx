@@ -85,7 +85,7 @@ export function SettingsPage() {
       <ol className="mb-5 grid gap-3 sm:grid-cols-3">
         <Step number="1" title="Generate a token" detail="The secret appears once in a secure reveal." complete={Boolean(info?.exists)} />
         <Step number="2" title="Register the endpoint" detail="Run the provided command in your agent environment." />
-        <Step number="3" title="Start issuing commands" detail="Abacad routes each request to the selected online device." />
+        <Step number="3" title="Start issuing commands" detail="abacad routes each request to the selected online device." />
       </ol>
 
       <Card className="overflow-hidden">

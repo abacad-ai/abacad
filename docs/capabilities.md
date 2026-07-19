@@ -28,7 +28,7 @@ The **Supported Platforms** column marks per-platform status:
 Platform backends: **Android** = AccessibilityService · **macOS** = AXUIElement +
 ScreenCaptureKit + CGEvent · **Windows** = UIA · **Linux** = AT-SPI / X11.
 
-Abacad's leverage is the **semantic** rungs (the accessibility tree). Pixel/coordinate
+abacad's leverage is the **semantic** rungs (the accessibility tree). Pixel/coordinate
 operations are the escape hatch for when structure runs out (canvas, WebView, games) —
 the same register RFB/VNC and RustDesk operate in, borrowed, not the primary interface.
 

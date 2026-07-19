@@ -99,7 +99,7 @@ function Brand() {
       </span>
       <span className="hidden min-[420px]:block">
         <span className="block font-display text-[15px] font-bold uppercase leading-4 tracking-[0.22em] text-ink">
-          Abacad
+          abacad
         </span>
         <span className="block font-mono text-[10px] uppercase leading-4 tracking-[0.14em] text-ink-subtle">
           device relay

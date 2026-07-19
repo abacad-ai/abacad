@@ -1,4 +1,4 @@
--- Abacad schema. Minimal-but-real multi-tenancy: accounts own devices and one
+-- abacad schema. Minimal-but-real multi-tenancy: accounts own devices and one
 -- MCP token; the web dashboard rides on sessions. All secret tokens are stored
 -- hashed (sha-256 hex); the plaintext is shown to the user once, never at rest.
 
