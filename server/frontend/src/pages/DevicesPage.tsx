@@ -39,10 +39,19 @@ function deviceWsUrl(token: string): string {
 
 type FormFactor = "handset" | "desktop";
 
-// The live screen — an absolutely-positioned layer that fills the frame's
-// screen cutout. The screenshot bleeds edge-to-edge (object-cover), so the
-// card reads as the device itself rather than a thumbnail in a box.
-function DeviceScreen({ device, factor }: { device: DeviceView; factor: FormFactor }) {
+// The live screen — an absolutely-positioned layer inside the frame. The frame
+// is sized to the screenshot's own aspect ratio, so object-contain fills it
+// exactly: the capture is shown whole, never cropped or stretched. On each load
+// we report the image's natural aspect ratio up to the frame via onAspect.
+function DeviceScreen({
+  device,
+  factor,
+  onAspect,
+}: {
+  device: DeviceView;
+  factor: FormFactor;
+  onAspect: (ratio: number | null) => void;
+}) {
   const [src, setSrc] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [manualNonce, setManualNonce] = useState(0);
@@ -51,6 +60,7 @@ function DeviceScreen({ device, factor }: { device: DeviceView; factor: FormFact
     if (!device.online) {
       setSrc(null);
       setFailed(false);
+      onAspect(null);
       return;
     }
 
@@ -65,6 +75,9 @@ function DeviceScreen({ device, factor }: { device: DeviceView; factor: FormFact
         if (!alive) return;
         setSrc(url);
         setFailed(false);
+        if (img.naturalWidth && img.naturalHeight) {
+          onAspect(img.naturalWidth / img.naturalHeight);
+        }
         timer = setTimeout(loadNext, SCREENSHOT_GAP_MS);
       };
       img.onerror = () => {
@@ -80,7 +93,7 @@ function DeviceScreen({ device, factor }: { device: DeviceView; factor: FormFact
       alive = false;
       clearTimeout(timer);
     };
-  }, [device.online, device.id, manualNonce]);
+  }, [device.online, device.id, manualNonce, onAspect]);
 
   const OfflineIcon = factor === "handset" ? Smartphone : Monitor;
 
@@ -92,7 +105,7 @@ function DeviceScreen({ device, factor }: { device: DeviceView; factor: FormFact
             <img
               src={src}
               alt={`${device.name} screen`}
-              className="absolute inset-0 h-full w-full object-cover object-top"
+              className="absolute inset-0 h-full w-full object-contain"
             />
           )}
           {!src && !failed && (
@@ -130,15 +143,28 @@ function DeviceScreen({ device, factor }: { device: DeviceView; factor: FormFact
   );
 }
 
-// A lightweight frame: just a hairline border and a soft shadow. Form factor
-// shows through the aspect ratio and corner radius — very rounded for a phone,
-// gently rounded for a screen — while the capture bleeds to the edge.
-function DeviceFrame({ factor, children }: { factor: FormFactor; children: React.ReactNode }) {
-  const shape = factor === "handset" ? "aspect-[9/18.5] rounded-[1.7rem]" : "aspect-[16/10] rounded-[12px]";
+// A lightweight frame: a hairline border and a soft shadow. When a screenshot
+// has loaded, the frame takes that image's exact aspect ratio, so the capture is
+// shown at its true shape — never cropped, never stretched. Until then (loading
+// or offline) it falls back to a device-shaped ratio: tall for a phone, wide for
+// a screen. Corner radius still signals form factor — very rounded for a phone,
+// gently rounded for a screen.
+function DeviceFrame({
+  factor,
+  aspect,
+  children,
+}: {
+  factor: FormFactor;
+  aspect: number | null;
+  children: React.ReactNode;
+}) {
+  const radius = factor === "handset" ? "rounded-[1.7rem]" : "rounded-[12px]";
+  const ratio = aspect ?? (factor === "handset" ? 9 / 18.5 : 16 / 10);
   return (
     <div className={`mx-auto w-full ${factor === "handset" ? "max-w-[176px]" : ""}`}>
       <div
-        className={`relative overflow-hidden border border-border bg-surface-raised shadow-[0_10px_24px_-16px_var(--shadow-strong)] transition-transform duration-200 hover:-translate-y-0.5 ${shape}`}
+        className={`relative overflow-hidden border border-border bg-surface-raised shadow-[0_10px_24px_-16px_var(--shadow-strong)] transition-transform duration-200 hover:-translate-y-0.5 ${radius}`}
+        style={{ aspectRatio: ratio }}
       >
         {children}
       </div>
@@ -598,6 +624,8 @@ function DeviceCard({
   onRotate: () => void;
   onRemove: () => void;
 }) {
+  const [aspect, setAspect] = useState<number | null>(null);
+
   const actions = (
     <div className="flex shrink-0 items-center gap-0.5">
       <IconAction icon={Activity} tip="Activity" aria={`View activity for ${device.name}`} onClick={onActivity} />
@@ -609,8 +637,8 @@ function DeviceCard({
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      <DeviceFrame factor={factor}>
-        <DeviceScreen device={device} factor={factor} />
+      <DeviceFrame factor={factor} aspect={aspect}>
+        <DeviceScreen device={device} factor={factor} onAspect={setAspect} />
       </DeviceFrame>
 
       {/* Narrow phone cards stack the name over the actions so it isn't crushed;
