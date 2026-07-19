@@ -31,6 +31,7 @@ import (
 	"abacad/internal/mcp"
 	"abacad/internal/relay"
 	"abacad/internal/resolver"
+	"abacad/internal/screenshot"
 	"abacad/internal/sshjump"
 	"abacad/internal/store"
 	"abacad/internal/web"
@@ -49,6 +50,11 @@ func main() {
 
 	if err := os.MkdirAll(cfg.BlobDir, 0o755); err != nil {
 		log.Fatalf("blob dir %q: %v", cfg.BlobDir, err)
+	}
+
+	shots, err := screenshot.Open(cfg.ScreenshotDir)
+	if err != nil {
+		log.Fatalf("screenshot dir %q: %v", cfg.ScreenshotDir, err)
 	}
 
 	if cfg.Seed {
@@ -117,7 +123,7 @@ func main() {
 		Activity: trail,
 	}
 
-	apiHandler := (&api.API{Store: st, Hub: hub, Events: evlog, Activity: trail, BaseDomain: cfg.BaseDomain}).Handler()
+	apiHandler := (&api.API{Store: st, Hub: hub, Events: evlog, Activity: trail, Shots: shots, BaseDomain: cfg.BaseDomain}).Handler()
 
 	// /blobs: the data plane. Authorized by any of the server's identities —
 	// dashboard session, MCP bearer, or device token — all resolving to the

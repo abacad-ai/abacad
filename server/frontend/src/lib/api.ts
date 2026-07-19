@@ -9,6 +9,7 @@ export interface DeviceView {
   last_seen?: string;
   created_at: string;
   ssh_host?: string; // ssh <ssh_host> reaches this device via the jump host
+  screenshot_at?: number; // unix seconds of the last stored screenshot; absent if none
 }
 
 export interface SshKey {

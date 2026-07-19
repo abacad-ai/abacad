@@ -1,15 +1,23 @@
 import { useEffect, useState } from "react";
-import { ImageOff, LoaderCircle, Monitor, Smartphone } from "lucide-react";
+import { LoaderCircle, Monitor, Smartphone } from "lucide-react";
 import { api, type DeviceView } from "@/lib/api";
-import { relativeTime } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { type FormFactor } from "@/lib/devices";
 
 export const SCREENSHOT_GAP_MS = 2000;
 
-// The live screen — an absolutely-positioned layer inside the frame. The frame
-// is sized to the screenshot's own aspect ratio, so object-contain fills it
-// exactly: the capture is shown whole, never cropped or stretched. On each load
-// we report the image's natural aspect ratio up to the frame via onAspect.
+// The device screen — an absolutely-positioned layer inside the frame. The
+// server keeps each device's last screenshot, so we can render one instantly:
+//
+//   - offline, with a stored frame: show it grayscaled (the last thing it saw),
+//   - offline, no stored frame:     the "signal lost" placeholder,
+//   - online:                       show the stored frame at once, then live-poll
+//                                   fresh frames (each also becomes the new stored
+//                                   one server-side) and swap them in.
+//
+// The frame is sized to the screenshot's own aspect ratio, so object-contain
+// fills it exactly — the capture is shown whole, never cropped or stretched. On
+// each image load we report its natural aspect ratio up to the frame via onAspect.
 export function DeviceScreen({
   device,
   factor,
@@ -19,36 +27,41 @@ export function DeviceScreen({
   factor: FormFactor;
   onAspect: (ratio: number | null) => void;
 }) {
-  const [src, setSrc] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [liveFrame, setLiveFrame] = useState<string | null>(null);
+  const [broken, setBroken] = useState(false);
 
+  const base = api.deviceScreenshotUrl(device.id);
+  // The stored last screenshot, keyed by its capture time so the browser refetches
+  // only when it actually changes. Absent until the device has ever been captured.
+  const savedFrame = device.screenshot_at ? `${base}?v=${device.screenshot_at}` : null;
+
+  // Start clean when switching to a different device.
   useEffect(() => {
-    if (!device.online) {
-      setSrc(null);
-      setFailed(false);
-      onAspect(null);
-      return;
-    }
+    setLiveFrame(null);
+    setBroken(false);
+  }, [device.id]);
 
+  // Live poll while online. Each fetch captures a fresh frame (the server stores
+  // it as the device's new last screenshot) which we preload, then swap in — so
+  // the visible image never flashes to empty mid-load. The last live frame is
+  // kept when the device drops, so it lingers (grayscaled) instead of vanishing.
+  useEffect(() => {
+    if (!device.online) return;
     let alive = true;
     let timer: ReturnType<typeof setTimeout>;
     let seq = 0;
 
     const loadNext = () => {
-      const url = `${api.deviceScreenshotUrl(device.id)}?t=${Date.now()}_${seq++}`;
+      const url = `${base}?live=1&t=${Date.now()}_${seq++}`;
       const img = new Image();
       img.onload = () => {
         if (!alive) return;
-        setSrc(url);
-        setFailed(false);
-        if (img.naturalWidth && img.naturalHeight) {
-          onAspect(img.naturalWidth / img.naturalHeight);
-        }
+        setLiveFrame(url);
+        setBroken(false);
         timer = setTimeout(loadNext, SCREENSHOT_GAP_MS);
       };
       img.onerror = () => {
         if (!alive) return;
-        setFailed(true);
         timer = setTimeout(loadNext, SCREENSHOT_GAP_MS);
       };
       img.src = url;
@@ -59,44 +72,44 @@ export function DeviceScreen({
       alive = false;
       clearTimeout(timer);
     };
-  }, [device.online, device.id, onAspect]);
+  }, [device.online, device.id, base]);
 
   const OfflineIcon = factor === "handset" ? Smartphone : Monitor;
+  const shown = !broken ? liveFrame ?? savedFrame : null;
 
+  if (shown) {
+    return (
+      <img
+        src={shown}
+        alt={`${device.name} screen`}
+        onLoad={(e) => {
+          const img = e.currentTarget;
+          if (img.naturalWidth && img.naturalHeight) onAspect(img.naturalWidth / img.naturalHeight);
+        }}
+        onError={() => setBroken(true)}
+        className={cn(
+          "absolute inset-0 h-full w-full object-contain",
+          !device.online && "grayscale",
+        )}
+      />
+    );
+  }
+
+  // No frame to show: waiting for the first capture while online, or a device
+  // that has never been captured and is now offline.
+  if (device.online) {
+    return (
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-ink-subtle">
+        <LoaderCircle size={20} className="animate-spin" />
+        <span className="font-mono text-[10px] uppercase tracking-wider">Capturing</span>
+      </div>
+    );
+  }
   return (
-    <>
-      {device.online ? (
-        <>
-          {src && (
-            <img
-              src={src}
-              alt={`${device.name} screen`}
-              className="absolute inset-0 h-full w-full object-contain"
-            />
-          )}
-          {!src && !failed && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-ink-subtle">
-              <LoaderCircle size={20} className="animate-spin" />
-              <span className="font-mono text-[10px] uppercase tracking-wider">Capturing</span>
-            </div>
-          )}
-          {!src && failed && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-3 text-center text-ink-subtle">
-              <ImageOff size={22} />
-              <span className="font-mono text-[10px] uppercase leading-4 tracking-wider">No capture</span>
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-ink-subtle">
-          <OfflineIcon size={factor === "handset" ? 24 : 30} strokeWidth={1.25} />
-          <span className="font-mono text-[10px] uppercase tracking-[0.22em]">Signal lost</span>
-          {device.last_seen && (
-            <span className="font-mono text-[10px]">seen {relativeTime(device.last_seen)}</span>
-          )}
-        </div>
-      )}
-    </>
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-ink-subtle">
+      <OfflineIcon size={factor === "handset" ? 24 : 30} strokeWidth={1.25} />
+      <span className="font-mono text-[10px] uppercase tracking-[0.22em]">Signal lost</span>
+    </div>
   );
 }
 

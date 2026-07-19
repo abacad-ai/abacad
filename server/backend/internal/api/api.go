@@ -20,6 +20,7 @@ import (
 	"abacad/internal/events"
 	"abacad/internal/protocol"
 	"abacad/internal/relay"
+	"abacad/internal/screenshot"
 	"abacad/internal/sshjump"
 	"abacad/internal/store"
 )
@@ -32,6 +33,7 @@ type API struct {
 	Hub        *relay.Hub
 	Events     *events.Log        // per-device live activity ring
 	Activity   *activity.Recorder // persistent account trail (Activities page)
+	Shots      *screenshot.Store  // per-device last-screenshot cache
 	BaseDomain string             // domain devices are addressed under, for the ssh_host hint
 }
 
@@ -164,13 +166,14 @@ func (a *API) me(w http.ResponseWriter, r *http.Request) {
 // --- device handlers ---
 
 type deviceView struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Online    bool   `json:"online"`
-	Platform  string `json:"platform,omitempty"` // e.g. "android", "macos"; blank if unset
-	LastSeen  string `json:"last_seen,omitempty"`
-	CreatedAt string `json:"created_at"`
-	SSHHost   string `json:"ssh_host,omitempty"` // ssh <ssh_host> reaches this device via the jump
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Online       bool   `json:"online"`
+	Platform     string `json:"platform,omitempty"` // e.g. "android", "macos"; blank if unset
+	LastSeen     string `json:"last_seen,omitempty"`
+	CreatedAt    string `json:"created_at"`
+	SSHHost      string `json:"ssh_host,omitempty"`      // ssh <ssh_host> reaches this device via the jump
+	ScreenshotAt int64  `json:"screenshot_at,omitempty"` // unix seconds of the last stored screenshot; 0/absent if none
 }
 
 func (a *API) listDevices(w http.ResponseWriter, r *http.Request) {
@@ -261,6 +264,9 @@ func (a *API) deleteDevice(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not delete device")
 		return
 	}
+	if a.Shots != nil {
+		a.Shots.Delete(r.PathValue("id"))
+	}
 	a.record(account(r).ID, store.Activity{Kind: activity.KindDeviceDelete, DeviceID: r.PathValue("id"), Detail: name})
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -279,9 +285,15 @@ func (a *API) rotateDeviceToken(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"device_token": token, "wss_url": wsURL(r, token)})
 }
 
-// deviceScreenshot proxies a live screenshot from the device: it asks the
-// connected device for a JPEG (no UI tree — the dashboard only needs the image)
-// and streams the decoded bytes back so the frontend can use it as an <img> src.
+// deviceScreenshot serves a device's screen as a JPEG for an <img> src. It has
+// two modes:
+//
+//   - default: serve the last stored screenshot (fast, no device round-trip).
+//     Works whether the device is online or offline, so the dashboard can show a
+//     device's screen instantly on load and keep showing it after it drops.
+//   - ?live=1: capture a fresh frame from the connected device, store it as the
+//     new last screenshot, and serve it. This is the dashboard's live poll; on a
+//     capture failure it falls back to the last stored frame.
 func (a *API) deviceScreenshot(w http.ResponseWriter, r *http.Request) {
 	d, err := a.Store.DeviceOwnedBy(r.PathValue("id"), account(r).ID)
 	if errors.Is(err, store.ErrNotFound) {
@@ -292,33 +304,59 @@ func (a *API) deviceScreenshot(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not load device")
 		return
 	}
-	dc, ok := a.Hub.Get(d.ID)
-	if !ok {
-		writeErr(w, http.StatusServiceUnavailable, "device offline")
+
+	if r.URL.Query().Get("live") == "1" {
+		if jpeg, ok := a.captureLive(r, d.ID); ok {
+			_ = a.Shots.Save(d.ID, jpeg)
+			writeJPEG(w, jpeg)
+			return
+		}
+		// Capture failed (offline, timeout, malformed): fall through to the last
+		// stored frame so the live poll keeps showing something instead of breaking.
+	}
+
+	f, modTime, err := a.Shots.Open(d.ID)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "no screenshot available")
 		return
+	}
+	defer f.Close()
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "no-store")
+	http.ServeContent(w, r, "", modTime, f)
+}
+
+// captureLive asks the connected device for a fresh JPEG (no UI tree — the
+// dashboard only needs the image). Returns false if the device is offline or the
+// capture fails; the caller falls back to the last stored frame.
+func (a *API) captureLive(r *http.Request, deviceID string) ([]byte, bool) {
+	dc, ok := a.Hub.Get(deviceID)
+	if !ok {
+		return nil, false
 	}
 	// Tag this as a dashboard-originated command so the activity log can tell it
 	// apart from the agent's own screenshots.
 	ctx := relay.WithSource(r.Context(), "dashboard")
 	raw, err := dc.Send(ctx, protocol.MethodScreenshot, map[string]any{"include_ui_tree": false}, 0)
 	if err != nil {
-		writeErr(w, http.StatusBadGateway, err.Error())
-		return
+		return nil, false
 	}
 	var res protocol.ScreenshotResult
 	if err := json.Unmarshal(raw, &res); err != nil {
-		writeErr(w, http.StatusBadGateway, "device returned a malformed screenshot")
-		return
+		return nil, false
 	}
-	png, err := base64.StdEncoding.DecodeString(res.PNGBase64)
-	if err != nil {
-		writeErr(w, http.StatusBadGateway, "device returned a malformed screenshot")
-		return
+	jpeg, err := base64.StdEncoding.DecodeString(res.PNGBase64)
+	if err != nil || len(jpeg) == 0 {
+		return nil, false
 	}
+	return jpeg, true
+}
+
+func writeJPEG(w http.ResponseWriter, jpeg []byte) {
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(png)
+	_, _ = w.Write(jpeg)
 }
 
 // deviceEvents returns the device's recent activity log (connects, disconnects
@@ -501,6 +539,11 @@ func (a *API) viewDevice(d store.Device) deviceView {
 	}
 	if a.BaseDomain != "" {
 		v.SSHHost = sshjump.HostForDevice(d.ID, a.BaseDomain)
+	}
+	if a.Shots != nil {
+		if at, ok := a.Shots.At(d.ID); ok {
+			v.ScreenshotAt = at
+		}
 	}
 	return v
 }

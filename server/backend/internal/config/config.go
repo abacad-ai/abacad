@@ -8,13 +8,14 @@ import (
 )
 
 type Config struct {
-	Addr         string // listen address, e.g. ":8848"
-	DBPath       string // SQLite file path
-	BlobDir      string // directory for data-plane blob bytes (/blobs store)
-	DownloadsDir string // directory of public release artifacts served at /downloads/
-	MaxBlobBytes int64  // reject a single blob upload larger than this
-	DevCORS      bool   // permissive CORS for local dev (Vite / smoke.mjs hitting Go directly)
-	Seed         bool   // create a dev account/device/tokens on boot
+	Addr          string // listen address, e.g. ":8848"
+	DBPath        string // SQLite file path
+	BlobDir       string // directory for data-plane blob bytes (/blobs store)
+	ScreenshotDir string // directory for per-device last-screenshot bytes
+	DownloadsDir  string // directory of public release artifacts served at /downloads/
+	MaxBlobBytes  int64  // reject a single blob upload larger than this
+	DevCORS       bool   // permissive CORS for local dev (Vite / smoke.mjs hitting Go directly)
+	Seed          bool   // create a dev account/device/tokens on boot
 
 	ActivityRetentionDays int // prune activity-trail rows older than this (0 = keep forever)
 
@@ -31,6 +32,7 @@ func Load() Config {
 	flag.StringVar(&c.Addr, "addr", envOr("ABACAD_ADDR", ":8848"), "listen address")
 	flag.StringVar(&c.DBPath, "db", envOr("ABACAD_DB", "abacad.db"), "SQLite database path")
 	flag.StringVar(&c.BlobDir, "blobs", envOr("ABACAD_BLOBS", "abacad-blobs"), "directory for /blobs data-plane storage")
+	flag.StringVar(&c.ScreenshotDir, "screenshots", envOr("ABACAD_SCREENSHOTS", "abacad-screenshots"), "directory for per-device last-screenshot storage")
 	flag.StringVar(&c.DownloadsDir, "downloads", envOr("ABACAD_DOWNLOADS", "abacad-downloads"), "directory of public release artifacts served at /downloads/")
 	flag.Int64Var(&c.MaxBlobBytes, "max-blob-bytes", envOrInt64("ABACAD_MAX_BLOB_BYTES", 1<<30), "reject a single /blobs upload larger than this (bytes)")
 	flag.BoolVar(&c.DevCORS, "dev-cors", os.Getenv("ABACAD_DEV_CORS") == "1", "enable permissive CORS for local dev")
