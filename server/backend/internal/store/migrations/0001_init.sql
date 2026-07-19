@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS idx_sessions_account ON sessions(account_id);
 
 CREATE TABLE IF NOT EXISTS devices (
-  id         TEXT PRIMARY KEY,             -- dev_<random>; the selectable device_id
+  id         TEXT PRIMARY KEY,             -- bare base32 random (auth.NewDeviceID); the selectable device_id
   account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   name       TEXT NOT NULL DEFAULT '',
   token_hash TEXT NOT NULL UNIQUE,         -- sha-256 of the device token

@@ -183,7 +183,7 @@ func (s *Store) DeleteSession(sessionID string) error {
 // free-form tag (e.g. "android", "macos"); "" leaves it unset.
 func (s *Store) CreateDevice(accountID, name, platform string) (Device, string, error) {
 	token := auth.NewSecret(deviceTokenPrefix)
-	d := Device{ID: auth.NewID("dev"), AccountID: accountID, Name: name, Platform: platform, CreatedAt: now()}
+	d := Device{ID: auth.NewDeviceID(), AccountID: accountID, Name: name, Platform: platform, CreatedAt: now()}
 	_, err := s.db.Exec(`INSERT INTO devices(id,account_id,name,token_hash,platform,created_at,last_seen)
 		VALUES(?,?,?,?,?,?,0)`, d.ID, d.AccountID, d.Name, auth.HashToken(token), d.Platform, d.CreatedAt)
 	if err != nil {

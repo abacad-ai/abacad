@@ -23,9 +23,19 @@ func randToken(n int) string {
 }
 
 // NewID makes a short unique identifier with the given prefix, e.g.
-// NewID("dev") -> "dev_ktp4h2n9...". Used for account/device/session ids.
+// NewID("acc") -> "acc_ktp4h2n9...". Used for account, session, and similar
+// prefixed ids. Devices are the exception: they use NewDeviceID (no prefix).
 func NewID(prefix string) string {
 	return prefix + "_" + randToken(10)
+}
+
+// NewDeviceID makes a bare, prefix-free identifier: a lowercase base32 random
+// string with no type tag and no dashes (e.g. "ktp4h2n9m3q7v1x8"). Devices use
+// this because their id shows up in URLs (/devices/<id>), in ssh hostnames, and
+// in the agent's device selection — places where a clean token reads best. Same
+// entropy as NewID, just without the "dev_" prefix.
+func NewDeviceID() string {
+	return randToken(10)
 }
 
 // NewSecret makes a longer, high-entropy secret token with the given prefix,

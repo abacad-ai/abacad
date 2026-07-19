@@ -155,9 +155,10 @@ func (s *Server) handleForward(accountID string, newChan ssh.NewChannel) {
 	<-done
 }
 
-// DeviceIDFromHost extracts a device id from a forwarding target host. The label
-// is the device id with '_' rendered as '-' (device ids are dev_<base32>, and
-// '_' is not a valid DNS label character): "dev-ab3x.abacad.ai" -> "dev_ab3x".
+// DeviceIDFromHost extracts a device id from a forwarding target host. Device ids
+// are bare lowercase base32 — already valid DNS labels — so the label is normally
+// the id verbatim: "ab3xk9t2.abacad.ai" -> "ab3xk9t2". The '-'<->'_' swap is kept
+// so any legacy prefixed id still round-trips ("dev-ab3x" -> "dev_ab3x").
 func DeviceIDFromHost(host, baseDomain string) (string, error) {
 	host = strings.ToLower(strings.TrimSuffix(host, "."))
 	suffix := "." + strings.ToLower(baseDomain)

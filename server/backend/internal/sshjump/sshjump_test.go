@@ -18,9 +18,10 @@ func TestDeviceIDFromHost(t *testing.T) {
 		host, base, want string
 		wantErr          bool
 	}{
-		{"dev-ab3x.abacad.ai", "abacad.ai", "dev_ab3x", false},
-		{"DEV-AB3X.Abacad.AI", "abacad.ai", "dev_ab3x", false}, // case-insensitive
-		{"dev-ab3x.abacad.ai.", "abacad.ai", "dev_ab3x", false}, // trailing dot
+		{"ab3xk9t2wq.abacad.ai", "abacad.ai", "ab3xk9t2wq", false}, // bare base32 id (current format)
+		{"dev-ab3x.abacad.ai", "abacad.ai", "dev_ab3x", false},    // legacy prefixed id still round-trips
+		{"DEV-AB3X.Abacad.AI", "abacad.ai", "dev_ab3x", false},    // case-insensitive
+		{"dev-ab3x.abacad.ai.", "abacad.ai", "dev_ab3x", false},   // trailing dot
 		{"dev-ab3x.example.com", "abacad.ai", "", true},         // wrong domain
 		{"abacad.ai", "abacad.ai", "", true},                    // no label
 		{"a.b.abacad.ai", "abacad.ai", "", true},                // multi-label
@@ -40,9 +41,13 @@ func TestDeviceIDFromHost(t *testing.T) {
 			t.Errorf("DeviceIDFromHost(%q) = %q, want %q", c.host, got, c.want)
 		}
 	}
-	// Round-trips with HostForDevice.
+	// Round-trips with HostForDevice — a bare base32 id is a valid DNS label as-is.
+	if h := HostForDevice("ab3xk9t2wq", "abacad.ai"); h != "ab3xk9t2wq.abacad.ai" {
+		t.Errorf("HostForDevice(bare) = %q", h)
+	}
+	// Legacy prefixed ids still round-trip via the '_'<->'-' swap.
 	if h := HostForDevice("dev_ab3x", "abacad.ai"); h != "dev-ab3x.abacad.ai" {
-		t.Errorf("HostForDevice = %q", h)
+		t.Errorf("HostForDevice(legacy) = %q", h)
 	}
 }
 
