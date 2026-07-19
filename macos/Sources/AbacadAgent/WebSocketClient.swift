@@ -27,7 +27,14 @@ final class WebSocketClient: NSObject, URLSessionWebSocketDelegate, @unchecked S
     }
 
     func connect(urlString: String) {
-        guard let u = URL(string: urlString) else { return }
+        // URL(string:) accepts non-ws schemes (e.g. a bare "host:port" parses with
+        // "host" as the scheme), but webSocketTask(with:) throws an uncaught
+        // NSException for anything that isn't ws/wss. Since connect() runs during
+        // Agent.init(), that throw would kill the process before the menu-bar item
+        // is installed — so validate the scheme here and refuse a bad URL instead.
+        guard let u = URL(string: urlString),
+              let scheme = u.scheme?.lowercased(),
+              scheme == "ws" || scheme == "wss" else { return }
         closedByUser = false
         url = u
         openSocket()

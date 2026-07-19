@@ -126,19 +126,6 @@ function DeviceScreen({ device, factor }: { device: DeviceView; factor: FormFact
           )}
         </div>
       )}
-
-      <span
-        className={`absolute z-20 inline-flex items-center gap-1.5 rounded-full px-2 py-1 font-mono text-[10px] font-medium uppercase tracking-wider backdrop-blur ${
-          factor === "handset" ? "bottom-2 left-2" : "left-2 top-2"
-        } ${
-          device.online
-            ? "bg-black/50 text-[#4ade80] ring-1 ring-[#4ade80]/30"
-            : "bg-surface/85 text-ink-muted ring-1 ring-border"
-        }`}
-      >
-        <span className={`h-1.5 w-1.5 rounded-full ${device.online ? "pulse-dot bg-[#4ade80]" : "bg-ink-subtle"}`} />
-        {device.online ? "online" : "offline"}
-      </span>
     </>
   );
 }
