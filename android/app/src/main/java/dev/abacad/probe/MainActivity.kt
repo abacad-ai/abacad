@@ -45,7 +45,8 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val prefs = getSharedPreferences(ProbeAccessibilityService.PREFS, Context.MODE_PRIVATE)
-        val pad = (24 * resources.displayMetrics.density).toInt()
+        val dp = resources.displayMetrics.density
+        val pad = (Theme.SPACE_XL * dp).toInt()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -55,17 +56,19 @@ class MainActivity : Activity() {
         // --- live connection status panel (top of screen) ---
         val statusHeader = TextView(this).apply {
             text = "Connection"
+            textSize = Theme.TEXT_LG
+            setTextColor(Theme.INK)
             setTypeface(typeface, Typeface.BOLD)
         }
         statusView = TextView(this).apply {
-            textSize = 15f
-            setPadding(0, (4 * resources.displayMetrics.density).toInt(), 0, 0)
+            textSize = Theme.TEXT_MD
+            setPadding(0, (Theme.SPACE_XS * dp).toInt(), 0, 0)
         }
         activityView = TextView(this).apply {
-            textSize = 12f
+            textSize = Theme.TEXT_XS
             typeface = Typeface.MONOSPACE
-            setTextColor(0xFF64748B.toInt())
-            setPadding(0, (6 * resources.displayMetrics.density).toInt(), 0, pad)
+            setTextColor(Theme.INK_SUBTLE)
+            setPadding(0, (Theme.SPACE_SM * dp).toInt(), 0, pad)
         }
 
         urlField = EditText(this).apply {
@@ -128,7 +131,8 @@ class MainActivity : Activity() {
         }
 
         val info = TextView(this).apply {
-            textSize = 13f
+            textSize = Theme.TEXT_SM
+            setTextColor(Theme.INK_MUTED)
             text = """
                 Abacad — device agent
 
@@ -162,6 +166,7 @@ class MainActivity : Activity() {
             """.trimIndent()
         }
 
+        root.setBackgroundColor(Theme.CANVAS)
         root.addView(statusHeader)
         root.addView(statusView)
         root.addView(activityView)
@@ -201,9 +206,9 @@ class MainActivity : Activity() {
         statusView.text = "● ${s.name.lowercase()} — ${ProbeStatus.detail}"
         statusView.setTextColor(
             when (s) {
-                ProbeStatus.State.CONNECTED -> 0xFF16A34A.toInt() // green
-                ProbeStatus.State.CONNECTING, ProbeStatus.State.RECONNECTING -> 0xFFCA8A04.toInt() // amber
-                ProbeStatus.State.DISCONNECTED -> 0xFFDC2626.toInt() // red
+                ProbeStatus.State.CONNECTED -> Theme.SUCCESS
+                ProbeStatus.State.CONNECTING, ProbeStatus.State.RECONNECTING -> Theme.WARNING
+                ProbeStatus.State.DISCONNECTED -> Theme.DANGER
             },
         )
         val lines = ProbeStatus.recentLines()

@@ -1,0 +1,40 @@
+/* GENERATED from design/tokens.json — do not edit. Run: node design/generate.mjs */
+:root {
+  --canvas: #0b0d10;
+  --sidebar: #101318;
+  --surface: #15191f;
+  --surface-raised: #1a1f27;
+  --surface-hover: #202630;
+  --border: #282f39;
+  --border-strong: #3a4452;
+  --ink: #f4f7fb;
+  --ink-muted: #a7b0bd;
+  --ink-subtle: #727d8c;
+  --brand: #67e8a5;
+  --brand-strong: #2fc77e;
+  --brand-soft: #153d2d;
+  --on-brand: #07130d;
+  --success: #67e8a5;
+  --success-strong: #2fc77e;
+  --success-soft: #143528;
+  --warning: #f5c96b;
+  --warning-strong: #ca8a04;
+  --warning-soft: #3d3017;
+  --danger: #ff8a8a;
+  --danger-strong: #dc2626;
+  --danger-soft: #421f24;
+  --danger-hover: #55262d;
+  --scrim: #000000aa;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-pill: 999px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 15px;
+  --text-lg: 17px;
+}

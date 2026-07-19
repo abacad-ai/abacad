@@ -5,7 +5,6 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.graphics.ImageFormat
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraCaptureSession
@@ -63,7 +62,7 @@ class ScanActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+        val root = FrameLayout(this).apply { setBackgroundColor(Theme.CANVAS) }
         textureView = TextureView(this)
         root.addView(
             textureView,
@@ -74,9 +73,10 @@ class ScanActivity : Activity() {
         )
         hint = TextView(this).apply {
             text = "Point at the connection QR on the dashboard"
-            setTextColor(Color.WHITE)
-            setBackgroundColor(0xAA000000.toInt())
-            val p = (12 * resources.displayMetrics.density).toInt()
+            textSize = Theme.TEXT_MD
+            setTextColor(Theme.INK)
+            setBackgroundColor(Theme.SCRIM)
+            val p = (Theme.SPACE_MD * resources.displayMetrics.density).toInt()
             setPadding(p, p, p, p)
         }
         root.addView(

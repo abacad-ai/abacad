@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./tokens.css";
 
 @theme inline {
   --color-canvas: var(--canvas);
@@ -24,29 +25,10 @@
   --color-on-brand: var(--on-brand);
 }
 
+/* Palette + metrics live in tokens.css, generated from design/tokens.json —
+   the cross-platform source of truth shared with the Android and macOS clients. */
 :root {
   color-scheme: dark;
-  --canvas: #0b0d10;
-  --sidebar: #101318;
-  --surface: #15191f;
-  --surface-raised: #1a1f27;
-  --surface-hover: #202630;
-  --border: #282f39;
-  --border-strong: #3a4452;
-  --ink: #f4f7fb;
-  --ink-muted: #a7b0bd;
-  --ink-subtle: #727d8c;
-  --brand: #67e8a5;
-  --brand-strong: #2fc77e;
-  --brand-soft: #153d2d;
-  --success: #67e8a5;
-  --success-soft: #143528;
-  --warning: #f5c96b;
-  --warning-soft: #3d3017;
-  --danger: #ff8a8a;
-  --danger-soft: #421f24;
-  --danger-hover: #55262d;
-  --on-brand: #07130d;
   font-family:
     Inter, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   font-synthesis: none;

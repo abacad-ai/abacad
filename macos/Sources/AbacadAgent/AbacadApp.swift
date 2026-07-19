@@ -81,13 +81,17 @@ struct AgentPanel: View {
     @ObservedObject var agent: Agent
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        // Panel chrome stays native (materials, system font); colors and spacing
+        // come from Theme so status reads identically to the dashboard and the
+        // Android probe.
+        VStack(alignment: .leading, spacing: Theme.spaceMd) {
             HStack {
-                Circle().fill(agent.connected ? .green : .secondary).frame(width: 8, height: 8)
+                Circle().fill(agent.connected ? Theme.success : Theme.inkSubtle)
+                    .frame(width: 8, height: 8)
                 Text(agent.connected ? "Connected" : "Disconnected").font(.headline)
             }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Theme.spaceXs) {
                 Text("Server URL").font(.caption).foregroundStyle(.secondary)
                 TextField("wss://host:8848/device?token=…", text: $agent.serverURL)
                     .textFieldStyle(.roundedBorder)
@@ -100,7 +104,7 @@ struct AgentPanel: View {
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Theme.spaceSm) {
                 Text("Permissions").font(.caption).foregroundStyle(.secondary)
                 permissionRow(
                     label: "Accessibility",
@@ -118,7 +122,7 @@ struct AgentPanel: View {
             Divider()
             Button("Quit Abacad Agent") { NSApplication.shared.terminate(nil) }
         }
-        .padding(14)
+        .padding(Theme.spaceLg)
         .onAppear { agent.refreshPermissions() }
     }
 
@@ -126,7 +130,7 @@ struct AgentPanel: View {
     private func permissionRow(label: String, granted: Bool, grant: @escaping () -> Void) -> some View {
         HStack {
             Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.circle")
-                .foregroundStyle(granted ? .green : .orange)
+                .foregroundStyle(granted ? Theme.success : Theme.warning)
             Text(label)
             Spacer()
             if !granted { Button("Grant", action: grant).font(.caption) }

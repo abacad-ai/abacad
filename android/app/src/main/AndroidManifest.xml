@@ -35,7 +35,9 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="Abacad Probe"
         android:usesCleartextTraffic="true"
-        android:theme="@android:style/Theme.DeviceDefault.Light">
+        android:theme="@android:style/Theme.DeviceDefault">
+        <!-- Dark DeviceDefault: matches the shared dark palette (design/tokens.json)
+             used by the dashboard and macOS agent; Theme.kt supplies the exact colors. -->
 
         <activity
             android:name=".MainActivity"
