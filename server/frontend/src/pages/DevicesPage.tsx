@@ -1,20 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
-  Activity,
   CheckCircle2,
   ImageOff,
   LoaderCircle,
   Monitor,
-  Pencil,
   Plus,
   RefreshCw,
   ShieldCheck,
   Smartphone,
-  Trash2,
 } from "lucide-react";
-import { api, type DeviceEvent, type DeviceView } from "@/lib/api";
-import { clockTime, relativeTime } from "@/lib/utils";
+import { api, type DeviceView } from "@/lib/api";
+import { relativeTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -24,7 +21,6 @@ import { CopyField } from "@/components/CopyField";
 
 const DEVICES_POLL_MS = 5000;
 const SCREENSHOT_GAP_MS = 2000;
-const ACTIVITY_POLL_MS = 3000;
 
 interface Reveal {
   title: string;
@@ -54,7 +50,6 @@ function DeviceScreen({
 }) {
   const [src, setSrc] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
-  const [manualNonce, setManualNonce] = useState(0);
 
   useEffect(() => {
     if (!device.online) {
@@ -93,7 +88,7 @@ function DeviceScreen({
       alive = false;
       clearTimeout(timer);
     };
-  }, [device.online, device.id, manualNonce, onAspect]);
+  }, [device.online, device.id, onAspect]);
 
   const OfflineIcon = factor === "handset" ? Smartphone : Monitor;
 
@@ -120,15 +115,6 @@ function DeviceScreen({
               <span className="font-mono text-[10px] uppercase leading-4 tracking-wider">No capture</span>
             </div>
           )}
-          <button
-            type="button"
-            onClick={() => setManualNonce((nonce) => nonce + 1)}
-            className="absolute bottom-2 right-2 z-20 flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/55 text-white backdrop-blur transition-colors hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-            title="Refresh screenshot"
-            aria-label={`Refresh screenshot for ${device.name}`}
-          >
-            <RefreshCw size={13} />
-          </button>
         </>
       ) : (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-ink-subtle">
@@ -172,136 +158,14 @@ function DeviceFrame({
   );
 }
 
-function outcomeStyle(outcome?: string): { dot: string; text: string; badge: string } {
-  switch (outcome) {
-    case "ok":
-      return { dot: "bg-success", text: "text-success", badge: "bg-success-soft text-success" };
-    case "timeout":
-    case "error":
-      return { dot: "bg-danger", text: "text-danger", badge: "bg-danger-soft text-danger" };
-    case "device_gone":
-    case "canceled":
-      return { dot: "bg-warning", text: "text-warning", badge: "bg-warning-soft text-warning" };
-    default:
-      return { dot: "bg-ink-subtle", text: "text-ink-muted", badge: "bg-surface-hover text-ink-muted" };
-  }
-}
-
-function eventLabel(event: DeviceEvent): string {
-  if (event.kind === "connected") return "Device connected";
-  if (event.kind === "disconnected") return `Device disconnected${event.detail ? `: ${event.detail}` : ""}`;
-  const source = event.source ? `${event.source} · ` : "";
-  const duration = event.duration_ms != null ? ` · ${event.duration_ms}ms` : "";
-  const detail = event.outcome === "error" && event.detail ? `: ${event.detail}` : "";
-  return `${source}${event.method}${duration}${detail}`;
-}
-
-function eventDot(event: DeviceEvent): string {
-  if (event.kind === "connected") return "bg-success";
-  if (event.kind === "disconnected") return "bg-warning";
-  return outcomeStyle(event.outcome).dot;
-}
-
-function DeviceActivity({ device, onClose }: { device: DeviceView; onClose: () => void }) {
-  const [events, setEvents] = useState<DeviceEvent[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    let timer: ReturnType<typeof setTimeout>;
-
-    const load = async () => {
-      try {
-        const result = await api.deviceEvents(device.id);
-        if (!alive) return;
-        setEvents(result.events);
-        setError(null);
-      } catch (err) {
-        if (alive) setError((err as Error).message);
-      } finally {
-        if (alive) timer = setTimeout(load, ACTIVITY_POLL_MS);
-      }
-    };
-
-    void load();
-    return () => {
-      alive = false;
-      clearTimeout(timer);
-    };
-  }, [device.id]);
-
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      title={`${device.name} activity`}
-      description="Recent connections and commands. Updates automatically while open."
-      className="sm:max-w-2xl"
-    >
-      <div className="mb-4 flex flex-wrap items-center gap-2 text-xs">
-        <DeviceStatus online={device.online} />
-        {!device.online && device.last_seen && (
-          <span className="font-mono text-[11px] text-ink-subtle">last seen {relativeTime(device.last_seen)}</span>
-        )}
-      </div>
-
-      {error && (
-        <div role="alert" className="mb-4 rounded-md border border-danger/25 bg-danger-soft px-3 py-2.5 text-sm text-danger">
-          {error}
-        </div>
-      )}
-
-      {events === null ? (
-        <div className="space-y-2" aria-label="Loading activity">
-          {[0, 1, 2, 3].map((item) => (
-            <div key={item} className="skeleton h-14 rounded-md" />
-          ))}
-        </div>
-      ) : events.length === 0 ? (
-        <div className="rounded-md border border-dashed border-border-strong px-5 py-10 text-center">
-          <Activity size={23} className="mx-auto text-ink-subtle" />
-          <p className="mt-3 text-sm font-semibold text-ink">No activity yet</p>
-          <p className="mx-auto mt-1 max-w-sm text-sm leading-6 text-ink-muted">
-            Connection changes and agent commands will appear here.
-          </p>
-        </div>
-      ) : (
-        <ul className="divide-y divide-border overflow-hidden rounded-md border border-border">
-          {events.map((event, index) => (
-            <li key={`${event.ts}-${index}`} className="flex items-start gap-3 bg-canvas px-3.5 py-3">
-              <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${eventDot(event)}`} aria-hidden="true" />
-              <div className="min-w-0 flex-1">
-                <p className={`break-words text-sm leading-5 ${event.kind === "command" ? outcomeStyle(event.outcome).text : "text-ink"}`}>
-                  {eventLabel(event)}
-                </p>
-                <p className="mt-1 font-mono text-[11px] text-ink-subtle">{clockTime(event.ts)}</p>
-              </div>
-              {event.kind === "command" && (
-                <span className={`shrink-0 rounded px-2 py-1 font-mono text-[10px] font-bold uppercase ${outcomeStyle(event.outcome).badge}`}>
-                  {event.outcome ?? "pending"}
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </Modal>
-  );
-}
-
 export function DevicesPage() {
   const [devices, setDevices] = useState<DeviceView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [reveal, setReveal] = useState<Reveal | null>(null);
-  const [activityId, setActivityId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [newName, setNewName] = useState("My phone");
-  const [renameDevice, setRenameDevice] = useState<DeviceView | null>(null);
-  const [renameValue, setRenameValue] = useState("");
-  const [rotateDevice, setRotateDevice] = useState<DeviceView | null>(null);
-  const [removeDevice, setRemoveDevice] = useState<DeviceView | null>(null);
   const [busy, setBusy] = useState(false);
   const loadedOnce = useRef(false);
 
@@ -346,38 +210,6 @@ export function DevicesPage() {
         wssUrl: deviceWsUrl(created.device_token),
         token: created.device_token,
       });
-      await reload();
-    });
-  };
-
-  const rename = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!renameDevice || !renameValue.trim()) return;
-    await runAction(async () => {
-      await api.renameDevice(renameDevice.id, renameValue.trim());
-      setRenameDevice(null);
-      await reload();
-    });
-  };
-
-  const rotate = async () => {
-    if (!rotateDevice) return;
-    await runAction(async () => {
-      const result = await api.rotateDeviceToken(rotateDevice.id);
-      setRotateDevice(null);
-      setReveal({
-        title: `New token for ${rotateDevice.name}`,
-        wssUrl: deviceWsUrl(result.device_token),
-        token: result.device_token,
-      });
-    });
-  };
-
-  const remove = async () => {
-    if (!removeDevice) return;
-    await runAction(async () => {
-      await api.deleteDevice(removeDevice.id);
-      setRemoveDevice(null);
       await reload();
     });
   };
@@ -450,18 +282,7 @@ export function DevicesPage() {
                 }
               >
                 {group.devices.map((device) => (
-                  <DeviceCard
-                    key={device.id}
-                    device={device}
-                    factor={group.factor}
-                    onActivity={() => setActivityId(device.id)}
-                    onRename={() => {
-                      setRenameDevice(device);
-                      setRenameValue(device.name);
-                    }}
-                    onRotate={() => setRotateDevice(device)}
-                    onRemove={() => setRemoveDevice(device)}
-                  />
+                  <DeviceCard key={device.id} device={device} factor={group.factor} />
                 ))}
               </div>
             </section>
@@ -500,70 +321,6 @@ export function DevicesPage() {
         </form>
       </Modal>
 
-      <Modal open={renameDevice !== null} onClose={() => setRenameDevice(null)} title="Rename device">
-        <form onSubmit={rename}>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="rename-device">Device name</Label>
-            <Input
-              id="rename-device"
-              autoFocus
-              required
-              value={renameValue}
-              onChange={(event) => setRenameValue(event.target.value)}
-            />
-          </div>
-          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button type="button" variant="ghost" onClick={() => setRenameDevice(null)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={busy || !renameValue.trim()}>
-              {busy && <LoaderCircle size={16} className="animate-spin" />}
-              Save name
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
-      <Modal
-        open={rotateDevice !== null}
-        onClose={() => setRotateDevice(null)}
-        title="Rotate device token?"
-        description={`The current credential for ${rotateDevice?.name ?? "this device"} will stop working immediately.`}
-      >
-        <p className="text-sm leading-6 text-ink-muted">
-          The device will disconnect and must be configured with the new connection URL before it can come online again.
-        </p>
-        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button variant="ghost" onClick={() => setRotateDevice(null)}>
-            Cancel
-          </Button>
-          <Button variant="destructive" onClick={() => void rotate()} disabled={busy}>
-            {busy && <LoaderCircle size={16} className="animate-spin" />}
-            Rotate token
-          </Button>
-        </div>
-      </Modal>
-
-      <Modal
-        open={removeDevice !== null}
-        onClose={() => setRemoveDevice(null)}
-        title="Remove device?"
-        description={`${removeDevice?.name ?? "This device"} will lose access to the workspace.`}
-      >
-        <p className="text-sm leading-6 text-ink-muted">
-          This removes its credential and activity from the dashboard. The action cannot be undone.
-        </p>
-        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button variant="ghost" onClick={() => setRemoveDevice(null)}>
-            Cancel
-          </Button>
-          <Button variant="destructive" onClick={() => void remove()} disabled={busy}>
-            {busy ? <LoaderCircle size={16} className="animate-spin" /> : <Trash2 size={16} />}
-            Remove device
-          </Button>
-        </div>
-      </Modal>
-
       <Modal
         open={reveal !== null}
         onClose={() => setReveal(null)}
@@ -599,109 +356,25 @@ export function DevicesPage() {
           </div>
         )}
       </Modal>
-
-      {activityId &&
-        (() => {
-          const device = devices.find((item) => item.id === activityId);
-          return device ? <DeviceActivity device={device} onClose={() => setActivityId(null)} /> : null;
-        })()}
     </div>
   );
 }
 
-function DeviceCard({
-  device,
-  factor,
-  onActivity,
-  onRename,
-  onRotate,
-  onRemove,
-}: {
-  device: DeviceView;
-  factor: FormFactor;
-  onActivity: () => void;
-  onRename: () => void;
-  onRotate: () => void;
-  onRemove: () => void;
-}) {
+function DeviceCard({ device, factor }: { device: DeviceView; factor: FormFactor }) {
   const [aspect, setAspect] = useState<number | null>(null);
-
-  const actions = (
-    <div className="flex shrink-0 items-center gap-0.5">
-      <IconAction icon={Activity} tip="Activity" aria={`View activity for ${device.name}`} onClick={onActivity} />
-      <IconAction icon={Pencil} tip="Rename" aria={`Rename ${device.name}`} onClick={onRename} />
-      <IconAction icon={RefreshCw} tip="Rotate token" aria={`Rotate token for ${device.name}`} onClick={onRotate} />
-      <IconAction icon={Trash2} tip="Remove" aria={`Remove ${device.name}`} onClick={onRemove} danger />
-    </div>
-  );
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
       <DeviceFrame factor={factor} aspect={aspect}>
         <DeviceScreen device={device} factor={factor} onAspect={setAspect} />
       </DeviceFrame>
-
-      {/* Narrow phone cards stack the name over the actions so it isn't crushed;
-          wider desktop cards keep name and actions on one line. */}
-      {factor === "handset" ? (
-        <div className="flex min-w-0 flex-col items-center gap-1.5">
-          <h3 className="max-w-full truncate text-center font-display text-sm font-bold leading-tight text-ink" title={device.name}>
-            {device.name}
-          </h3>
-          {actions}
-        </div>
-      ) : (
-        <div className="flex min-w-0 items-center gap-0.5 px-0.5">
-          <h3 className="min-w-0 flex-1 truncate font-display text-sm font-bold leading-tight text-ink" title={device.name}>
-            {device.name}
-          </h3>
-          {actions}
-        </div>
-      )}
+      <h3
+        className="max-w-full truncate text-center font-display text-sm font-bold leading-tight text-ink"
+        title={device.name}
+      >
+        {device.name}
+      </h3>
     </div>
-  );
-}
-
-function IconAction({
-  icon: Icon,
-  tip,
-  aria,
-  onClick,
-  danger,
-}: {
-  icon: typeof Activity;
-  tip: string;
-  aria: string;
-  onClick: () => void;
-  danger?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={tip}
-      aria-label={aria}
-      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-ink-subtle transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${
-        danger ? "hover:text-danger" : "hover:text-ink"
-      }`}
-    >
-      <Icon size={15} />
-    </button>
-  );
-}
-
-function DeviceStatus({ online }: { online: boolean }) {
-  return (
-    <span
-      className={`inline-flex h-7 w-fit items-center gap-2 rounded-full border px-2.5 font-mono text-[11px] font-medium uppercase tracking-wider ${
-        online
-          ? "border-success/25 bg-success-soft text-success"
-          : "border-border bg-surface-raised text-ink-muted"
-      }`}
-    >
-      <span className={`h-1.5 w-1.5 rounded-full ${online ? "pulse-dot bg-success" : "bg-ink-subtle"}`} />
-      {online ? "online" : "offline"}
-    </span>
   );
 }
 
