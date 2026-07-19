@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Plug, RefreshCw, Smartphone, TerminalSquare, Unplug } from "lucide-react";
-import { ApiError, api, type DeviceEvent, type DeviceView } from "@/lib/api";
+import { ArrowLeft, Cable, KeyRound, Plug, RefreshCw, Smartphone, TerminalSquare, Unplug } from "lucide-react";
+import { ApiError, api, type ActivityItem, type DeviceView } from "@/lib/api";
 import { clockTime, relativeTime } from "@/lib/utils";
 import { resolvePlatform } from "@/lib/devices";
 import { DeviceFrame, DeviceScreen } from "@/components/DeviceScreen";
@@ -14,7 +14,7 @@ const DEVICE_POLL_MS = 5000;
 export function DeviceDetailPage() {
   const { id = "" } = useParams<{ id: string }>();
   const [device, setDevice] = useState<DeviceView | null>(null);
-  const [events, setEvents] = useState<DeviceEvent[] | null>(null);
+  const [events, setEvents] = useState<ActivityItem[] | null>(null);
   const [aspect, setAspect] = useState<number | null>(null);
   const [hasShot, setHasShot] = useState(false);
   const [notFound, setNotFound] = useState(false);
@@ -38,7 +38,10 @@ export function DeviceDetailPage() {
       loadedOnce.current = true;
     }
     try {
-      setEvents((await api.deviceEvents(id)).events);
+      // The device's full trail — every activity scoped to this device: commands,
+      // connects/disconnects, SSH sessions, tunnels, and lifecycle. This is the
+      // persistent account trail filtered by device, not the in-memory command log.
+      setEvents((await api.activities({ device: id, limit: 50 })).activities);
     } catch {
       /* keep the last-known events; the device row still loads on its own */
     }
@@ -211,28 +214,72 @@ function MetaRow({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-function eventText(e: DeviceEvent): string {
-  switch (e.kind) {
-    case "connected":
+// Device-scoped sentence for one trail row. The device is implied by the page,
+// so — unlike the account-wide Activities page — the name is left off each row.
+function activityText(a: ActivityItem, count: number): string {
+  const times = count > 1 ? ` ×${count}` : "";
+  switch (a.kind) {
+    case "device.connected":
       return "Connected";
-    case "disconnected":
-      return `Disconnected${e.detail ? `: ${e.detail}` : ""}`;
+    case "device.disconnected":
+      return `Disconnected${a.detail ? `: ${a.detail}` : ""}`;
+    case "device.created":
+      return "Device added";
+    case "device.renamed":
+      return `Renamed${a.detail ? ` to ${a.detail}` : ""}`;
+    case "device.deleted":
+      return "Device removed";
+    case "device.token_rotated":
+      return "Device token rotated";
+    case "ssh.session":
+      return "SSH session opened";
+    case "tunnel.opened":
+      return `Tunnel opened${a.detail ? ` → ${a.detail}` : ""}`;
     case "command":
-      return `${e.method ?? "command"}${e.outcome === "error" && e.detail ? `: ${e.detail}` : ""}`;
+      return `${a.method ?? "command"}${times}${a.outcome === "error" && a.detail ? `: ${a.detail}` : ""}`;
     default:
-      return e.kind;
+      return `${a.kind}${a.detail ? `: ${a.detail}` : ""}`;
   }
 }
 
-function eventIcon(kind: DeviceEvent["kind"]) {
+function activityIcon(kind: string) {
   switch (kind) {
-    case "connected":
+    case "device.connected":
       return Plug;
-    case "disconnected":
+    case "device.disconnected":
       return Unplug;
-    default:
+    case "ssh.session":
+      return KeyRound;
+    case "tunnel.opened":
+      return Cable;
+    case "command":
       return TerminalSquare;
+    default:
+      return kind.startsWith("device.") ? Smartphone : TerminalSquare;
   }
+}
+
+// Collapse a run of consecutive identical commands (same method/source/outcome)
+// into one row so the dashboard's ~3s screenshot polling doesn't bury everything
+// else. Non-command rows (SSH, tunnels, connects) always stand alone.
+function collapseCommands(items: ActivityItem[]): { first: ActivityItem; count: number }[] {
+  const rows: { first: ActivityItem; count: number }[] = [];
+  for (const item of items) {
+    const prev = rows[rows.length - 1];
+    if (
+      prev &&
+      item.kind === "command" &&
+      prev.first.kind === "command" &&
+      prev.first.method === item.method &&
+      prev.first.source === item.source &&
+      prev.first.outcome === item.outcome
+    ) {
+      prev.count += 1;
+    } else {
+      rows.push({ first: item, count: 1 });
+    }
+  }
+  return rows;
 }
 
 function outcomeBadge(outcome?: string): string {
@@ -250,7 +297,7 @@ function outcomeBadge(outcome?: string): string {
   }
 }
 
-function EventLog({ events }: { events: DeviceEvent[] | null }) {
+function EventLog({ events }: { events: ActivityItem[] | null }) {
   if (events === null) {
     return (
       <div className="space-y-2" aria-label="Loading activity">
@@ -269,26 +316,26 @@ function EventLog({ events }: { events: DeviceEvent[] | null }) {
   }
   return (
     <ul className="divide-y divide-border overflow-hidden rounded-[10px] border border-border bg-surface">
-      {events.map((e, i) => {
-        const Icon = eventIcon(e.kind);
+      {collapseCommands(events).map(({ first: a, count }) => {
+        const Icon = activityIcon(a.kind);
         return (
-          <li key={`${e.ts}-${i}`} className="flex items-start gap-3 px-3.5 py-3">
+          <li key={a.id} className="flex items-start gap-3 px-3.5 py-3">
             <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-canvas text-ink-muted">
               <Icon size={14} />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="break-words text-sm leading-5 text-ink">{eventText(e)}</p>
+              <p className="break-words text-sm leading-5 text-ink">{activityText(a, count)}</p>
               <p className="mt-1 font-mono text-[11px] text-ink-subtle">
-                {clockTime(e.ts)}
-                {e.source ? ` · ${e.source}` : ""}
-                {e.duration_ms ? ` · ${e.duration_ms}ms` : ""}
+                {clockTime(a.ts)}
+                {a.source ? ` · ${a.source}` : ""}
+                {a.duration_ms ? ` · ${a.duration_ms}ms` : ""}
               </p>
             </div>
-            {e.kind === "command" && (
+            {a.kind === "command" && (
               <span
-                className={`mt-1 shrink-0 rounded px-2 py-1 font-mono text-[10px] font-bold uppercase ${outcomeBadge(e.outcome)}`}
+                className={`mt-1 shrink-0 rounded px-2 py-1 font-mono text-[10px] font-bold uppercase ${outcomeBadge(a.outcome)}`}
               >
-                {e.outcome ?? "pending"}
+                {a.outcome ?? "pending"}
               </span>
             )}
           </li>
