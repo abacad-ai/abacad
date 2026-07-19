@@ -15,8 +15,10 @@ BUNDLE_ID     ?= com.example.abacad.agent
 APP     := build/AbacadAgent.app
 CONF    := release
 BINARY  := .build/$(CONF)/AbacadAgent
+DMG     := build/AbacadAgent.dmg
+VOLNAME := Abacad Agent
 
-.PHONY: all app build sign clean run
+.PHONY: all app build sign clean run dmg
 
 all: app
 
@@ -30,6 +32,20 @@ app: build
 	cp Info.plist "$(APP)/Contents/Info.plist"
 	codesign --force --sign "$(SIGN_IDENTITY)" --identifier "$(BUNDLE_ID)" "$(APP)"
 	@echo "Built $(APP) (signed as $(SIGN_IDENTITY), id $(BUNDLE_ID))"
+
+# Distributable disk image: the .app plus an /Applications symlink for
+# drag-install. `make deploy` (repo root) uploads this to the download site.
+# Note: with the default ad-hoc SIGN_IDENTITY, Gatekeeper makes downloaders
+# right-click → Open on first launch; proper distribution needs a Developer ID
+# cert + notarization.
+dmg: app
+	rm -rf build/dmg-staging "$(DMG)"
+	mkdir -p build/dmg-staging
+	cp -R "$(APP)" build/dmg-staging/
+	ln -s /Applications build/dmg-staging/Applications
+	hdiutil create -volname "$(VOLNAME)" -srcfolder build/dmg-staging -ov -format UDZO "$(DMG)"
+	rm -rf build/dmg-staging
+	@echo "Built $(DMG)"
 
 # Convenience: build + launch. First launch will prompt for Accessibility and
 # Screen Recording — grant both in System Settings, then relaunch.

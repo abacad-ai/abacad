@@ -42,6 +42,7 @@ WORKDIR /data
 ENV ABACAD_ADDR=:8848 \
     ABACAD_DB=/data/abacad.db \
     ABACAD_BLOBS=/data/abacad-blobs \
+    ABACAD_DOWNLOADS=/data/abacad-downloads \
     ABACAD_SSH_HOST_KEY=/data/ssh_host_ed25519_key
 # The SSH jump host is opt-in: run with -e ABACAD_SSH_ADDR=:2222 to enable it.
 # The container is non-root, so it can't bind :22 directly — bind :2222 inside and

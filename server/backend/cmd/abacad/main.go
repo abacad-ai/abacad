@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -154,6 +155,7 @@ func main() {
 	mux.Handle("POST /blobs", http.HandlerFunc(blobHandler.Upload))
 	mux.Handle("GET /blobs/{id}", http.HandlerFunc(blobHandler.Download))
 	mux.Handle("/api/", apiHandler)
+	mux.Handle("GET /downloads/{file}", downloadsHandler(cfg.DownloadsDir))
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"ok":true,"devices_online":%d}`, len(hub.OnlineIDs()))
@@ -226,6 +228,7 @@ func main() {
 		log.Printf("tunnel WebSocket   : %s/connect?token=<mcp-token>&device=<id>&target=host:port", cfg.Addr)
 		log.Printf("blob store         : POST %s/blobs · GET %s/blobs/{id}   (session | MCP | device token)", cfg.Addr, cfg.Addr)
 		log.Printf("dashboard API      : %s/api/…", cfg.Addr)
+		log.Printf("downloads          : GET %s/downloads/<file>   (from %s)", cfg.Addr, cfg.DownloadsDir)
 		log.Printf("health             : GET %s/health", cfg.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("listen: %v", err)
@@ -262,6 +265,21 @@ func seed(st *store.Store) {
 	log.Printf("SEED account=%s (%s / %s)", acc.ID, email, pass)
 	log.Printf("SEED device_token=%s", devToken)
 	log.Printf("SEED mcp_token=%s", mcpToken)
+}
+
+// downloadsHandler serves public release artifacts (e.g. the macOS client dmg)
+// from a plain directory, so publishing a build is just a file copy into the
+// data volume — no restart. Flat namespace, files only, no listing.
+func downloadsHandler(dir string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := filepath.Base(r.PathValue("file")) // Base strips any traversal
+		p := filepath.Join(dir, name)
+		if fi, err := os.Stat(p); err != nil || fi.IsDir() {
+			http.NotFound(w, r)
+			return
+		}
+		http.ServeFile(w, r, p)
+	})
 }
 
 func logRequests(next http.Handler) http.Handler {

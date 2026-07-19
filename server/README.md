@@ -96,13 +96,23 @@ MCP_TOKEN="<mcp_token>" node smoke.mjs           # -> SMOKE OK
 BASE=http://localhost:8848 node test-multi.mjs   # -> MULTI OK
 ```
 
-## Deploy (later)
+## Deploy
 
-Terminate TLS/`wss` at a reverse proxy (e.g. Caddy, auto Let's Encrypt) and forward to
-the Go server on localhost. Ensure the proxy does not cap WebSocket frame size below
-screenshot payloads and uses long/absent idle timeouts on `/device`. The server strips
-query strings from its logs (device tokens ride in the query); redact them at the proxy
-too.
+`make deploy` (repo root) builds the Docker image from the local tree, side-loads it
+onto the production host over SSH (no registry round-trip), restarts the compose
+service, and uploads the macOS client dmg to the served downloads dir — see
+`deploy.sh`. CI also pushes `ghcr.io/abacad-ai/abacad:latest` on main, so
+`docker compose pull && docker compose up -d` on the host converges to CI's build.
+
+Production terminates TLS/`wss` at Caddy and proxies to the Go server. The proxy must
+not cap WebSocket frame size below screenshot payloads and needs long/absent idle
+timeouts on `/device`. The server strips query strings from its logs (device tokens
+ride in the query); redact them at the proxy too.
+
+`GET /downloads/<file>` serves public release artifacts (e.g.
+`abacad-macos-latest.dmg`) from a plain directory (`-downloads` /
+`ABACAD_DOWNLOADS`, `/data/abacad-downloads` in Docker) — publishing a build is just
+a file copy into the data volume, no restart.
 
 ## Not yet (deliberately)
 
