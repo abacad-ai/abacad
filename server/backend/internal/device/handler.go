@@ -12,8 +12,10 @@ import (
 
 	"github.com/coder/websocket"
 
+	"abacad/internal/activity"
 	"abacad/internal/events"
 	"abacad/internal/relay"
+	"abacad/internal/store"
 )
 
 // readLimit lifts coder/websocket's 32 KiB default, which would otherwise
@@ -27,10 +29,10 @@ import (
 // configurable) already caps a single device->server frame at 16 MiB regardless.
 const readLimit = 16 << 20 // 16 MiB
 
-// Resolver maps an inbound /device request to the device id it may register as.
-// Phase 1 uses a fixed id; Phase 3 swaps in a token lookup. Returning an error
-// rejects the connection.
-type Resolver func(r *http.Request) (deviceID string, err error)
+// Resolver maps an inbound /device request to the device id it may register as
+// and the account that owns it (attributed in the activity trail). Returning an
+// error rejects the connection.
+type Resolver func(r *http.Request) (deviceID, accountID string, err error)
 
 // Seen is an optional hook fired when a device connects or replies, so the store
 // can update last_seen. nil is fine.
@@ -38,14 +40,15 @@ type Seen func(deviceID string)
 
 // Handler builds the /device HTTP handler.
 type Handler struct {
-	Hub     *relay.Hub
-	Resolve Resolver
-	OnSeen  Seen
-	Events  *events.Log // per-device activity log; may be nil
+	Hub      *relay.Hub
+	Resolve  Resolver
+	OnSeen   Seen
+	Events   *events.Log        // per-device live ring; may be nil
+	Activity *activity.Recorder // persistent account trail; may be nil
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	deviceID, err := h.Resolve(r)
+	deviceID, accountID, err := h.Resolve(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
@@ -65,8 +68,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[device] connected: %s from %s", deviceID, r.RemoteAddr)
 
 	dc := relay.NewDeviceConn(deviceID, c)
-	if h.Events != nil {
-		dc.SetCommandObserver(func(rec relay.CommandRecord) {
+	dc.SetCommandObserver(func(rec relay.CommandRecord) {
+		if h.Events != nil {
 			h.Events.Append(rec.DeviceID, events.Event{
 				Kind:       events.KindCommand,
 				Method:     rec.Method,
@@ -75,9 +78,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				Outcome:    rec.Outcome,
 				Detail:     rec.Detail,
 			})
+		}
+		h.Activity.Record(store.Activity{
+			AccountID: accountID, DeviceID: rec.DeviceID,
+			Kind: activity.KindCommand, Method: rec.Method, Source: rec.Source,
+			Outcome: rec.Outcome, DurationMs: rec.Duration.Milliseconds(), Detail: rec.Detail,
 		})
+	})
+	if h.Events != nil {
 		h.Events.Append(deviceID, events.Event{Kind: events.KindConnected})
 	}
+	h.Activity.Record(store.Activity{AccountID: accountID, DeviceID: deviceID, Kind: activity.KindConnected})
 	h.Hub.Register(dc)
 
 	// ReadPump blocks until the socket closes.
@@ -91,4 +102,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.Events != nil {
 		h.Events.Append(deviceID, events.Event{Kind: events.KindDisconnected, Detail: reason})
 	}
+	h.Activity.Record(store.Activity{
+		AccountID: accountID, DeviceID: deviceID,
+		Kind: activity.KindDisconnected, DurationMs: uptime.Milliseconds(), Detail: reason,
+	})
 }

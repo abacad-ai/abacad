@@ -15,6 +15,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"abacad/internal/activity"
 	"abacad/internal/auth"
 	"abacad/internal/events"
 	"abacad/internal/protocol"
@@ -29,8 +30,9 @@ const sessionTTL = 30 * 24 * time.Hour
 type API struct {
 	Store      *store.Store
 	Hub        *relay.Hub
-	Events     *events.Log // per-device activity log
-	BaseDomain string      // domain devices are addressed under, for the ssh_host hint
+	Events     *events.Log        // per-device live activity ring
+	Activity   *activity.Recorder // persistent account trail (Activities page)
+	BaseDomain string             // domain devices are addressed under, for the ssh_host hint
 }
 
 type ctxKey int
@@ -57,6 +59,7 @@ func (a *API) Handler() http.Handler {
 	mux.Handle("GET /api/devices/{id}/events", a.auth(a.deviceEvents))
 	mux.Handle("GET /api/mcp-token", a.auth(a.getMCPToken))
 	mux.Handle("POST /api/mcp-token/rotate", a.auth(a.rotateMCPToken))
+	mux.Handle("GET /api/activities", a.auth(a.listActivities))
 
 	// SSH keys authorize the jump host (ssh <device>.<base-domain>).
 	mux.Handle("GET /api/ssh-keys", a.auth(a.listSSHKeys))
@@ -116,6 +119,7 @@ func (a *API) register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.startSession(w, r, acc)
+	a.record(acc.ID, store.Activity{Kind: activity.KindRegister, Detail: acc.Email})
 	writeJSON(w, http.StatusCreated, map[string]string{"account_id": acc.ID, "email": acc.Email})
 }
 
@@ -127,15 +131,24 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 	c.Email = strings.TrimSpace(strings.ToLower(c.Email))
 	acc, err := a.Store.AccountByEmail(c.Email)
 	if err != nil || !auth.CheckPassword(acc.PasswordHash, c.Password) {
+		// A wrong password on a real account is worth the trail; an unknown email
+		// has no account to attach it to.
+		if err == nil {
+			a.record(acc.ID, store.Activity{Kind: activity.KindLoginFailed, Outcome: "failed", Detail: "wrong password"})
+		}
 		writeErr(w, http.StatusUnauthorized, "invalid email or password")
 		return
 	}
 	a.startSession(w, r, acc)
+	a.record(acc.ID, store.Activity{Kind: activity.KindLogin})
 	writeJSON(w, http.StatusOK, map[string]string{"account_id": acc.ID, "email": acc.Email})
 }
 
 func (a *API) logout(w http.ResponseWriter, r *http.Request) {
 	if sid := auth.SessionID(r); sid != "" {
+		if acc, err := a.Store.AccountBySession(sid); err == nil {
+			a.record(acc.ID, store.Activity{Kind: activity.KindLogout})
+		}
 		_ = a.Store.DeleteSession(sid)
 	}
 	http.SetCookie(w, a.clearCookie(r))
@@ -186,6 +199,7 @@ func (a *API) createDevice(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not create device")
 		return
 	}
+	a.record(account(r).ID, store.Activity{Kind: activity.KindDeviceCreate, DeviceID: d.ID, Detail: d.Name})
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"id":           d.ID,
 		"name":         d.Name,
@@ -211,10 +225,16 @@ func (a *API) renameDevice(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not rename device")
 		return
 	}
+	a.record(account(r).ID, store.Activity{Kind: activity.KindDeviceRename, DeviceID: r.PathValue("id"), Detail: strings.TrimSpace(body.Name)})
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *API) deleteDevice(w http.ResponseWriter, r *http.Request) {
+	// Load the device first so its name survives in the trail after the row is gone.
+	name := ""
+	if d, err := a.Store.DeviceOwnedBy(r.PathValue("id"), account(r).ID); err == nil {
+		name = d.Name
+	}
 	err := a.Store.DeleteDevice(r.PathValue("id"), account(r).ID)
 	if errors.Is(err, store.ErrNotFound) {
 		writeErr(w, http.StatusNotFound, "device not found")
@@ -224,6 +244,7 @@ func (a *API) deleteDevice(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not delete device")
 		return
 	}
+	a.record(account(r).ID, store.Activity{Kind: activity.KindDeviceDelete, DeviceID: r.PathValue("id"), Detail: name})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -237,6 +258,7 @@ func (a *API) rotateDeviceToken(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not rotate token")
 		return
 	}
+	a.record(account(r).ID, store.Activity{Kind: activity.KindDeviceToken, DeviceID: r.PathValue("id")})
 	writeJSON(w, http.StatusOK, map[string]string{"device_token": token, "wss_url": wsURL(r, token)})
 }
 
@@ -328,6 +350,7 @@ func (a *API) rotateMCPToken(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not rotate token")
 		return
 	}
+	a.record(account(r).ID, store.Activity{Kind: activity.KindMCPToken})
 	writeJSON(w, http.StatusOK, map[string]string{"mcp_token": token, "mcp_url": httpURL(r, "/mcp")})
 }
 
@@ -391,6 +414,7 @@ func (a *API) addSSHKey(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not add ssh key")
 		return
 	}
+	a.record(account(r).ID, store.Activity{Kind: activity.KindSSHKeyAdd, Detail: k.Name + " " + k.Fingerprint})
 	writeJSON(w, http.StatusCreated, sshKeyView{
 		ID: k.ID, Name: k.Name, Fingerprint: k.Fingerprint, PublicKey: k.PublicKey,
 		CreatedAt: time.Unix(k.CreatedAt, 0).UTC().Format(time.RFC3339),
@@ -398,6 +422,15 @@ func (a *API) addSSHKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) deleteSSHKey(w http.ResponseWriter, r *http.Request) {
+	// Capture the key's label before it's gone (accounts hold a handful of keys).
+	detail := ""
+	if keys, err := a.Store.SSHKeysByAccount(account(r).ID); err == nil {
+		for _, k := range keys {
+			if k.ID == r.PathValue("id") {
+				detail = k.Name + " " + k.Fingerprint
+			}
+		}
+	}
 	err := a.Store.DeleteSSHKey(r.PathValue("id"), account(r).ID)
 	if errors.Is(err, store.ErrNotFound) {
 		writeErr(w, http.StatusNotFound, "ssh key not found")
@@ -407,6 +440,7 @@ func (a *API) deleteSSHKey(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not delete ssh key")
 		return
 	}
+	a.record(account(r).ID, store.Activity{Kind: activity.KindSSHKeyRemove, Detail: detail})
 	w.WriteHeader(http.StatusNoContent)
 }
 

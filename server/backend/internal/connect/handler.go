@@ -16,7 +16,9 @@ import (
 
 	"github.com/coder/websocket"
 
+	"abacad/internal/activity"
 	"abacad/internal/mcp"
+	"abacad/internal/store"
 )
 
 // readLimit caps one inbound client frame. Clients chunk their writes, so this
@@ -26,15 +28,17 @@ const readLimit = 16 << 20
 // Handler bridges /connect clients to device streams.
 type Handler struct {
 	// ResolverFor authenticates the request (MCP token -> account-scoped
-	// resolver), exactly like the MCP endpoint. Returning an error rejects 401.
-	ResolverFor func(r *http.Request) (mcp.DeviceResolver, error)
+	// resolver), exactly like the MCP endpoint, and reports the account id for
+	// the activity trail. Returning an error rejects 401.
+	ResolverFor func(r *http.Request) (mcp.DeviceResolver, string, error)
+	Activity    *activity.Recorder // persistent account trail; may be nil
 }
 
 // ServeHTTP handles GET /connect?device=<id>&target=<host:port> (token via
 // ?token= or Authorization: Bearer, checked by ResolverFor). device may be empty
 // to use the account's default (sole / most-recently-active online) device.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	resolver, err := h.ResolverFor(r)
+	resolver, accountID, err := h.ResolverFor(r)
 	if err != nil {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="abacad"`)
 		http.Error(w, err.Error(), http.StatusUnauthorized)
@@ -57,6 +61,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer stream.Close()
+	h.Activity.Record(store.Activity{
+		AccountID: accountID, DeviceID: dc.DeviceID,
+		Kind: activity.KindTunnel, Source: "tunnel", Detail: target,
+	})
 
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		InsecureSkipVerify: true, // non-browser client (abacad proxy); no Origin to check

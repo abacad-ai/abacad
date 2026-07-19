@@ -20,6 +20,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"abacad/internal/activity"
 	"abacad/internal/api"
 	"abacad/internal/auth"
 	"abacad/internal/blob"
@@ -56,25 +57,27 @@ func main() {
 
 	hub := relay.NewHub()
 	evlog := events.NewLog()
+	trail := activity.New(st, time.Duration(cfg.ActivityRetentionDays)*24*time.Hour)
 	factory := &resolver.Factory{Store: st, Hub: hub}
 
 	// /device: authenticate the device by its ?token=, register under its real
 	// device id, and mark it seen.
 	deviceHandler := &device.Handler{
 		Hub: hub,
-		Resolve: func(r *http.Request) (string, error) {
+		Resolve: func(r *http.Request) (string, string, error) {
 			token := r.URL.Query().Get("token")
 			if token == "" {
-				return "", errors.New("missing device token")
+				return "", "", errors.New("missing device token")
 			}
 			d, err := st.DeviceByTokenHash(auth.HashToken(token))
 			if err != nil {
-				return "", errors.New("unknown device token")
+				return "", "", errors.New("unknown device token")
 			}
-			return d.ID, nil
+			return d.ID, d.AccountID, nil
 		},
-		OnSeen: st.TouchDevice,
-		Events: evlog,
+		OnSeen:   st.TouchDevice,
+		Events:   evlog,
+		Activity: trail,
 	}
 
 	// /mcp: authenticate the agent by its bearer MCP token -> account -> resolver.
@@ -97,23 +100,24 @@ func main() {
 	// endpoint), since the agent-side client is a bare WebSocket that may not set
 	// an Authorization header.
 	connectHandler := &connect.Handler{
-		ResolverFor: func(r *http.Request) (mcp.DeviceResolver, error) {
+		ResolverFor: func(r *http.Request) (mcp.DeviceResolver, string, error) {
 			token := auth.BearerToken(r)
 			if token == "" {
 				token = r.URL.Query().Get("token")
 			}
 			if token == "" {
-				return nil, errors.New("missing MCP token")
+				return nil, "", errors.New("missing MCP token")
 			}
 			acc, err := st.AccountByMCPTokenHash(auth.HashToken(token))
 			if err != nil {
-				return nil, errors.New("invalid MCP token")
+				return nil, "", errors.New("invalid MCP token")
 			}
-			return factory.For(acc.ID), nil
+			return factory.For(acc.ID), acc.ID, nil
 		},
+		Activity: trail,
 	}
 
-	apiHandler := (&api.API{Store: st, Hub: hub, Events: evlog, BaseDomain: cfg.BaseDomain}).Handler()
+	apiHandler := (&api.API{Store: st, Hub: hub, Events: evlog, Activity: trail, BaseDomain: cfg.BaseDomain}).Handler()
 
 	// /blobs: the data plane. Authorized by any of the server's identities —
 	// dashboard session, MCP bearer, or device token — all resolving to the
@@ -198,7 +202,14 @@ func main() {
 				if err != nil {
 					return nil, err
 				}
-				return dc.OpenStream(ctx, "127.0.0.1:22")
+				s, err := dc.OpenStream(ctx, "127.0.0.1:22")
+				if err == nil {
+					trail.Record(store.Activity{
+						AccountID: accountID, DeviceID: dc.DeviceID,
+						Kind: activity.KindSSHSession, Source: "ssh",
+					})
+				}
+				return s, err
 			},
 		}
 		for _, addr := range strings.Split(cfg.SSHAddr, ",") {

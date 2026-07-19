@@ -8,6 +8,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 
 const navigation = [
   { to: "/", label: "Devices" },
+  { to: "/activities", label: "Activities" },
   { to: "/settings", label: "Settings" },
 ];
 

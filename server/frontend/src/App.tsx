@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/auth";
 import { Layout } from "@/components/Layout";
+import { ActivitiesPage } from "@/pages/ActivitiesPage";
 import { AuthPage } from "@/pages/AuthPage";
 import { DevicesPage } from "@/pages/DevicesPage";
 import { SettingsPage } from "@/pages/SettingsPage";
@@ -39,6 +40,14 @@ export function App() {
             element={
               <Protected>
                 <DevicesPage />
+              </Protected>
+            }
+          />
+          <Route
+            path="/activities"
+            element={
+              <Protected>
+                <ActivitiesPage />
               </Protected>
             }
           />

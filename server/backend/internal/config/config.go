@@ -16,6 +16,8 @@ type Config struct {
 	DevCORS      bool   // permissive CORS for local dev (Vite / smoke.mjs hitting Go directly)
 	Seed         bool   // create a dev account/device/tokens on boot
 
+	ActivityRetentionDays int // prune activity-trail rows older than this (0 = keep forever)
+
 	// SSH jump host (ssh <device>.<base-domain> via ProxyJump). Disabled when
 	// SSHAddr is empty, so local dev and tests opt in explicitly.
 	SSHAddr    string // SSH jump listen address(es), comma-separated e.g. ":22,:443" (empty = disabled)
@@ -33,6 +35,7 @@ func Load() Config {
 	flag.Int64Var(&c.MaxBlobBytes, "max-blob-bytes", envOrInt64("ABACAD_MAX_BLOB_BYTES", 1<<30), "reject a single /blobs upload larger than this (bytes)")
 	flag.BoolVar(&c.DevCORS, "dev-cors", os.Getenv("ABACAD_DEV_CORS") == "1", "enable permissive CORS for local dev")
 	flag.BoolVar(&c.Seed, "seed", false, "seed a dev account/device/tokens on boot and print them")
+	flag.IntVar(&c.ActivityRetentionDays, "activity-retention-days", int(envOrInt64("ABACAD_ACTIVITY_RETENTION_DAYS", 90)), "prune activity-trail rows older than this many days (0 keeps them forever)")
 	flag.StringVar(&c.SSHAddr, "ssh-addr", envOr("ABACAD_SSH_ADDR", ""), "SSH jump host listen address(es), comma-separated e.g. :22,:443 (empty disables it)")
 	flag.StringVar(&c.SSHHostKey, "ssh-host-key", envOr("ABACAD_SSH_HOST_KEY", "ssh_host_ed25519_key"), "path to the SSH jump host key (created if absent)")
 	flag.StringVar(&c.BaseDomain, "base-domain", envOr("ABACAD_BASE_DOMAIN", "abacad.ai"), "domain devices are addressed under (ssh <device>.<base-domain>)")

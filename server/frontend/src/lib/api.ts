@@ -53,6 +53,32 @@ export interface DeviceEvents {
   events: DeviceEvent[];
 }
 
+// One row of the account-wide activity trail (mirrors the Go store.Activity).
+export interface ActivityItem {
+  id: number;
+  ts: number; // unix millis
+  kind: string; // dotted category.action ("auth.login") or bare "command"
+  device_id?: string;
+  method?: string;
+  source?: string; // agent | dashboard | ssh | tunnel
+  outcome?: string;
+  duration_ms?: number;
+  detail?: string;
+}
+
+export interface ActivitiesResult {
+  activities: ActivityItem[];
+  next_before?: number; // absent once the trail is exhausted
+}
+
+export interface ActivityQuery {
+  before?: number;
+  device?: string;
+  kind?: string; // category prefix ("device") or exact kind
+  source?: string;
+  limit?: number;
+}
+
 async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch(path, {
     credentials: "include",
@@ -99,6 +125,17 @@ export const api = {
     req<{ device_token: string; wss_url: string }>(`/api/devices/${id}/rotate-token`, { method: "POST" }),
   deviceScreenshotUrl: (id: string) => `/api/devices/${id}/screenshot`,
   deviceEvents: (id: string) => req<DeviceEvents>(`/api/devices/${id}/events`),
+
+  activities: (q: ActivityQuery = {}) => {
+    const params = new URLSearchParams();
+    if (q.before) params.set("before", String(q.before));
+    if (q.device) params.set("device", q.device);
+    if (q.kind) params.set("kind", q.kind);
+    if (q.source) params.set("source", q.source);
+    if (q.limit) params.set("limit", String(q.limit));
+    const qs = params.toString();
+    return req<ActivitiesResult>(`/api/activities${qs ? `?${qs}` : ""}`);
+  },
 
   mcpToken: () => req<McpTokenInfo>("/api/mcp-token"),
   rotateMcpToken: () => req<{ mcp_token: string; mcp_url: string }>("/api/mcp-token/rotate", { method: "POST" }),
