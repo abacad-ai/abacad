@@ -1,11 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Cable, KeyRound, Plug, RefreshCw, Smartphone, TerminalSquare, Unplug } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
+import {
+  Cable,
+  Download,
+  Globe,
+  KeyRound,
+  LoaderCircle,
+  Plug,
+  RefreshCw,
+  Smartphone,
+  TerminalSquare,
+  Unplug,
+} from "lucide-react";
 import { ApiError, api, type ActivityItem, type DeviceView } from "@/lib/api";
-import { clockTime, relativeTime } from "@/lib/utils";
-import { resolvePlatform, type PlatformInfo } from "@/lib/devices";
+import { clockTime, cn, relativeTime } from "@/lib/utils";
+import { clientDownload, resolvePlatform, type PlatformInfo } from "@/lib/devices";
 import { DeviceFrame, DeviceScreen } from "@/components/DeviceScreen";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CopyField } from "@/components/CopyField";
 
@@ -108,10 +120,10 @@ export function DeviceDetailPage() {
     return (
       <div aria-label="Loading device">
         <div className="skeleton aspect-[16/10] w-full rounded-[12px]" />
-        <div className="mt-8 grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))]">
-          {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="skeleton h-56 rounded-[10px]" />
-          ))}
+        <div className="mt-8 grid gap-4 md:grid-cols-2">
+          <div className="skeleton h-56 rounded-[10px]" />
+          <div className="skeleton h-56 rounded-[10px]" />
+          <div className="skeleton h-56 rounded-[10px] md:col-span-2" />
         </div>
       </div>
     );
@@ -146,19 +158,20 @@ export function DeviceDetailPage() {
         </DeviceFrame>
       </div>
 
-      {/* Four guideline columns. auto-fit + minmax gives each a minimum width and
-          wraps to fewer columns (2, then 1) as the viewport narrows; grid rows keep
-          the cards on a row at equal height. */}
-      <div className="mt-8 grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))]">
-        <Column title="Guidelines">
+      {/* Setup and Access share the first row; Activities gets the full width of
+          the row below. Both collapse to a single column on narrow viewports. */}
+      <div className="mt-8 grid gap-4 md:grid-cols-2">
+        <Column title="Setup">
           <p className="mb-4 text-sm leading-6 text-ink-muted">
             {factor === "handset" ? "A phone" : "A machine"} linked to your abacad account. Agents drive it by its
-            device ID.
+            device ID. {setupText(platform)}
           </p>
+          <ClientLink device={device} platform={platform} />
           <p className="mb-2 font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-ink-subtle">
             Device ID
           </p>
           <CopyField value={device.id} />
+          <ConnectionUrl deviceId={device.id} />
           <dl className="mt-4">
             <MetaRow label="Platform">{platform?.label}</MetaRow>
             <MetaRow label="Last seen">
@@ -168,29 +181,139 @@ export function DeviceDetailPage() {
           </dl>
         </Column>
 
-        <Column title="Setup">
-          <p className="text-sm leading-6 text-ink-muted">{setupText(platform)}</p>
-        </Column>
-
         <Column title="Access">
           <AccessGuide device={device} needsKey={needsKey} />
         </Column>
 
-        <Column title="Activities">
-          <EventLog events={events} />
-        </Column>
+        <div className="md:col-span-2">
+          <Column title="Activities">
+            <EventLog events={events} />
+          </Column>
+        </div>
       </div>
     </>
   );
 }
 
-// A single guideline column: a titled card in the responsive 4-up row.
+// A single guideline column: a titled card in the responsive grid.
 function Column({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <Card className="p-5">
+    <Card className="h-full p-5">
       <h2 className="mb-4 font-display text-[13px] font-bold uppercase tracking-[0.16em] text-ink-muted">{title}</h2>
       {children}
     </Card>
+  );
+}
+
+// The "get the client" action for this platform: a download for platforms with a
+// published build, the device's own page for a browser device (nothing to
+// install — the tab is the client), and nothing at all for platforms whose client
+// hasn't shipped, where a dead button would be worse than none.
+function ClientLink({ device, platform }: { device: DeviceView; platform: PlatformInfo | null }) {
+  const download = platform ? clientDownload(platform) : null;
+  if (download) {
+    return (
+      <a href={download} download className={cn(buttonVariants({ variant: "outline" }), "mb-5 w-full")}>
+        <Download size={16} />
+        Download for {platform?.label}
+      </a>
+    );
+  }
+  if (platform?.label === "Browser") {
+    // Mirrors the server's browser_url: the device id becomes the subdomain of
+    // the dashboard's own host.
+    const url = `${window.location.protocol}//${device.id}.${window.location.host}`;
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        className={cn(buttonVariants({ variant: "outline" }), "mb-5 w-full")}
+      >
+        <Globe size={16} />
+        Open device page
+      </a>
+    );
+  }
+  return null;
+}
+
+// The connection URL is the device token in URL form, and the token is only ever
+// stored hashed — so it cannot be shown again, only replaced. This reveals a
+// fresh one on demand behind a confirm, since rotating drops whatever client is
+// currently connected on the old token.
+function ConnectionUrl({ deviceId }: { deviceId: string }) {
+  const [conn, setConn] = useState<{ url: string; token: string } | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  // A new device id means a different device: drop any revealed credential so it
+  // can't leak onto the next page.
+  useEffect(() => {
+    setConn(null);
+    setConfirming(false);
+    setFailed(null);
+  }, [deviceId]);
+
+  const rotate = async () => {
+    setBusy(true);
+    setFailed(null);
+    try {
+      const next = await api.rotateDeviceToken(deviceId);
+      setConn({ url: next.wss_url, token: next.device_token });
+      setConfirming(false);
+    } catch (err) {
+      setFailed((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-4">
+      <p className="mb-2 font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-ink-subtle">
+        Connection URL
+      </p>
+      {conn ? (
+        <>
+          <div className="mb-3 flex justify-center rounded-md bg-white p-3">
+            <QRCodeSVG value={conn.url} size={132} title="Device connection QR code" />
+          </div>
+          <CopyField value={conn.url} />
+          <p className="mt-2 text-xs leading-5 text-ink-subtle">
+            Paste this into the app or scan the QR on the device. Shown once — it embeds the new device token.
+          </p>
+        </>
+      ) : confirming ? (
+        <>
+          <p className="mb-3 text-sm leading-6 text-ink-muted">
+            The current URL can't be recovered — only replaced. Generating a new one invalidates the old token and
+            disconnects the device until it reconnects with the new URL.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="destructive" disabled={busy} onClick={() => void rotate()}>
+              {busy && <LoaderCircle size={16} className="animate-spin" />}
+              Generate new URL
+            </Button>
+            <Button variant="ghost" disabled={busy} onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="mb-3 text-sm leading-6 text-ink-muted">
+            Shown once when the device was added. Generate a new one if you need to connect the client again.
+          </p>
+          <Button variant="outline" onClick={() => setConfirming(true)}>
+            <RefreshCw size={16} />
+            New connection URL
+          </Button>
+        </>
+      )}
+      {failed && <p className="mt-2 text-xs leading-5 text-danger">{failed}</p>}
+    </div>
   );
 }
 

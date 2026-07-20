@@ -43,6 +43,19 @@ export function platformInfo(platform: string): PlatformInfo {
   return KNOWN_PLATFORMS[platform] ?? { label: platform, factor: "desktop" };
 }
 
+// Public client builds, keyed by platform label. The server publishes release
+// artifacts at /downloads/<file> (a plain directory on the deploy volume), so a
+// new platform's client is a naming convention plus a file copy. Platforms with
+// no shipped client are simply absent — the UI then offers no download.
+const CLIENT_DOWNLOADS: Record<string, string> = {
+  macOS: "/downloads/abacad-macos-latest.dmg",
+  Android: "/downloads/abacad-android-latest.apk",
+};
+
+export function clientDownload(info: PlatformInfo): string | null {
+  return CLIENT_DOWNLOADS[info.label] ?? null;
+}
+
 // Section order — desktops first, then handsets, with unrecognized labels last.
 const GROUP_ORDER = ["macOS", "Windows", "Linux", "Desktop", "Browser", "iPadOS", "iOS", "Android", "Mobile", "Other"];
 
