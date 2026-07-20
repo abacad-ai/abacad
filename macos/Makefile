@@ -29,8 +29,8 @@ CONF    := release
 BINARY  := .build/$(CONF)/abacad
 DMG     := build/abacad.dmg
 VOLNAME := abacad
-ICNS    := build/abacad.icns
-ICONSET := build/abacad.iconset
+ICNS    := AppIcon.icns
+ICONSET := build/AppIcon.iconset
 
 # A real Developer ID identity (anything but ad-hoc "-") gets the hardened
 # runtime + a secure timestamp — both are prerequisites for notarization.
@@ -47,17 +47,13 @@ all: app
 build:
 	swift build -c $(CONF)
 
-# App icon: rasterize AppIcon.svg into an .iconset and pack it with iconutil.
-# Needs a Mac (iconutil) and an SVG rasterizer — rsvg-convert (`brew install librsvg`).
-# NOT a dependency of `app`: run it once (or when AppIcon.svg changes) to (re)build
-# $(ICNS); `app` bundles it if present, and builds fine without it (generic icon).
+# App icon: render the mark to an .iconset with AppKit (Tools/GenAppIcon.swift) and
+# pack it with iconutil. Needs only the Swift toolchain + iconutil (no rasterizer).
+# NOT a dependency of `app`: the resulting $(ICNS) is committed, so `app` just bundles
+# it. Re-run this after changing the mark, then commit the refreshed $(ICNS).
 icon:
-	@command -v rsvg-convert >/dev/null || { echo "ERROR: rsvg-convert not found — 'brew install librsvg'." >&2; exit 1; }
-	rm -rf "$(ICONSET)"; mkdir -p "$(ICONSET)"
-	@for sz in 16 32 128 256 512; do \
-	  rsvg-convert -w $$sz            -h $$sz            AppIcon.svg -o "$(ICONSET)/icon_$${sz}x$${sz}.png"; \
-	  rsvg-convert -w $$((sz*2))      -h $$((sz*2))      AppIcon.svg -o "$(ICONSET)/icon_$${sz}x$${sz}@2x.png"; \
-	done
+	rm -rf "$(ICONSET)"
+	swift Tools/GenAppIcon.swift "$(ICONSET)"
 	iconutil -c icns "$(ICONSET)" -o "$(ICNS)"
 	@echo "Built $(ICNS)"
 
@@ -69,7 +65,7 @@ app: build
 	cp "$(BINARY)" "$(APP)/Contents/MacOS/abacad"
 	cp Info.plist "$(APP)/Contents/Info.plist"
 	@if [ -f "$(ICNS)" ]; then cp "$(ICNS)" "$(APP)/Contents/Resources/AppIcon.icns"; echo "  + bundled AppIcon.icns"; \
-	 else echo "  (no AppIcon.icns yet — run 'make icon' on a Mac with librsvg to generate it)"; fi
+	 else echo "  (no AppIcon.icns — run 'make icon' to generate it)"; fi
 	codesign --force $(CODESIGN_FLAGS) --sign "$(SIGN_IDENTITY)" --identifier "$(BUNDLE_ID)" "$(APP)"
 	codesign --verify --strict --verbose=2 "$(APP)"
 	@echo "Built $(APP) (signed as $(SIGN_IDENTITY), id $(BUNDLE_ID))"
