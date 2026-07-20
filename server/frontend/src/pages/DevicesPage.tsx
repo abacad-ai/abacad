@@ -99,9 +99,7 @@ export function DevicesPage() {
   return (
     <div>
       <PageHeader
-        eyebrow="console / devices"
         title="Devices"
-        description="Every phone, machine, and browser you've paired. Open one to view its screen and live activity."
         actions={
           <Button onClick={() => setAddOpen(true)}>
             <Plus size={17} />

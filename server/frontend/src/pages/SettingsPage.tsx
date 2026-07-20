@@ -77,11 +77,7 @@ export function SettingsPage() {
 
   return (
     <div>
-      <PageHeader
-        eyebrow="console / access"
-        title="Access & credentials"
-        description="Manage the MCP credential your agents use and the SSH keys that reach your devices directly."
-      />
+      <PageHeader title="Access & credentials" />
 
       {error && (
         <div role="alert" className="mb-5 rounded-md border border-danger/25 bg-danger-soft px-4 py-3 text-sm text-danger">

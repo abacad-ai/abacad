@@ -243,11 +243,7 @@ export function ActivitiesPage() {
 
   return (
     <div>
-      <PageHeader
-        eyebrow="console / activities"
-        title="Activities"
-        description="The workspace trail: sign-ins, credential changes, device connections, and every command an agent ran."
-      />
+      <PageHeader title="Activities" />
 
       <div className="mb-6 flex flex-wrap items-center gap-2.5">
         <span className="flex h-10 items-center gap-1.5 font-mono text-[11px] uppercase tracking-wider text-ink-subtle">

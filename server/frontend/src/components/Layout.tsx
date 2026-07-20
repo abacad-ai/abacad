@@ -43,8 +43,12 @@ export function Layout({ children }: { children: ReactNode }) {
                   to={item.to}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "rounded-md px-2 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand sm:px-2.5",
-                    active ? "font-semibold text-ink" : "font-medium text-ink-muted hover:text-ink",
+                    // Font weight stays constant across active/inactive so activating a
+                    // link never changes its width and shifts its siblings (no jitter).
+                    "rounded-md px-2 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand sm:px-2.5",
+                    active
+                      ? "bg-surface-hover text-ink"
+                      : "text-ink-muted hover:bg-surface-hover hover:text-ink",
                   )}
                 >
                   {item.label}
