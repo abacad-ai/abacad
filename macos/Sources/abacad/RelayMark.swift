@@ -6,15 +6,17 @@ import AppKit
 // automatically for light/dark menu bars; connection state is shown structurally
 // — a filled hub when connected, a hollow ring when offline — so it stays mono.
 //
-// Keep the geometry in sync with assets/icon.svg. (This is a compact, slightly
-// bolder layout tuned to read at ~18pt; the proportions match the wide-balanced
-// mark, not a pixel-for-pixel copy of the 512px art.)
+// Keep the geometry in sync with assets/icon.svg: a true 120° equilateral tristar
+// from the hub (apex straight up, feet 120° apart), matching the web / app / launcher
+// marks so every surface reads as the same logo. Tuned to read at ~18pt; weights are
+// the tray's own, not a pixel-for-pixel copy of the art.
 enum RelayMark {
     // Unit-square coordinates, y-down (we draw into a flipped context).
+    // 120° tristar: hub is the centroid, so it sits a little below visual center.
     private static let apex  = CGPoint(x: 0.50, y: 0.20)
-    private static let footL = CGPoint(x: 0.20, y: 0.80)
-    private static let footR = CGPoint(x: 0.80, y: 0.80)
-    private static let hub   = CGPoint(x: 0.50, y: 0.55)
+    private static let footL = CGPoint(x: 0.136, y: 0.83)
+    private static let footR = CGPoint(x: 0.864, y: 0.83)
+    private static let hub   = CGPoint(x: 0.50, y: 0.62)
     private static let nodeR: CGFloat = 0.085
     private static let hubR:  CGFloat = 0.100
     private static let edgeW: CGFloat = 0.045

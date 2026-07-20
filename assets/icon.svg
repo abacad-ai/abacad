@@ -1,19 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="abacad">
   <!-- abacad relay mark: four connected dots (one hub → three devices) that read as
        an "A"; the green hub is the single "alive" accent. Self-contained charcoal
-       tile so it reads on any surface (browser tab, app icon, dock). -->
+       tile so it reads on any surface (browser tab, app icon, dock). The three edges
+       form a true 120° tristar from the hub — same splay across tray / app / launcher. -->
   <rect width="512" height="512" rx="114" fill="#0b0b0d"/>
-  <g transform="translate(0,10)" fill="none" stroke="#d8dade" stroke-width="10"
+  <g fill="none" stroke="#d8dade" stroke-width="10"
      stroke-linecap="round" stroke-opacity=".5">
-    <line x1="256" y1="262" x2="256" y2="116"/>
-    <line x1="256" y1="262" x2="108" y2="360"/>
-    <line x1="256" y1="262" x2="404" y2="360"/>
+    <line x1="256" y1="303" x2="256" y2="114"/>
+    <line x1="256" y1="303" x2="92" y2="398"/>
+    <line x1="256" y1="303" x2="420" y2="398"/>
   </g>
-  <g transform="translate(0,10)">
-    <circle cx="256" cy="116" r="28" fill="#d8dade"/>
-    <circle cx="108" cy="360" r="28" fill="#d8dade"/>
-    <circle cx="404" cy="360" r="28" fill="#d8dade"/>
-    <circle cx="256" cy="262" r="56" fill="#30d158" fill-opacity=".16"/>
-    <circle cx="256" cy="262" r="34" fill="#30d158"/>
+  <g>
+    <circle cx="256" cy="114" r="28" fill="#d8dade"/>
+    <circle cx="92" cy="398" r="28" fill="#d8dade"/>
+    <circle cx="420" cy="398" r="28" fill="#d8dade"/>
+    <circle cx="256" cy="303" r="56" fill="#30d158" fill-opacity=".16"/>
+    <circle cx="256" cy="303" r="34" fill="#30d158"/>
   </g>
 </svg>

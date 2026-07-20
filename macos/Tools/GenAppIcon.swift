@@ -17,9 +17,10 @@ let charcoal = NSColor(srgbRed: 0x0b/255.0, green: 0x0b/255.0, blue: 0x0d/255.0,
 let silver   = NSColor(srgbRed: 0xd8/255.0, green: 0xda/255.0, blue: 0xde/255.0, alpha: 1)
 let green    = NSColor(srgbRed: 0x30/255.0, green: 0xd1/255.0, blue: 0x58/255.0, alpha: 1)
 
-// 512-space geometry (matches assets/icon.svg; y includes the +10 centering shift).
-let apex  = CGPoint(x: 256, y: 126), footL = CGPoint(x: 108, y: 370)
-let footR = CGPoint(x: 404, y: 370), hub   = CGPoint(x: 256, y: 272)
+// 512-space geometry (matches assets/icon.svg): a true 120° tristar from the hub
+// (hub is the centroid, so it sits just below visual center).
+let apex  = CGPoint(x: 256, y: 114), footL = CGPoint(x: 92, y: 398)
+let footR = CGPoint(x: 420, y: 398), hub   = CGPoint(x: 256, y: 303)
 
 func circle(_ c: NSPoint, _ r: CGFloat) -> NSBezierPath {
     NSBezierPath(ovalIn: NSRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r))

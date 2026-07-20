@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   abacad launcher mark: four connected dots (one hub -> three devices) that read as
-  an "A"; the green hub is the single "alive" accent. Drawn in a 512 viewport scaled
-  onto the 108dp adaptive canvas, sized so the whole graph sits inside the ~66% safe
-  circle => no OEM mask (circle / squircle / teardrop) clips a node.
+  an "A"; the green hub is the single "alive" accent. This is the web/app mark
+  (assets/icon.svg) scaled to fit the launcher's visible area and bbox-centered, so a
+  rounded-rect / squircle mask shows exactly the same composition as the web + macOS
+  icons. Optimised for rect masks; under a strict circular mask the two feet sit a
+  touch low — an accepted trade, since rect masks are the common case.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -14,18 +16,20 @@
     <!-- edges: hub -> three device nodes (silver, half strength) -->
     <path
         android:strokeColor="#D8DADE"
-        android:strokeWidth="11"
+        android:strokeWidth="7"
         android:strokeAlpha="0.5"
         android:strokeLineCap="round"
-        android:pathData="M256,273 L256,168 M256,273 L149,344 M256,273 L363,344" />
+        android:pathData="M256,287 L256,161 M256,287 L145,351 M256,287 L367,351" />
     <!-- device nodes (silver) -->
     <path android:fillColor="#D8DADE"
-        android:pathData="M234,168 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0 Z" />
+        android:pathData="M237,161 a19,19 0 1,0 38,0 a19,19 0 1,0 -38,0 Z" />
     <path android:fillColor="#D8DADE"
-        android:pathData="M127,344 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0 Z" />
+        android:pathData="M126,351 a19,19 0 1,0 38,0 a19,19 0 1,0 -38,0 Z" />
     <path android:fillColor="#D8DADE"
-        android:pathData="M341,344 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0 Z" />
-    <!-- hub = live (green) -->
+        android:pathData="M348,351 a19,19 0 1,0 38,0 a19,19 0 1,0 -38,0 Z" />
+    <!-- hub = live (green): 16% halo + solid core -->
+    <path android:fillColor="#30D158" android:fillAlpha="0.16"
+        android:pathData="M219,287 a37,37 0 1,0 74,0 a37,37 0 1,0 -74,0 Z" />
     <path android:fillColor="#30D158"
-        android:pathData="M230,273 a26,26 0 1,0 52,0 a26,26 0 1,0 -52,0 Z" />
+        android:pathData="M233,287 a23,23 0 1,0 46,0 a23,23 0 1,0 -46,0 Z" />
 </vector>

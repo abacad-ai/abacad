@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Themed-icon (Android 13+) monochrome layer: the same relay graph in a single tint.
-  The system supplies the color; alpha on the edges keeps the dots dominant.
+  Themed-icon (Android 13+) monochrome layer: the same relay graph in a single tint,
+  matching ic_launcher_foreground (the web mark, bbox-centered). No green accent or
+  halo since the themed layer is a single flat tint the system colors.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -11,16 +12,16 @@
 
     <path
         android:strokeColor="#000000"
-        android:strokeWidth="11"
+        android:strokeWidth="7"
         android:strokeAlpha="0.5"
         android:strokeLineCap="round"
-        android:pathData="M256,273 L256,168 M256,273 L149,344 M256,273 L363,344" />
+        android:pathData="M256,287 L256,161 M256,287 L145,351 M256,287 L367,351" />
     <path android:fillColor="#000000"
-        android:pathData="M234,168 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0 Z" />
+        android:pathData="M237,161 a19,19 0 1,0 38,0 a19,19 0 1,0 -38,0 Z" />
     <path android:fillColor="#000000"
-        android:pathData="M127,344 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0 Z" />
+        android:pathData="M126,351 a19,19 0 1,0 38,0 a19,19 0 1,0 -38,0 Z" />
     <path android:fillColor="#000000"
-        android:pathData="M341,344 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0 Z" />
+        android:pathData="M348,351 a19,19 0 1,0 38,0 a19,19 0 1,0 -38,0 Z" />
     <path android:fillColor="#000000"
-        android:pathData="M230,273 a26,26 0 1,0 52,0 a26,26 0 1,0 -52,0 Z" />
+        android:pathData="M233,287 a23,23 0 1,0 46,0 a23,23 0 1,0 -46,0 Z" />
 </vector>
