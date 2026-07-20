@@ -10,6 +10,34 @@ Everything here follows from two rules. Read those first; the rest is bookkeepin
 
 ---
 
+## Implementation status (2026-07-20)
+
+This doc describes the **target** trust model. Where it and the running code
+differ, the code is catching up to the doc — so read the sections below as the
+destination, and this table as how far along the road we are.
+
+| Area | Status |
+|---|---|
+| Cleartext removed; `wss://` required by both clients (refuse `ws://` off-loopback) | ✅ shipped, build-verified |
+| Token in the `Authorization` header, out of the URL | ✅ shipped (legacy `?token=` still accepted as a fallback) |
+| macOS stores the token in the Keychain | ✅ shipped |
+| `/connect` SSRF target guard (server **and** device) | ✅ shipped |
+| Login throttle + lockout | ✅ shipped |
+| **Server-identity *pinning* on the device** (edge ③) | ◐ **not yet** — the device gets CA-validated `wss://`, not a pinned peer; needs a managed server identity (TLS is terminated by an external proxy today) |
+| **Device hardware keypair / mutual TLS** (edge ③) | ○ planned (P1) — the device still authenticates with a shared bearer token, now header-only |
+| Scoped / expiring MCP tokens; enforced non-escalation | ○ planned (P1) |
+| Surfaced audit trail + kill switch | ○ planned (P1) |
+| Dashboard MFA; cookie `Secure` unconditional | ○ planned (P1) |
+| Runtime verification (installed app vs a live server) | ○ not done — compiles on all three platforms; not yet exercised end-to-end |
+
+Net: today's build closes the most exploitable holes (LAN cleartext MITM, the
+tunnel SSRF pivot, token-in-URL leakage, login brute force). It does **not** yet
+deliver the two headline guarantees — *pinned* mutual endpoint authentication and
+non-escalating scoped credentials with a kill switch — so those sections are the
+destination, not a description of what runs.
+
+---
+
 ## Two principles
 
 ### 1. Mediate what you govern; blind what you don't
@@ -94,10 +122,11 @@ An MCP token is a **capability grant, not a master key.**
 
 - `{ which devices, which capabilities, expiry }`, with **multiple named tokens**
   per account, each independently revocable.
-- **Header-only.** Send it as `Authorization: Bearer …`. `/connect` must stop
-  accepting `?token=` — a secret in a URL leaks through reverse-proxy access logs,
-  `Referer` headers, and history. (The app itself already logs path-only, but it
-  can't control a fronting proxy.)
+- **Header-first.** Send it as `Authorization: Bearer …` — now the preferred path
+  on both `/device` and `/connect` *(shipped)*. The legacy `?token=` query is still
+  accepted for older clients and should be dropped once they've migrated: a secret
+  in a URL leaks through reverse-proxy access logs, `Referer` headers, and history.
+  (The app itself already logs path-only, but it can't control a fronting proxy.)
 - A token *uses* its scope; it can never *change* it (principle 2).
 
 ### ③ Device ⇄ server — the mutual-auth core
@@ -234,13 +263,17 @@ cord; it does not pre-judge the action.
 
 ### The one channel-integrity control
 
-The `/connect` tunnel **target** is policed server-side (and, defense-in-depth, on
-the device): deny loopback, link-local (`169.254.0.0/16`, including the cloud
-metadata endpoint), and RFC-1918 / ULA ranges by default, opt-in per device. This is
-framed as *channel integrity* — not letting the pipe be turned into a network pivot —
-not as action policy. It's transparent: an agent reaching a normal host never
-notices. (The SSH jump already does the strict version of this by pinning its target
-to `127.0.0.1:22`.)
+The `/connect` tunnel **target** is policed server-side and, defense-in-depth, on
+the device *(shipped)*. It denies the addresses with no legitimate tunnel use and
+clear SSRF value: link-local (`169.254.0.0/16`, including the `169.254.169.254`
+cloud metadata endpoint), the unspecified address, and multicast. Loopback and
+private (RFC-1918 / ULA) ranges stay **reachable** — reaching the device's own
+services and its LAN is the whole point of `/connect`, and the SSH jump likewise
+targets the device's own `127.0.0.1:22`. This is *channel integrity* (don't let the
+pipe become a pivot into places that are never a real target), not action policy,
+and it's transparent: an agent reaching a normal host never notices. The check is
+best-effort by design — only literal-IP targets can be judged, since the device does
+the DNS resolution and the dial; resolution-aware per-target policy is future work.
 
 ---
 
@@ -287,20 +320,26 @@ today's "you don't own that device."
 
 ## Rollout order
 
-- **P0 — restore channel integrity** (the currently-broken half): mandatory wss and
-  remove cleartext, pin the server identity on the device, move all tokens out of
-  URLs, secure token storage. Mostly client + config; closes the
-  highest-consequence gaps.
+- **P0 — restore channel integrity** (the currently-broken half): ✅ *mostly shipped
+  2026-07-20* — mandatory `wss://` + cleartext removed, tokens moved to the
+  `Authorization` header, the `/connect` SSRF target guard, login throttle, and
+  macOS Keychain storage. **Deferred within P0:** server-identity *pinning* on the
+  device — it needs the deployment to serve a stable, managed TLS identity (today
+  TLS is terminated by an external reverse proxy), so until then the device gets
+  CA-validated `wss://` but not a pinned peer.
 - **P1 — identity upgrade:** device keypair + mutual-TLS enrollment replacing the
-  shared device token; scoped, expiring MCP tokens; tunnel target policy; surfaced
-  audit + kill switch; dashboard MFA + rate-limit.
+  shared device token; server-identity pinning; scoped, expiring MCP tokens;
+  surfaced audit + kill switch; dashboard MFA + rate-limit.
 - **P2 — hardening:** platform attestation, pin rotation via signed update, quotas
   and handshake deadlines.
 
-Once P0 ships you can honestly say the channel and both endpoints can't be
-hijacked. Once P1 ships you can say a credential can't escalate itself and
-everything is logged and revocable — which is the whole advertisable claim, every
-word of it true.
+With P0 shipped, cleartext MITM, the SSRF pivot, token-in-URL leakage, and login
+brute force are closed. The two headline guarantees still depend on P1: *pinned*
+mutual endpoint authentication (so a rogue or mis-issued CA can't impersonate the
+server) and non-escalating scoped credentials with a kill switch (so a leaked token
+stays bounded, logged, and revocable). Only once those land can the unqualified
+claim — "the channel and both endpoints can't be hijacked, and a credential can't
+escalate itself" — be made without an asterisk.
 
 ---
 
