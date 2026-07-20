@@ -40,6 +40,15 @@ final class Tunnel {
             return
         }
         let host = String(target[target.startIndex..<colon])
+        // Refuse targets with no legitimate tunnel use and clear SSRF value: the
+        // cloud metadata endpoint (169.254.169.254) and other link-local /
+        // unspecified / multicast addresses. Loopback and private ranges stay
+        // allowed — reaching this Mac's own services and LAN is the point. The
+        // server enforces the same policy; this is device-side defense in depth.
+        if Self.isBlockedTargetHost(host) {
+            emitClose(id, reason: "target \(host) is not an allowed address")
+            return
+        }
         let conn = NWConnection(host: NWEndpoint.Host(host), port: port, using: .tcp)
         queue.async { self.conns[id] = conn }
         conn.stateUpdateHandler = { [weak self] state in
@@ -79,6 +88,31 @@ final class Tunnel {
             for c in self.conns.values { c.cancel() }
             self.conns.removeAll()
         }
+    }
+
+    /// Best-effort SSRF guard: block link-local (incl. 169.254.169.254 metadata),
+    /// unspecified, and multicast literals. Numeric range checks apply only to
+    /// real IPv4 literals so a hostname like "224.example.com" isn't flagged.
+    /// Loopback and private ranges are intentionally allowed.
+    static func isBlockedTargetHost(_ host: String) -> Bool {
+        let h = host.lowercased()
+        // IPv6: unspecified, link-local (fe80::/10), multicast (ff00::/8).
+        if h == "::" || h.hasPrefix("fe80:") || (h.hasPrefix("ff") && h.contains(":")) {
+            return true
+        }
+        // IPv4: only judge genuine dotted-quad literals.
+        let parts = h.split(separator: ".")
+        if parts.count == 4 {
+            var octets: [Int] = []
+            for p in parts {
+                guard let n = Int(p), n >= 0, n <= 255 else { return false }
+                octets.append(n)
+            }
+            if octets == [0, 0, 0, 0] { return true }              // unspecified
+            if octets[0] == 169 && octets[1] == 254 { return true } // link-local incl. metadata
+            if octets[0] >= 224 && octets[0] <= 239 { return true } // multicast
+        }
+        return false
     }
 
     private func frame(_ type: UInt8, _ id: UInt64, _ payload: Data) -> Data {

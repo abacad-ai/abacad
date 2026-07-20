@@ -13,6 +13,7 @@ final class WebSocketClient: NSObject, URLSessionWebSocketDelegate, @unchecked S
     private var task: URLSessionWebSocketTask?
     private let sendQueue = DispatchQueue(label: "abacad.ws.send")
     private var url: URL?
+    private var authToken: String?
     private var closedByUser = false
     private var backoff: TimeInterval = 1
     private(set) var connected = false {
@@ -32,12 +33,28 @@ final class WebSocketClient: NSObject, URLSessionWebSocketDelegate, @unchecked S
         // NSException for anything that isn't ws/wss. Since connect() runs during
         // Agent.init(), that throw would kill the process before the menu-bar item
         // is installed — so validate the scheme here and refuse a bad URL instead.
-        guard let u = URL(string: urlString),
-              let scheme = u.scheme?.lowercased(),
+        guard var comps = URLComponents(string: urlString),
+              let scheme = comps.scheme?.lowercased(),
               scheme == "ws" || scheme == "wss" else { return }
+        // Refuse a plaintext control channel to anything but loopback: this Mac
+        // carries screen contents + input injection, so a cleartext hop is a full
+        // MITM. Real servers must use wss://.
+        let host = comps.host ?? ""
+        if scheme == "ws" && !Self.isLoopback(host) { return }
+        // Carry the device token in the Authorization header, not the URL, so it
+        // stays out of logs and proxy access logs. Strip any ?token= from a stored
+        // URL and migrate it to the header.
+        authToken = comps.queryItems?.first(where: { $0.name == "token" })?.value
+        comps.queryItems = comps.queryItems?.filter { $0.name != "token" }
+        if comps.queryItems?.isEmpty == true { comps.queryItems = nil }
+        guard let u = comps.url else { return }
         closedByUser = false
         url = u
         openSocket()
+    }
+
+    private static func isLoopback(_ host: String) -> Bool {
+        host == "127.0.0.1" || host == "::1" || host == "localhost"
     }
 
     func disconnect() {
@@ -49,7 +66,11 @@ final class WebSocketClient: NSObject, URLSessionWebSocketDelegate, @unchecked S
 
     private func openSocket() {
         guard let u = url, !closedByUser else { return }
-        let t = session.webSocketTask(with: u)
+        var req = URLRequest(url: u)
+        if let token = authToken {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        let t = session.webSocketTask(with: req)
         // Relay screenshots are multi-MB base64; lift the receive cap generously.
         t.maximumMessageSize = 32 * 1024 * 1024
         task = t
