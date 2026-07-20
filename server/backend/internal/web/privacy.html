@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Privacy Policy · abacad</title>
+<meta name="robots" content="all" />
+<style>
+  :root{
+    --canvas:#0b0d10; --surface:#12151a; --border:#242a33;
+    --ink:#e6e9ee; --ink-muted:#aab2bd; --ink-subtle:#7c8794; --brand:#5b9dff;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--canvas); color:var(--ink);
+    font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    padding:48px 20px;
+  }
+  main{max-width:720px; margin:0 auto}
+  .eyebrow{
+    font:600 11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;
+    text-transform:uppercase; letter-spacing:.22em; color:var(--brand); margin:0 0 8px;
+  }
+  h1{font-size:30px; line-height:1.2; margin:0 0 6px; letter-spacing:-.01em}
+  .updated{color:var(--ink-subtle); font-size:13px; margin:0 0 36px}
+  h2{font-size:19px; margin:36px 0 12px; letter-spacing:-.01em}
+  p,li{color:var(--ink-muted)}
+  a{color:var(--brand); text-decoration:none}
+  a:hover{text-decoration:underline}
+  ul{padding-left:22px} li{margin:6px 0}
+  strong{color:var(--ink); font-weight:600}
+  .card{
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:20px 22px; margin:24px 0;
+  }
+  footer{margin-top:48px; padding-top:20px; border-top:1px solid var(--border);
+    color:var(--ink-subtle); font-size:13px}
+</style>
+</head>
+<body>
+<main>
+  <p class="eyebrow">abacad</p>
+  <h1>Privacy Policy</h1>
+  <p class="updated">Last updated: 20 July 2026</p>
+
+  <p>
+    abacad ("abacad", "we", "us") is a device-relay console: it lets you pair your
+    own devices and securely relay commands to them from an AI agent you control.
+    This policy explains what we collect, why, and what we never do with it. We
+    keep the surface small on purpose.
+  </p>
+
+  <h2>Information we collect</h2>
+  <ul>
+    <li><strong>Account details.</strong> The email address you register with, and
+      a password that is stored only as a one-way <strong>bcrypt hash</strong> —
+      never in plaintext.</li>
+    <li><strong>Google sign-in (optional).</strong> If you choose "Continue with
+      Google", we receive from Google your <strong>email address, basic profile
+      (name), and a stable Google account identifier</strong>, using only the
+      <code>openid</code>, <code>email</code>, and <code>profile</code> scopes. We
+      use these solely to create and identify your account.</li>
+    <li><strong>Session data.</strong> An opaque session cookie that keeps you
+      signed in.</li>
+    <li><strong>Device metadata.</strong> Device names, platform, hashed device
+      tokens, and last-seen timestamps for the devices you pair.</li>
+    <li><strong>Activity trail.</strong> A record of account and device events —
+      sign-ins, credential changes, device lifecycle, and the relayed commands
+      that pass through the service (method, timing, and outcome) — so you can
+      audit what happened.</li>
+    <li><strong>On-demand screenshots.</strong> When you or your agent request a
+      screen capture from a paired device, the most recent frame is cached to
+      display it in the dashboard.</li>
+  </ul>
+
+  <h2>How we use your information</h2>
+  <ul>
+    <li>To create and secure your account and keep you signed in.</li>
+    <li>To operate the core service: routing your commands to your own devices.</li>
+    <li>To show you an audit trail of activity on your account.</li>
+  </ul>
+
+  <div class="card">
+    <strong>What we never do.</strong> We do not sell your personal information.
+    We do not use your Google data — or any account data — for advertising, and we
+    do not share it with third parties except as needed to run the service (see
+    below) or where required by law. Google user data is used only for the
+    sign-in and account-identification purpose described above.
+  </div>
+
+  <h2>Service providers</h2>
+  <p>
+    Signing in with Google involves Google as the identity provider; your use of
+    Google sign-in is also governed by
+    <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google's Privacy Policy</a>.
+    We may run on infrastructure providers that host the service on our behalf.
+  </p>
+
+  <h2>Data retention</h2>
+  <p>
+    We retain account and device data for as long as your account is active.
+    Activity-trail entries are pruned automatically after a retention window.
+    Cached screenshots are overwritten by newer captures and deleted when the
+    device is removed.
+  </p>
+
+  <h2>Your choices</h2>
+  <ul>
+    <li>You can remove paired devices and rotate their tokens at any time.</li>
+    <li>You can revoke abacad's access to your Google account from your
+      <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">Google account permissions</a> page.</li>
+    <li>You can request deletion of your account and associated data by contacting us.</li>
+  </ul>
+
+  <h2>Security</h2>
+  <p>
+    Passwords are bcrypt-hashed; device, MCP, and session tokens are stored only
+    as hashes; and traffic is served over HTTPS. No system is perfectly secure,
+    but we aim to store as little as possible.
+  </p>
+
+  <h2>Changes</h2>
+  <p>
+    We may update this policy; material changes will be reflected by the "Last
+    updated" date above.
+  </p>
+
+  <h2>Contact</h2>
+  <p>Questions about this policy: <a href="mailto:privacy@abacad.ai">privacy@abacad.ai</a>.</p>
+
+  <footer>
+    <a href="/terms">Terms of Service</a> · <a href="/">abacad</a>
+  </footer>
+</main>
+</body>
+</html>

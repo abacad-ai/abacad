@@ -124,3 +124,38 @@ func TestMCPTokens(t *testing.T) {
 		t.Fatalf("info should exist and show last_used after resolve: %+v", info)
 	}
 }
+
+func TestLinkGoogleAccount(t *testing.T) {
+	s := openTemp(t)
+
+	// New subject with no matching account -> fresh passwordless account.
+	acc, created, err := s.LinkGoogleAccount("sub-1", "new@gmail.com")
+	if err != nil || !created {
+		t.Fatalf("create path: created=%v err=%v", created, err)
+	}
+	if acc.PasswordHash != "" {
+		t.Fatalf("google account should be passwordless, got %q", acc.PasswordHash)
+	}
+
+	// Returning user (same subject) -> same account, not created.
+	again, created, err := s.LinkGoogleAccount("sub-1", "new@gmail.com")
+	if err != nil || created || again.ID != acc.ID {
+		t.Fatalf("returning path: id=%s created=%v err=%v", again.ID, created, err)
+	}
+
+	// Existing password account with the same email -> linked, not created.
+	pw, _ := s.CreateAccount("existing@gmail.com", "bcrypthash")
+	linked, created, err := s.LinkGoogleAccount("sub-2", "existing@gmail.com")
+	if err != nil || created || linked.ID != pw.ID {
+		t.Fatalf("link path: id=%s created=%v err=%v", linked.ID, created, err)
+	}
+	// And the link now resolves that subject to the same account.
+	if got, err := s.AccountByGoogleSub("sub-2"); err != nil || got.ID != pw.ID {
+		t.Fatalf("by sub after link: id=%s err=%v", got.ID, err)
+	}
+
+	// Unknown subject resolves to ErrNotFound.
+	if _, err := s.AccountByGoogleSub("nope"); err != ErrNotFound {
+		t.Fatalf("unknown sub want ErrNotFound, got %v", err)
+	}
+}

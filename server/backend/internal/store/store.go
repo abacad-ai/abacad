@@ -149,6 +149,74 @@ func (s *Store) scanAccount(row *sql.Row) (Account, error) {
 	return a, err
 }
 
+// --- OAuth identities (external login providers linked to accounts) ---
+
+// AccountByGoogleSub resolves a Google subject id to its linked account.
+func (s *Store) AccountByGoogleSub(sub string) (Account, error) {
+	var accountID string
+	err := s.db.QueryRow(
+		`SELECT account_id FROM account_identities WHERE provider='google' AND subject=?`, sub).Scan(&accountID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Account{}, ErrNotFound
+	}
+	if err != nil {
+		return Account{}, err
+	}
+	return s.AccountByID(accountID)
+}
+
+// LinkGoogleAccount returns the account for a verified Google identity, creating
+// or linking one as needed, and reports whether the account was newly created.
+// Matching precedence:
+//
+//  1. an existing google link for this subject — the returning-user path;
+//  2. an existing account with the same email — link the Google identity to it
+//     (so a password account and its Google sign-in are the same account);
+//  3. otherwise a fresh passwordless account (empty password_hash).
+//
+// The caller must only pass an email Google marked verified — matching an
+// unverified email to an existing account would let anyone claim it.
+func (s *Store) LinkGoogleAccount(sub, email string) (acc Account, created bool, err error) {
+	if acc, err = s.AccountByGoogleSub(sub); err == nil {
+		return acc, false, nil
+	} else if !errors.Is(err, ErrNotFound) {
+		return Account{}, false, err
+	}
+
+	if acc, err = s.AccountByEmail(email); err == nil {
+		_, err = s.db.Exec(
+			`INSERT OR IGNORE INTO account_identities(provider,subject,account_id,email,created_at)
+			 VALUES('google',?,?,?,?)`, sub, acc.ID, email, now())
+		return acc, false, err
+	} else if !errors.Is(err, ErrNotFound) {
+		return Account{}, false, err
+	}
+
+	// New passwordless account + identity, atomically.
+	acc = Account{ID: auth.NewID("acc"), Email: email, PasswordHash: "", CreatedAt: now()}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return Account{}, false, err
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec(`INSERT INTO accounts(id,email,password_hash,created_at) VALUES(?,?,?,?)`,
+		acc.ID, acc.Email, acc.PasswordHash, acc.CreatedAt); err != nil {
+		if isUniqueViolation(err) {
+			return Account{}, false, ErrEmailTaken
+		}
+		return Account{}, false, err
+	}
+	if _, err = tx.Exec(
+		`INSERT INTO account_identities(provider,subject,account_id,email,created_at)
+		 VALUES('google',?,?,?,?)`, sub, acc.ID, email, now()); err != nil {
+		return Account{}, false, err
+	}
+	if err = tx.Commit(); err != nil {
+		return Account{}, false, err
+	}
+	return acc, true, nil
+}
+
 // --- Sessions ---
 
 // CreateSession issues a web session valid for ttl and returns its opaque id

@@ -40,6 +40,11 @@ export interface Me {
   email: string;
 }
 
+// Which optional sign-in methods the server has configured.
+export interface AuthConfig {
+  google: boolean;
+}
+
 // One entry of a device's activity log (mirrors the Go events.Event).
 export interface DeviceEvent {
   ts: number; // unix millis
@@ -112,6 +117,7 @@ export class ApiError extends Error {
 
 export const api = {
   me: () => req<Me>("/api/auth/me"),
+  authConfig: () => req<AuthConfig>("/api/auth/config"),
   register: (email: string, password: string) =>
     req<Me>("/api/auth/register", { method: "POST", body: JSON.stringify({ email, password }) }),
   login: (email: string, password: string) =>

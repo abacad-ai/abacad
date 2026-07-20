@@ -37,6 +37,13 @@ type API struct {
 	Shots      *screenshot.Store  // per-device last-screenshot cache
 	BaseDomain string             // domain devices are addressed under, for the ssh_host hint
 
+	// Google OAuth. Empty client id/secret disables the "Sign in with Google"
+	// routes and hides the button; RedirectURL is derived from the request when
+	// blank. See oauth.go.
+	GoogleClientID     string
+	GoogleClientSecret string
+	GoogleRedirectURL  string
+
 	logins *loginLimiter // per-IP login throttle; initialized in Handler
 }
 
@@ -55,6 +62,9 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("POST /api/auth/register", a.register)
 	mux.HandleFunc("POST /api/auth/login", a.login)
 	mux.HandleFunc("POST /api/auth/logout", a.logout)
+	mux.HandleFunc("GET /api/auth/config", a.authConfig)
+	mux.HandleFunc("GET /api/auth/google/start", a.googleStart)
+	mux.HandleFunc("GET /api/auth/google/callback", a.googleCallback)
 
 	// Authenticated endpoints.
 	mux.Handle("GET /api/auth/me", a.auth(a.me))

@@ -24,6 +24,18 @@ type Config struct {
 	SSHAddr    string // SSH jump listen address(es), comma-separated e.g. ":22,:443" (empty = disabled)
 	SSHHostKey string // path to the jump's persistent host key (created if absent)
 	BaseDomain string // domain devices hang off, e.g. "abacad.ai"
+
+	// Google OAuth ("Sign in with Google"). Disabled unless both the client id
+	// and secret are set; RedirectURL is optional and derived from the incoming
+	// request when empty (<origin>/api/auth/google/callback).
+	GoogleClientID     string
+	GoogleClientSecret string
+	GoogleRedirectURL  string
+}
+
+// GoogleEnabled reports whether "Sign in with Google" is configured.
+func (c Config) GoogleEnabled() bool {
+	return c.GoogleClientID != "" && c.GoogleClientSecret != ""
 }
 
 // Load reads flags (which fall back to env) and returns the config.
@@ -41,6 +53,9 @@ func Load() Config {
 	flag.StringVar(&c.SSHAddr, "ssh-addr", envOr("ABACAD_SSH_ADDR", ""), "SSH jump host listen address(es), comma-separated e.g. :22,:443 (empty disables it)")
 	flag.StringVar(&c.SSHHostKey, "ssh-host-key", envOr("ABACAD_SSH_HOST_KEY", "ssh_host_ed25519_key"), "path to the SSH jump host key (created if absent)")
 	flag.StringVar(&c.BaseDomain, "base-domain", envOr("ABACAD_BASE_DOMAIN", "abacad.ai"), "domain devices are addressed under (ssh <device>.<base-domain>)")
+	flag.StringVar(&c.GoogleClientID, "google-client-id", envOr("ABACAD_GOOGLE_CLIENT_ID", ""), "Google OAuth client ID (enables 'Sign in with Google' when set together with the secret)")
+	flag.StringVar(&c.GoogleClientSecret, "google-client-secret", envOr("ABACAD_GOOGLE_CLIENT_SECRET", ""), "Google OAuth client secret")
+	flag.StringVar(&c.GoogleRedirectURL, "google-redirect-url", envOr("ABACAD_GOOGLE_REDIRECT_URL", ""), "Google OAuth redirect URL (default: derived from the request as <origin>/api/auth/google/callback)")
 	flag.Parse()
 	return c
 }

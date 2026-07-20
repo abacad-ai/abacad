@@ -150,7 +150,10 @@ func main() {
 		Activity: trail,
 	}
 
-	apiHandler := (&api.API{Store: st, Hub: hub, Events: evlog, Activity: trail, Shots: shots, BaseDomain: cfg.BaseDomain}).Handler()
+	apiHandler := (&api.API{
+		Store: st, Hub: hub, Events: evlog, Activity: trail, Shots: shots, BaseDomain: cfg.BaseDomain,
+		GoogleClientID: cfg.GoogleClientID, GoogleClientSecret: cfg.GoogleClientSecret, GoogleRedirectURL: cfg.GoogleRedirectURL,
+	}).Handler()
 
 	// /blobs: the data plane. Authorized by any of the server's identities —
 	// dashboard session, MCP bearer, or device token — all resolving to the
@@ -196,6 +199,9 @@ func main() {
 	// Vendored html2canvas for the browser client (referenced same-origin as
 	// /_hc.js). On a device host the hostMux passes this path through to here.
 	mux.Handle("GET /_hc.js", web.Html2Canvas())
+	// Public legal pages (required by Google's OAuth consent screen).
+	mux.Handle("GET /privacy", web.PrivacyPolicy())
+	mux.Handle("GET /terms", web.TermsOfService())
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"ok":true,"devices_online":%d}`, len(hub.OnlineIDs()))
@@ -295,6 +301,14 @@ func main() {
 		log.Printf("tunnel WebSocket   : %s/connect?token=<mcp-token>&device=<id>&target=host:port", cfg.Addr)
 		log.Printf("blob store         : POST %s/blobs · GET %s/blobs/{id}   (session | MCP | device token)", cfg.Addr, cfg.Addr)
 		log.Printf("dashboard API      : %s/api/…", cfg.Addr)
+		if cfg.GoogleEnabled() {
+			log.Printf("google sign-in     : enabled  (callback %s)", func() string {
+				if cfg.GoogleRedirectURL != "" {
+					return cfg.GoogleRedirectURL
+				}
+				return "<origin>/api/auth/google/callback"
+			}())
+		}
 		log.Printf("downloads          : GET %s/downloads/<file>   (from %s)", cfg.Addr, cfg.DownloadsDir)
 		log.Printf("health             : GET %s/health", cfg.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
