@@ -35,8 +35,8 @@ const (
 	MethodComposite  Method = "composite"
 
 	// Browser method. A browser device runs the semantic verbs
-	// (screenshot/click/scroll/input_text) against its content iframe, plus
-	// `execute` — the escape hatch that evaluates JavaScript in that surface.
+	// (screenshot/click/scroll/input_text) against its own page, plus
+	// `execute` — the escape hatch that evaluates JavaScript in that page.
 	// Non-browser devices reject it as an unknown method.
 	MethodExecute Method = "execute"
 )

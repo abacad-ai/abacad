@@ -72,15 +72,15 @@ The tool surface an agent drives, split by form factor.
 ### Browser
 
 A browser tab acting as a device (open `<device-id>.abacad.ai`; the id in the Host is the
-connection key). It drives its own content iframe:
+connection key). The tab *is* the surface — one document, no iframe — driven by
 the semantic verbs plus `execute`, the JS escape hatch. The reach/depth trade is the whole
 story — see [product.md](product.md).
 
 | Capability | Rung | Description | Status |
 |---|---|---|---|
-| `execute` | API | Evaluate JavaScript in the surface's realm and return the JSON result — the browser's power verb. Runs as an async function body (`return`, `await`), so it reads page state, acts by selector, sets HTML, or navigates (`location.href = …`). **Same-origin content → full control; cross-origin → the browser blocks scripting, so look-only.** The top rung of the ladder, for the one platform where the native automation API *is* JavaScript. | Browser ✅ |
-| `screenshot` | accessibility / pixels | One frame (html2canvas, JPEG) plus a DOM-derived tree by default — elements with tag/role, text, id, clickable flag, and bounds. Cross-origin frames can't be rasterized (tainted canvas): the agent still gets an (empty-tree) frame and should lean on `execute`. | Browser ✅ |
-| `click` / `scroll` / `input_text` | pixels / accessibility | The uniform cross-platform verbs, dispatched as synthetic DOM events into the surface. Same-origin only. Prefer `execute` for anything structured. | Browser ✅ |
+| `execute` | API | Evaluate JavaScript in the device page and return the JSON result — the browser's power verb. Runs as an async function body (`return`, `await`), so it reads page state, acts by selector, and builds content in place (`document.body.innerHTML = …`). It always has full control because it runs in the device page itself. **But a top-level navigation (`location.href = …`, or a link/submit that unloads the page) unloads the device client and drops the device offline until it is reopened.** The top rung of the ladder, for the one platform where the native automation API *is* JavaScript. | Browser ✅ |
+| `screenshot` | accessibility / pixels | One frame (html2canvas, JPEG) plus a DOM-derived tree by default — elements with tag/role, text, id, clickable flag, and bounds. The page is its own surface, so pixels and tree are always available same-origin. | Browser ✅ |
+| `click` / `scroll` / `input_text` | pixels / accessibility | The uniform cross-platform verbs, dispatched as synthetic DOM events into the page. Prefer `execute` for anything structured. | Browser ✅ |
 | File transfer (`/blobs`) | API | Generic HTTP upload / download of binary payloads by blob id. | Any ✅ |
 
 Deliberately **not** on a browser device: the nav keys (`back`/`home`/`recents`) and the

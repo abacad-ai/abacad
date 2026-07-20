@@ -20,8 +20,8 @@ SRV_PID=$!
 for i in $(seq 1 50); do curl -sf "$BASE/health" >/dev/null 2>&1 && break; sleep 0.1; done
 curl -sf "$BASE/health" >/dev/null 2>&1 || { echo "server never came up"; cat "$LOG"; exit 1; }
 
-MCP_TOKEN=$(grep -oE 'SEED mcp_token=[^ ]+' "$LOG" | head -1 | cut -d= -f2)
-[ -n "$MCP_TOKEN" ] || { echo "no seed mcp token"; cat "$LOG"; exit 1; }
+MCP_TOKEN=$(grep -oE 'SEED api_key=[^ ]+' "$LOG" | head -1 | cut -d= -f2)
+[ -n "$MCP_TOKEN" ] || { echo "no seed api key"; cat "$LOG"; exit 1; }
 
 # The seed device is addressed by its id (its subdomain), not a token. Look it up.
 JAR="$TMP/jar"

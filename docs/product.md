@@ -146,10 +146,11 @@ naked public port. It's the cheap technical-user beachhead; Android is the bigge
 any browser (laptop, phone, TV, kiosk) and the tab *becomes* a device — no app, no permission.
 The device is addressed by its own subdomain; the id in the Host is the connection key (an
 unguessable 16-char handle), so nothing rides in a visible URL path or token.
-The trade is depth: a tab can only see and drive its own content, so it is *full* control of
-same-origin content you host (your app, agent-rendered HTML) and *look-only* for a cross-origin
-site loaded in it. Driving the arbitrary open web stays a separate cell (extension / headless
-CDP). So: widest reach, shallowest depth, lightest trust — the opposite corner from Android.
+The trade is depth: the tab *is* the surface (one document, no iframe), so it is *full* control
+of content it hosts (your app, agent-rendered HTML built in place) — but it does not browse the
+open web, because a top-level navigation unloads the client and drops the device with no way
+back. Driving the arbitrary open web stays a separate cell (extension / headless CDP). So:
+widest reach, shallowest depth, lightest trust — the opposite corner from Android.
 
 ---
 

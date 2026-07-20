@@ -2,7 +2,7 @@
 // in a headless Chromium. Playwright opens /b#<device-token> so the actual client
 // connects to the relay as a device; then an MCP client drives it as an agent
 // would. This exercises the parts the mock can't: html2canvas capture, the
-// DOM-derived tree, synthetic-event injection, and execute running in the iframe realm.
+// DOM-derived tree, synthetic-event injection, and execute running in the page's own realm.
 //
 //   MCP_URL=... MCP_TOKEN=... DEVICE_TOKEN=... BASE=... node verify-browser-live.mjs
 import { chromium } from "playwright";
@@ -39,7 +39,7 @@ await page.goto(DEVICE_URL, { waitUntil: "load" });
 // (subdomain id -> device) succeeded with no token in the URL.
 await page.waitForSelector("#dot.on", { timeout: 10000 }).then(() => check("client connects via subdomain (Host-auth, no token)", true))
   .catch(() => check("client connects via subdomain (Host-auth, no token)", false));
-await page.waitForTimeout(400); // let the default srcdoc surface render
+await page.waitForTimeout(400); // let the default ready surface render
 
 // --- drive it as an agent over MCP ---
 const client = new Client({ name: "abacad-verify-live", version: "0.0.0" });
@@ -91,14 +91,16 @@ const clickRes = textOf(await call("click", { x: cx, y: cy }));
 const clicked = textOf(await call("execute", { code: "return window.__clicked === true" }));
 check("click injects a real DOM event", /dispatched=true/.test(clickRes) && /true/.test(clicked), `at (${cx},${cy})`);
 
-// Navigate the surface to an opaque-origin document (a data: URL — no network,
-// deterministically cross-origin) and verify execute degrades to a clear
-// look-only error rather than crashing.
-await call("execute", { code: "location.href='data:text/html,<h1>opaque</h1>'" });
-await page.waitForTimeout(500);
+// In the one-layer client the page IS the surface, so a top-level navigation
+// unloads the client for good: the relay drops and the device goes offline with
+// no way back until it is reopened. Navigate away (about:blank — allowed as a
+// top-level target, no network) and verify a follow-up command reports the
+// device gone rather than silently degrading to look-only.
+await call("execute", { code: "location.href='about:blank'" }).catch(() => {});
+await page.waitForTimeout(1500); // relay close + server marks device offline
 const afterNav = await call("execute", { code: "return 1" });
-check("cross-origin surface → execute reports look-only (no crash)",
-  afterNav.isError === true && /cross-origin/i.test(textOf(afterNav)), textOf(afterNav).slice(0, 90));
+check("top-level navigation drops the device offline (no way back)",
+  afterNav.isError === true && /no device connected/i.test(textOf(afterNav)), textOf(afterNav).slice(0, 90));
 
 await client.close();
 await browser.close();

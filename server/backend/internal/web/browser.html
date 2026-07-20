@@ -5,11 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>abacad browser device</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #111; }
-  /* The iframe is the device surface: chrome-less and full-viewport, so a
-     screen pixel (x, y) maps 1:1 to the captured screenshot and to injected
-     coordinates — the same invariant the Android and macOS clients hold. */
-  #surface { border: 0; width: 100vw; height: 100vh; display: block; background: #fff; }
+  /* The page itself is the device surface — one document, no iframe. A screen
+     pixel (x, y) maps 1:1 to the captured screenshot and to injected coordinates,
+     the same invariant the Android and macOS clients hold. Content the agent
+     builds lives in this same document, so scripting and screenshot always work
+     same-origin. There is no way back from a top-level navigation: leaving this
+     page unloads the client and drops the device until someone reopens it. */
+  html, body { margin: 0; min-height: 100%; }
+  body { font: 16px system-ui; color: #333; background: #fff; }
+  #ready { display: grid; place-items: center; height: 100vh; text-align: center; }
+  #ready h1 { margin: 0 0 .3em; }
+  #ready p { color: #888; }
   #dot {
     position: fixed; top: 8px; right: 8px; width: 10px; height: 10px; border-radius: 50%;
     background: #c33; box-shadow: 0 0 0 2px rgba(0,0,0,.35); pointer-events: none; z-index: 2147483647;
@@ -18,13 +24,13 @@
   #dot.on { background: #3c6; }
 </style>
 <!-- Pixel capture. The DOM tree (below) is the primary semantic layer; this is
-     the escape hatch for pixels. Cross-origin surfaces can't be rasterized here
-     (tainted canvas) — the agent still gets the tree and can execute. Served
-     same-origin (vendored, not a CDN) so it works on locked-down networks. -->
+     the escape hatch for pixels. Served same-origin (vendored, not a CDN) so it
+     works on locked-down networks. -->
 <script src="/_hc.js"></script>
 </head>
 <body>
-<iframe id="surface" title="abacad device surface"></iframe>
+<div id="ready"><h1>abacad browser device</h1>
+<p>Connected. An agent can now build and drive content here.</p></div>
 <div id="dot" title="abacad relay connection"></div>
 <script>
 (() => {
@@ -35,53 +41,49 @@
   const wsProto = location.protocol === "https:" ? "wss" : "ws";
   const wsURL = wsProto + "://" + location.host + "/device";
 
-  const surface = document.getElementById("surface");
   const dot = document.getElementById("dot");
 
-  // Default surface: a friendly ready page so opening the URL shows something and
-  // the agent can immediately screenshot / execute / load. srcdoc renders
-  // same-origin with this page, so full control (tree + execute) works out of the box.
-  surface.srcdoc =
-    '<!doctype html><meta charset=utf-8>' +
-    '<body style="font:16px system-ui;margin:0;display:grid;place-items:center;height:100vh;color:#333">' +
-    '<div style="text-align:center"><h1 style="margin:0 0 .3em">abacad browser device</h1>' +
-    '<p style="color:#888">Connected. An agent can now load and drive content here.</p></div>';
+  // The relay lives in this closure (WebSocket + handlers), not in the DOM, so it
+  // survives the agent wiping document.body.innerHTML. Only a top-level navigation
+  // or document.open()/write() tears it down. The connection dot does live in the
+  // DOM, so re-attach it whenever a content rewrite removed it.
+  function ensureDot() {
+    if (!dot.isConnected && document.body) document.body.appendChild(dot);
+  }
 
-  // Access the surface's document/window. Both throw for a cross-origin frame —
-  // callers treat null as "look-only" (screenshot works, scripting doesn't).
-  function sdoc() { try { return surface.contentDocument; } catch (e) { return null; } }
-  function swin() { try { return surface.contentWindow; } catch (e) { return null; } }
+  function vw() { return document.documentElement.clientWidth; }
+  function vh() { return document.documentElement.clientHeight; }
 
   // --- screenshot: pixels (best-effort) + DOM-derived accessibility tree. ---
   async function capture(includeTree) {
-    const res = { w: surface.clientWidth, h: surface.clientHeight, png_base64: "" };
-    const d = sdoc();
+    const w = vw(), h = vh();
+    const res = { w, h, png_base64: "" };
     try {
-      if (d && window.html2canvas) {
-        const canvas = await window.html2canvas(d.documentElement, {
+      if (window.html2canvas) {
+        const canvas = await window.html2canvas(document.documentElement, {
           logging: false, useCORS: true, backgroundColor: "#fff",
-          width: surface.clientWidth, height: surface.clientHeight,
-          windowWidth: surface.clientWidth, windowHeight: surface.clientHeight,
+          width: w, height: h, windowWidth: w, windowHeight: h,
+          ignoreElements: (el) => el.id === "dot", // the relay indicator isn't part of the surface
         });
         res.w = canvas.width; res.h = canvas.height;
         res.png_base64 = canvas.toDataURL("image/jpeg", 0.7).split(",")[1] || "";
       }
-    } catch (e) { /* cross-origin / rasterize failure: tree-only, empty image */ }
+    } catch (e) { /* rasterize failure: tree-only, empty image */ }
     if (includeTree) res.tree = buildTree();
     return res;
   }
 
   const CLICKABLE = { A: 1, BUTTON: 1, INPUT: 1, SELECT: 1, TEXTAREA: 1, SUMMARY: 1, LABEL: 1 };
   function buildTree() {
-    const d = sdoc();
-    if (!d) return { pkg: surface.src || "(cross-origin surface)", nodes: [] };
     const sel = "a,button,input,textarea,select,summary,label,[role],[onclick]," +
       "h1,h2,h3,h4,p,li,td,th,[aria-label]";
+    const w = vw(), h = vh();
     const nodes = [];
-    d.querySelectorAll(sel).forEach((el) => {
+    document.querySelectorAll(sel).forEach((el) => {
+      if (el.id === "dot") return; // relay indicator, not surface content
       const r = el.getBoundingClientRect();
       if (r.width <= 0 || r.height <= 0) return;
-      if (r.bottom < 0 || r.right < 0 || r.top > surface.clientHeight || r.left > surface.clientWidth) return;
+      if (r.bottom < 0 || r.right < 0 || r.top > h || r.left > w) return;
       const role = el.getAttribute("role");
       nodes.push({
         cls: role || el.tagName,
@@ -91,15 +93,14 @@
         bounds: [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)],
       });
     });
-    return { pkg: (d.location && d.location.href) || surface.src || "srcdoc", nodes };
+    return { pkg: location.href, nodes };
   }
 
-  // --- input injection (same-origin only; a cross-origin frame can't be scripted). ---
+  // --- input injection: synthetic DOM events into this page. ---
   function clickAt(x, y) {
-    const d = sdoc();
-    const el = d && d.elementFromPoint(x, y);
+    const el = document.elementFromPoint(x, y);
     if (!el) return { dispatched: false };
-    const opts = { bubbles: true, cancelable: true, clientX: x, clientY: y, view: swin() };
+    const opts = { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window };
     el.dispatchEvent(new MouseEvent("mousedown", opts));
     el.dispatchEvent(new MouseEvent("mouseup", opts));
     el.dispatchEvent(new MouseEvent("click", opts));
@@ -108,18 +109,16 @@
   }
 
   function scrollBy(x, y, dx, dy) {
-    const d = sdoc(), w = swin();
-    // Scroll the element under the point if it can, else the whole surface.
-    const el = d && d.elementFromPoint(x, y);
     const step = 40; // wheel line -> px
+    // Scroll the element under the point if it scrolls, else the whole page.
+    const el = document.elementFromPoint(x, y);
     if (el && typeof el.scrollBy === "function") el.scrollBy((dx || 0) * step, (dy || 0) * step);
-    else if (w) w.scrollBy((dx || 0) * step, (dy || 0) * step);
+    else window.scrollBy((dx || 0) * step, (dy || 0) * step);
     return { dispatched: true };
   }
 
   function inputText(text) {
-    const d = sdoc();
-    const el = d && d.activeElement;
+    const el = document.activeElement;
     if (el && ("value" in el)) {
       el.value = text;
       el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -129,18 +128,13 @@
     return { set: false };
   }
 
-  // --- execute: run JS in the surface's own realm, so `document`/`location` are
-  // the target page's. Cross-origin frames throw on realm access -> clear error. ---
+  // --- execute: run JS in this page's own realm, so `document`/`location`/`window`
+  // are the device page's. It always has full control because it runs here — but
+  // `location.href = …` (or any code that navigates) unloads the client for good. ---
+  const AsyncFn = (async function () {}).constructor;
   async function execute(code) {
-    const w = swin();
-    let AsyncFn;
-    try {
-      AsyncFn = w.eval("(async function(){}).constructor"); // iframe realm's AsyncFunction
-    } catch (e) {
-      throw new Error("cross-origin surface — execute cannot reach inside it; load same-origin content (your own page or set HTML) first");
-    }
-    const fn = new AsyncFn(code);      // globals resolve to the iframe's window
-    const value = await fn.call(w);
+    const fn = new AsyncFn(code);      // globals resolve to this page's window
+    const value = await fn.call(window);
     return { value: value === undefined ? null : value };
   }
 
@@ -156,12 +150,13 @@
   // --- relay connection: dial, dispatch commands, reply, reconnect. ---
   function connect() {
     const ws = new WebSocket(wsURL);
-    ws.addEventListener("open", () => dot.classList.add("on"));
+    ws.addEventListener("open", () => { ensureDot(); dot.classList.add("on"); });
     ws.addEventListener("close", () => { dot.classList.remove("on"); setTimeout(connect, 1000); });
     ws.addEventListener("error", () => {});
     ws.addEventListener("message", async (ev) => {
       let cmd;
       try { cmd = JSON.parse(ev.data); } catch (e) { return; }
+      ensureDot(); // a prior content rewrite may have removed it
       const fn = handlers[cmd.method];
       if (!fn) { ws.send(JSON.stringify({ id: cmd.id, ok: false, error: "unknown method " + cmd.method })); return; }
       try {

@@ -323,11 +323,11 @@ var actionTools = []actionTool{
 		},
 	},
 
-	// --- Browser tool (a browser device runs it in its content iframe; other
+	// --- Browser tool (a browser device runs it in its own page; other
 	// platforms reject it as unknown). ---
 	{
 		name:        "execute",
-		description: "(browser) Evaluate JavaScript inside the browser device's surface and return the JSON-serialized result. This is the browser's power verb — prefer it over pixel clicks for anything structured. The code runs as the body of an async function, so you can return a value and await promises: e.g. return document.title; return [...document.querySelectorAll('a')].map(a => a.href); return await fetch('/api/x').then(r => r.json()). Use it to read page state, act by selector (document.querySelector('#go').click(); el.value = 'hi'), set content (document.body.innerHTML = ...), or navigate the surface (location.href = 'https://example.com'). Loading your own / same-origin content gives full control — read, script, and inject. Navigating to a cross-origin site drops you to look-only: screenshot still works, but the browser blocks scripting across origins so execute can't reach inside; load same-origin content again to restore control. A thrown error is returned as a tool error.",
+		description: "(browser) Evaluate JavaScript inside the browser device's page and return the JSON-serialized result. This is the browser's power verb — prefer it over pixel clicks for anything structured. The code runs as the body of an async function, so you can return a value and await promises: e.g. return document.title; return [...document.querySelectorAll('a')].map(a => a.href); return await fetch('/api/x').then(r => r.json()). Use it to read page state, act by selector (document.querySelector('#go').click(); el.value = 'hi'), and build content in place (document.body.innerHTML = ...). It always has full control because it runs in the device page itself. Do NOT navigate away — location.href = '...', or clicking/submitting anything that unloads the page: a top-level navigation unloads the device client and takes the device OFFLINE with no way back until someone reopens it. A thrown error is returned as a tool error.",
 		schema:      `{"type":"object","properties":{"code":{"type":"string","description":"JavaScript to evaluate; runs as an async function body, so use return <value> to get a result back"},` + deviceIDSchema + `},"required":["code"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
 			var a struct {

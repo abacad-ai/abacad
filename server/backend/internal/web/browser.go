@@ -8,7 +8,10 @@ import (
 // browserClientHTML is the self-contained browser-device client. It is served at
 // the root of a device's own subdomain (<device-id>.abacad.ai); the page dials
 // the /device WebSocket same-origin and acts as a device — screenshot (DOM tree
-// + pixels), click/scroll/input_text, and execute (JS in its content iframe). It
+// + pixels), click/scroll/input_text, and execute (JS in the page itself). The
+// page IS the surface (no iframe): content the agent builds lives in this same
+// document, so scripting and screenshot always work same-origin. A top-level
+// navigation unloads the client and drops the device until it is reopened. It
 // has no build step; it is embedded and served verbatim.
 //
 //go:embed browser.html
