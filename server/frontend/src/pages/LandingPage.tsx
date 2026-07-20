@@ -32,7 +32,7 @@ export function LandingPage() {
 
           <div className="ml-auto flex items-center gap-2 sm:gap-3">
             {me ? (
-              <Link to="/devices" className={cn(buttonVariants({ size: "sm" }))}>
+              <Link to="/" className={cn(buttonVariants({ size: "sm" }))}>
                 Open console
                 <ArrowRight size={16} />
               </Link>
@@ -68,7 +68,7 @@ export function LandingPage() {
 
         <div className="mt-9 flex flex-col items-center gap-3 sm:flex-row">
           {me ? (
-            <Link to="/devices" className={cn(buttonVariants(), "px-5")}>
+            <Link to="/" className={cn(buttonVariants(), "px-5")}>
               Open console
               <ArrowRight size={17} />
             </Link>

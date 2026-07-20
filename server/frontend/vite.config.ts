@@ -11,9 +11,15 @@ export default defineConfig({
     host: true, // listen on 0.0.0.0 so the dev server is reachable via the LAN IP
     port: 1419,
     proxy: {
-      "/api": "http://localhost:1213",
-      "/mcp": "http://localhost:1213",
-      "/device": { target: "ws://localhost:1213", ws: true },
+      // changeOrigin stays off: the backend derives absolute URLs (OAuth
+      // redirect_uri, device WS) from the Host header, which must remain the
+      // origin the browser actually used, not the proxy target.
+      "/api": { target: "http://localhost:1213", changeOrigin: false },
+      "/mcp": { target: "http://localhost:1213", changeOrigin: false },
+      // Regex, not a prefix: a bare "/device" key also matches the "/devices"
+      // SPA routes and would proxy those page loads to Go instead of serving
+      // the dev index.html. Only the exact WS path (plus its ?token=) proxies.
+      "^/device(\\?|$)": { target: "ws://localhost:1213", ws: true },
     },
   },
   build: { outDir: "dist", emptyOutDir: true },

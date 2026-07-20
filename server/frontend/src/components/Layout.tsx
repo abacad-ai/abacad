@@ -7,7 +7,7 @@ import { useAuth } from "@/auth";
 import { cn } from "@/lib/utils";
 
 const navigation = [
-  { to: "/devices", label: "Devices" },
+  { to: "/", label: "Devices" },
   { to: "/activities", label: "Activities" },
   { to: "/settings", label: "Settings" },
 ];
@@ -35,8 +35,11 @@ export function Layout({ children }: { children: ReactNode }) {
 
           <nav aria-label="Primary navigation" className="flex items-center gap-1 sm:gap-2">
             {navigation.map((item) => {
+              // Devices owns "/" plus the /devices/:id detail pages.
               const active =
-                item.to === "/devices" ? loc.pathname.startsWith("/devices") : loc.pathname === item.to;
+                item.to === "/"
+                  ? loc.pathname === "/" || loc.pathname.startsWith("/devices")
+                  : loc.pathname === item.to;
               return (
                 <Link
                   key={item.to}
@@ -92,7 +95,7 @@ export function Layout({ children }: { children: ReactNode }) {
 function Brand() {
   return (
     <Link
-      to="/devices"
+      to="/"
       className="flex min-w-0 shrink-0 items-center gap-2.5 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
     >
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-brand/30 bg-brand-soft text-brand">

@@ -141,7 +141,7 @@ func (a *API) googleCallback(w http.ResponseWriter, r *http.Request) {
 		a.record(acc.ID, store.Activity{Kind: activity.KindRegister, Source: "google", Detail: acc.Email})
 	}
 	a.record(acc.ID, store.Activity{Kind: activity.KindLogin, Source: "google"})
-	http.Redirect(w, r, "/devices", http.StatusFound)
+	http.Redirect(w, r, "/", http.StatusFound)
 }
 
 // googleIdentity exchanges the authorization code for tokens and reads the

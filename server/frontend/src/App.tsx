@@ -27,8 +27,21 @@ function Protected({ children }: { children: React.ReactNode }) {
 function LoginRoute() {
   const { me, loading } = useAuth();
   if (loading) return null;
-  if (me) return <Navigate to="/devices" replace />;
+  if (me) return <Navigate to="/" replace />;
   return <AuthPage />;
+}
+
+// "/" is the devices console once signed in; anonymous visitors get the public
+// landing page (which doubles as the homepage Google's OAuth review loads).
+// While auth is still resolving, Protected renders the loading state.
+function RootRoute() {
+  const { me, loading } = useAuth();
+  if (!loading && !me) return <LandingPage />;
+  return (
+    <Protected>
+      <DevicesPage />
+    </Protected>
+  );
 }
 
 export function App() {
@@ -36,16 +49,10 @@ export function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<LandingPage />} />
+          <Route path="/" element={<RootRoute />} />
           <Route path="/login" element={<LoginRoute />} />
-          <Route
-            path="/devices"
-            element={
-              <Protected>
-                <DevicesPage />
-              </Protected>
-            }
-          />
+          {/* Devices moved to "/"; keep the old path working for bookmarks. */}
+          <Route path="/devices" element={<Navigate to="/" replace />} />
           <Route
             path="/devices/:id"
             element={
