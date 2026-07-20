@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,6 +36,8 @@ type API struct {
 	Activity   *activity.Recorder // persistent account trail (Activities page)
 	Shots      *screenshot.Store  // per-device last-screenshot cache
 	BaseDomain string             // domain devices are addressed under, for the ssh_host hint
+
+	logins *loginLimiter // per-IP login throttle; initialized in Handler
 }
 
 type ctxKey int
@@ -43,6 +46,9 @@ const accountKey ctxKey = 0
 
 // Handler returns the /api router (to be mounted at /api/).
 func (a *API) Handler() http.Handler {
+	if a.logins == nil {
+		a.logins = newLoginLimiter()
+	}
 	mux := http.NewServeMux()
 
 	// Public auth endpoints.
@@ -131,9 +137,16 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &c) {
 		return
 	}
+	ip := clientIP(r)
+	if ok, retry := a.logins.allowed(ip, time.Now()); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())+1))
+		writeErr(w, http.StatusTooManyRequests, "too many login attempts; try again later")
+		return
+	}
 	c.Email = strings.TrimSpace(strings.ToLower(c.Email))
 	acc, err := a.Store.AccountByEmail(c.Email)
 	if err != nil || !auth.CheckPassword(acc.PasswordHash, c.Password) {
+		a.logins.recordFail(ip, time.Now())
 		// A wrong password on a real account is worth the trail; an unknown email
 		// has no account to attach it to.
 		if err == nil {
@@ -142,6 +155,7 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "invalid email or password")
 		return
 	}
+	a.logins.reset(ip)
 	a.startSession(w, r, acc)
 	a.record(acc.ID, store.Activity{Kind: activity.KindLogin})
 	writeJSON(w, http.StatusOK, map[string]string{"account_id": acc.ID, "email": acc.Email})

@@ -66,12 +66,17 @@ func main() {
 	trail := activity.New(st, time.Duration(cfg.ActivityRetentionDays)*24*time.Hour)
 	factory := &resolver.Factory{Store: st, Hub: hub}
 
-	// /device: authenticate the device by its ?token=, register under its real
-	// device id, and mark it seen.
+	// /device: authenticate the device by its token, register under its real
+	// device id, and mark it seen. The token is read from the Authorization
+	// header first (preferred — keeps it out of URLs, proxy logs, and history)
+	// and falls back to ?token= for older clients.
 	deviceHandler := &device.Handler{
 		Hub: hub,
 		Resolve: func(r *http.Request) (string, string, error) {
-			token := r.URL.Query().Get("token")
+			token := auth.BearerToken(r)
+			if token == "" {
+				token = r.URL.Query().Get("token")
+			}
 			if token == "" {
 				return "", "", errors.New("missing device token")
 			}

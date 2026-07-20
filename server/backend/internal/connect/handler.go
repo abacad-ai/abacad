@@ -49,23 +49,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing target host:port", http.StatusBadRequest)
 		return
 	}
+	// Reject SSRF targets (link-local/metadata/unspecified/multicast) before we
+	// touch the device. See target.go.
+	if err := validateTarget(target); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	// Resolve the device (ownership + liveness) — a pure lookup, no device
+	// round-trip — so we can still answer with a plain HTTP status here.
 	dc, err := resolver.Resolve(r.Context(), r.URL.Query().Get("device"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 
-	stream, err := dc.OpenStream(r.Context(), target)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	defer stream.Close()
-	h.Activity.Record(store.Activity{
-		AccountID: accountID, DeviceID: dc.DeviceID,
-		Kind: activity.KindTunnel, Source: "tunnel", Detail: target,
-	})
-
+	// Upgrade BEFORE opening the device stream, so a plain (non-WebSocket) GET
+	// can never make the device dial the target — the dial happens only for a
+	// real tunnel client that completed the handshake.
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		InsecureSkipVerify: true, // non-browser client (abacad proxy); no Origin to check
 	})
@@ -74,6 +74,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	c.SetReadLimit(readLimit)
 	defer c.Close(websocket.StatusNormalClosure, "bye")
+
+	stream, err := dc.OpenStream(r.Context(), target)
+	if err != nil {
+		c.Close(websocket.StatusBadGateway, "device dial failed")
+		return
+	}
+	defer stream.Close()
+	if h.Activity != nil {
+		h.Activity.Record(store.Activity{
+			AccountID: accountID, DeviceID: dc.DeviceID,
+			Kind: activity.KindTunnel, Source: "tunnel", Detail: target,
+		})
+	}
 
 	// Bridge both directions; whichever side ends first cancels the other. The
 	// client WebSocket has a single reader (this goroutine) and a single writer
