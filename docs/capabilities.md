@@ -71,7 +71,8 @@ The tool surface an agent drives, split by form factor.
 
 ### Browser
 
-A browser tab acting as a device (open `<host>/b#<token>`). It drives its own content iframe:
+A browser tab acting as a device (open `<device-id>.abacad.ai`; the id in the Host is the
+connection key). It drives its own content iframe:
 the semantic verbs plus `execute`, the JS escape hatch. The reach/depth trade is the whole
 story — see [product.md](product.md).
 

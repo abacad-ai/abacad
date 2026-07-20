@@ -26,6 +26,7 @@ export interface NewDevice {
   name: string;
   device_token: string;
   wss_url: string;
+  browser_url?: string; // set for browser devices: https://<id>.<base-domain>
 }
 
 export interface McpTokenInfo {

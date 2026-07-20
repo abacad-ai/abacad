@@ -142,8 +142,10 @@ things on the *outside* of the box:
 Desktop CLI (SSH) is commodity — reverse-tunneled or via mesh (Tailscale/WireGuard), never a
 naked public port. It's the cheap technical-user beachhead; Android is the bigger prize.
 
-**The browser is the reach end of the spectrum, not the wedge.** Open `<host>/b#<token>` in
+**The browser is the reach end of the spectrum, not the wedge.** Open `<device-id>.abacad.ai` in
 any browser (laptop, phone, TV, kiosk) and the tab *becomes* a device — no app, no permission.
+The device is addressed by its own subdomain; the id in the Host is the connection key (an
+unguessable 16-char handle), so nothing rides in a visible URL path or token.
 The trade is depth: a tab can only see and drive its own content, so it is *full* control of
 same-origin content you host (your app, agent-rendered HTML) and *look-only* for a cross-origin
 site loaded in it. Driving the arbitrary open web stays a separate cell (extension / headless

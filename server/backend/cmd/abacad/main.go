@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -83,6 +84,27 @@ func main() {
 			d, err := st.DeviceByTokenHash(auth.HashToken(token))
 			if err != nil {
 				return "", "", errors.New("unknown device token")
+			}
+			return d.ID, d.AccountID, nil
+		},
+		OnSeen:   st.TouchDevice,
+		Events:   evlog,
+		Activity: trail,
+	}
+
+	// Browser devices dial the same /device WebSocket but from their own subdomain
+	// (<device-id>.abacad.ai) with no token — the id in the Host is the addressing
+	// and auth key. Same hub/trail as the token handler; only Resolve differs.
+	deviceHostWS := &device.Handler{
+		Hub: hub,
+		Resolve: func(r *http.Request) (string, string, error) {
+			id := deviceHostID(r.Host)
+			if id == "" {
+				return "", "", errors.New("not a device host")
+			}
+			d, err := st.DeviceByID(id)
+			if err != nil {
+				return "", "", errors.New("unknown device")
 			}
 			return d.ID, d.AccountID, nil
 		},
@@ -171,9 +193,6 @@ func main() {
 	mux.Handle("GET /blobs/{id}", http.HandlerFunc(blobHandler.Download))
 	mux.Handle("/api/", apiHandler)
 	mux.Handle("GET /downloads/{file}", downloadsHandler(cfg.DownloadsDir))
-	// /b: the browser-device client. Opened as /b#<device-token>; the page acts
-	// as a device (dials /device, answers screenshot/click/scroll/input_text/execute).
-	mux.Handle("GET /b", web.BrowserClient())
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"ok":true,"devices_online":%d}`, len(hub.OnlineIDs()))
@@ -183,7 +202,27 @@ func main() {
 	// ServeMux precedence, so it only handles otherwise-unmatched paths.
 	mux.Handle("/", spa)
 
-	var handler http.Handler = logRequests(mux)
+	// Browser devices are addressed by subdomain: <device-id>.abacad.ai. A 16-letter
+	// device id can't collide with a system host (apex / app / api), so route by shape
+	// — a leftmost [a-z]{16} label means "browser device": serve the client page at /
+	// and authenticate its /device WebSocket by the id in the Host. Everything else
+	// (native clients with ?token=, the dashboard, the API) falls through to the mux.
+	browserPage := web.BrowserClient()
+	hostMux := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if deviceHostID(r.Host) != "" {
+			switch r.URL.Path {
+			case "/":
+				browserPage.ServeHTTP(w, r)
+				return
+			case "/device":
+				deviceHostWS.ServeHTTP(w, r)
+				return
+			}
+		}
+		mux.ServeHTTP(w, r)
+	})
+
+	var handler http.Handler = logRequests(hostMux)
 	if cfg.DevCORS {
 		handler = devCORS(handler)
 	}
@@ -290,6 +329,28 @@ func seed(st *store.Store) {
 	log.Printf("SEED account=%s (%s / %s)", acc.ID, email, pass)
 	log.Printf("SEED device_token=%s", devToken)
 	log.Printf("SEED mcp_token=%s", mcpToken)
+}
+
+// deviceLabel matches a browser-device subdomain label: exactly the 16 lowercase
+// letters that NewDeviceID() mints. System hosts (apex, app, api, www) never take
+// this shape, so the leftmost label alone disambiguates a device host.
+var deviceLabel = regexp.MustCompile(`^[a-z]{16}$`)
+
+// deviceHostID returns the browser-device id in the request Host (its leftmost
+// label, when that label is a device id), or "" when the Host is not a device
+// subdomain. Any port is stripped first.
+func deviceHostID(host string) string {
+	if i := strings.IndexByte(host, ':'); i >= 0 {
+		host = host[:i]
+	}
+	label := host
+	if i := strings.IndexByte(host, '.'); i >= 0 {
+		label = host[:i]
+	}
+	if deviceLabel.MatchString(label) {
+		return label
+	}
+	return ""
 }
 
 // downloadsHandler serves public release artifacts (e.g. the macOS client dmg)

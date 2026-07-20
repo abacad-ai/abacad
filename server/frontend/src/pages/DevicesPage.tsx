@@ -27,7 +27,7 @@ interface Reveal {
   title: string;
   wssUrl: string;
   token: string;
-  browserUrl?: string; // set for browser devices: the /b#<token> page to open
+  browserUrl?: string; // set for browser devices: the <id>.abacad.ai page to open
 }
 
 function deviceWsUrl(token: string): string {
@@ -87,10 +87,7 @@ export function DevicesPage() {
         title: `Connect ${created.name}`,
         wssUrl: deviceWsUrl(created.device_token),
         token: created.device_token,
-        browserUrl:
-          platform === "browser"
-            ? `${window.location.origin}/b#${created.device_token}`
-            : undefined,
+        browserUrl: created.browser_url, // server sets this only for browser devices
       });
       await reload();
     });

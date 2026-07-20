@@ -28,11 +28,11 @@
 <script>
 (() => {
   "use strict";
-  // Token travels in the URL fragment (#…), so it never reaches the server's
-  // access logs or the Referer header — only this page's JS reads it.
-  const token = decodeURIComponent(location.hash.slice(1));
+  // This page is served from the device's own subdomain (<device-id>.abacad.ai);
+  // the id in the Host is what authenticates the connection, so we dial /device
+  // same-origin with nothing in the URL.
   const wsProto = location.protocol === "https:" ? "wss" : "ws";
-  const wsURL = wsProto + "://" + location.host + "/device?token=" + encodeURIComponent(token);
+  const wsURL = wsProto + "://" + location.host + "/device";
 
   const surface = document.getElementById("surface");
   const dot = document.getElementById("dot");
@@ -172,11 +172,6 @@
     });
   }
 
-  if (!token) {
-    surface.srcdoc = '<!doctype html><meta charset=utf-8><body style="font:16px system-ui;padding:2rem;color:#c33">' +
-      'No device token in the URL. Open the link from your abacad dashboard (it ends in <code>/b#&lt;token&gt;</code>).';
-    return;
-  }
   connect();
 })();
 </script>

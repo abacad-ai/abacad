@@ -234,13 +234,19 @@ func (a *API) createDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.record(account(r).ID, store.Activity{Kind: activity.KindDeviceCreate, DeviceID: d.ID, Detail: d.Name})
-	writeJSON(w, http.StatusCreated, map[string]any{
+	resp := map[string]any{
 		"id":           d.ID,
 		"name":         d.Name,
 		"platform":     d.Platform,
 		"device_token": token, // shown once
 		"wss_url":      wsURL(r, token),
-	})
+	}
+	// A browser device is opened at its own subdomain; the id in the Host is the
+	// key, so there is no visible token in this URL.
+	if d.Platform == "browser" && a.BaseDomain != "" {
+		resp["browser_url"] = "https://" + d.ID + "." + a.BaseDomain
+	}
+	writeJSON(w, http.StatusCreated, resp)
 }
 
 func (a *API) renameDevice(w http.ResponseWriter, r *http.Request) {

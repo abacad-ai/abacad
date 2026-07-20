@@ -198,6 +198,15 @@ func (s *Store) DeviceByTokenHash(tokenHash string) (Device, error) {
 		`SELECT id,account_id,name,platform,created_at,last_seen FROM devices WHERE token_hash=?`, tokenHash))
 }
 
+// DeviceByID resolves a device by its (non-secret) id alone. Used by the browser
+// device surface, where the id in the request Host is the addressing/auth key —
+// unlike a token, the id is not a shared secret in the usual sense, so callers
+// that rely on it (only the Host router) must intend exactly that.
+func (s *Store) DeviceByID(deviceID string) (Device, error) {
+	return s.scanDevice(s.db.QueryRow(
+		`SELECT id,account_id,name,platform,created_at,last_seen FROM devices WHERE id=?`, deviceID))
+}
+
 // DeviceOwnedBy returns a device only if it belongs to accountID.
 func (s *Store) DeviceOwnedBy(deviceID, accountID string) (Device, error) {
 	return s.scanDevice(s.db.QueryRow(
