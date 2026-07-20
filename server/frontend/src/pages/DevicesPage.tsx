@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import {
   CheckCircle2,
+  Globe,
   LoaderCircle,
   Plus,
   RefreshCw,
@@ -25,6 +26,7 @@ interface Reveal {
   title: string;
   wssUrl: string;
   token: string;
+  browserUrl?: string; // set for browser devices: the /b#<token> page to open
 }
 
 function deviceWsUrl(token: string): string {
@@ -40,6 +42,7 @@ export function DevicesPage() {
   const [reveal, setReveal] = useState<Reveal | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [newName, setNewName] = useState("My phone");
+  const [platform, setPlatform] = useState("android");
   const [busy, setBusy] = useState(false);
   const loadedOnce = useRef(false);
 
@@ -76,13 +79,17 @@ export function DevicesPage() {
   const addDevice = async (event: React.FormEvent) => {
     event.preventDefault();
     await runAction(async () => {
-      const created = await api.createDevice(newName.trim() || "New device");
+      const created = await api.createDevice(newName.trim() || "New device", platform);
       setAddOpen(false);
       setNewName("My phone");
       setReveal({
         title: `Connect ${created.name}`,
         wssUrl: deviceWsUrl(created.device_token),
         token: created.device_token,
+        browserUrl:
+          platform === "browser"
+            ? `${window.location.origin}/b#${created.device_token}`
+            : undefined,
       });
       await reload();
     });
@@ -183,6 +190,24 @@ export function DevicesPage() {
             />
             <p className="text-xs text-ink-subtle">Use a name that makes the device easy to identify in agent commands.</p>
           </div>
+          <div className="mt-4 flex flex-col gap-2">
+            <Label htmlFor="device-type">Device type</Label>
+            <select
+              id="device-type"
+              value={platform}
+              onChange={(event) => setPlatform(event.target.value)}
+              className="min-h-10 rounded-md border border-border bg-surface px-3 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+            >
+              <option value="android">Phone (Android app)</option>
+              <option value="macos">Desktop (macOS app)</option>
+              <option value="browser">Browser tab (no install)</option>
+            </select>
+            <p className="text-xs text-ink-subtle">
+              {platform === "browser"
+                ? "You'll get a link to open in any browser — the tab itself becomes the device the agent drives."
+                : "Install the abacad app on the device, then scan the QR to connect it."}
+            </p>
+          </div>
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="ghost" onClick={() => setAddOpen(false)}>
               Cancel
@@ -205,12 +230,29 @@ export function DevicesPage() {
         {reveal && (
           <div className="grid gap-6 sm:grid-cols-[200px_minmax(0,1fr)]">
             <div className="flex items-center justify-center rounded-md bg-white p-4">
-              <QRCodeSVG value={reveal.wssUrl} size={168} title="Device connection QR code" />
+              <QRCodeSVG
+                value={reveal.browserUrl ?? reveal.wssUrl}
+                size={168}
+                title={reveal.browserUrl ? "Open browser device QR code" : "Device connection QR code"}
+              />
             </div>
             <div className="min-w-0 space-y-4">
               <div>
-                <p className="mb-2 font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-ink-subtle">Connection URL</p>
-                <CopyField value={reveal.wssUrl} />
+                <p className="mb-2 font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-ink-subtle">
+                  {reveal.browserUrl ? "Open on the device" : "Connection URL"}
+                </p>
+                <CopyField value={reveal.browserUrl ?? reveal.wssUrl} />
+                {reveal.browserUrl && (
+                  <a
+                    href={reveal.browserUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-brand underline underline-offset-4"
+                  >
+                    <Globe size={15} />
+                    Open in a new tab
+                  </a>
+                )}
               </div>
               <div>
                 <p className="mb-2 font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-ink-subtle">Device token</p>
@@ -218,7 +260,9 @@ export function DevicesPage() {
               </div>
               <div className="flex items-start gap-2.5 border-t border-border pt-4 text-xs leading-5 text-ink-subtle">
                 <ShieldCheck size={16} className="mt-0.5 shrink-0 text-brand" />
-                The token grants device access. Keep it out of source control and shared logs.
+                {reveal.browserUrl
+                  ? "This link embeds the device token. Open it on the screen you want to control (phone, TV, laptop) — or scan the QR to open it there — and keep the link private."
+                  : "The token grants device access. Keep it out of source control and shared logs."}
               </div>
             </div>
             <div className="flex justify-end border-t border-border pt-5 sm:col-span-2">

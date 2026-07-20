@@ -31,10 +31,11 @@ const KNOWN_PLATFORMS: Record<string, PlatformInfo> = {
   android: { label: "Android", factor: "handset" },
   ios: { label: "iOS", factor: "handset" },
   ipados: { label: "iPadOS", factor: "handset" },
+  browser: { label: "Browser", factor: "desktop" },
 };
 
 // Section order — desktops first, then handsets, with unrecognized labels last.
-const GROUP_ORDER = ["macOS", "Windows", "Linux", "Desktop", "iPadOS", "iOS", "Android", "Mobile", "Other"];
+const GROUP_ORDER = ["macOS", "Windows", "Linux", "Desktop", "Browser", "iPadOS", "iOS", "Android", "Mobile", "Other"];
 
 function classifyText(text: string): PlatformInfo | null {
   const t = text.toLowerCase();
@@ -46,6 +47,7 @@ function classifyText(text: string): PlatformInfo | null {
     return { label: "Android", factor: "handset" };
   if (/phone|mobile|tablet/.test(t)) return { label: "Mobile", factor: "handset" };
   if (/desktop|laptop|computer/.test(t)) return { label: "Desktop", factor: "desktop" };
+  if (/browser|chrome|safari|firefox|\bedge\b|\btab\b|kiosk/.test(t)) return { label: "Browser", factor: "desktop" };
   return null;
 }
 

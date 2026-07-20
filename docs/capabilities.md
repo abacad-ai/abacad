@@ -69,6 +69,27 @@ The tool surface an agent drives, split by form factor.
 | TCP tunnel (`/connect`) | API | Raw TCP stream to a `host:port` reachable from the device — ssh, rsync, a DB client. | macOS 🟡 · Windows 🔮 · Linux 🔮 |
 | File transfer (`/blobs`) | API | Generic HTTP upload / download of binary payloads by blob id. | Any ✅ |
 
+### Browser
+
+A browser tab acting as a device (open `<host>/b#<token>`). It drives its own content iframe:
+the semantic verbs plus `execute`, the JS escape hatch. The reach/depth trade is the whole
+story — see [product.md](product.md).
+
+| Capability | Rung | Description | Status |
+|---|---|---|---|
+| `execute` | API | Evaluate JavaScript in the surface's realm and return the JSON result — the browser's power verb. Runs as an async function body (`return`, `await`), so it reads page state, acts by selector, sets HTML, or navigates (`location.href = …`). **Same-origin content → full control; cross-origin → the browser blocks scripting, so look-only.** The top rung of the ladder, for the one platform where the native automation API *is* JavaScript. | Browser ✅ |
+| `screenshot` | accessibility / pixels | One frame (html2canvas, JPEG) plus a DOM-derived tree by default — elements with tag/role, text, id, clickable flag, and bounds. Cross-origin frames can't be rasterized (tainted canvas): the agent still gets an (empty-tree) frame and should lean on `execute`. | Browser ✅ |
+| `click` / `scroll` / `input_text` | pixels / accessibility | The uniform cross-platform verbs, dispatched as synthetic DOM events into the surface. Same-origin only. Prefer `execute` for anything structured. | Browser ✅ |
+| File transfer (`/blobs`) | API | Generic HTTP upload / download of binary payloads by blob id. | Any ✅ |
+
+Deliberately **not** on a browser device: the nav keys (`back`/`home`/`recents`) and the
+desktop OS verbs — a tab has no OS shell to drive, so it simply rejects them as unknown
+methods. `load`/`show` are folded into `execute` (`location.href = …` / `innerHTML = …`).
+
+Trust note: a browser device can't touch the host machine (sandboxed), but `execute` is
+*maximal* power over the surface's origin — it can read same-origin cookies/storage and act as
+the logged-in user. Low risk to the machine, high power over the page: gate `execute` accordingly.
+
 ---
 
 ## Not exposed to the agent

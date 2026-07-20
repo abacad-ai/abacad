@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>abacad browser device</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #111; }
+  /* The iframe is the device surface: chrome-less and full-viewport, so a
+     screen pixel (x, y) maps 1:1 to the captured screenshot and to injected
+     coordinates — the same invariant the Android and macOS clients hold. */
+  #surface { border: 0; width: 100vw; height: 100vh; display: block; background: #fff; }
+  #dot {
+    position: fixed; top: 8px; right: 8px; width: 10px; height: 10px; border-radius: 50%;
+    background: #c33; box-shadow: 0 0 0 2px rgba(0,0,0,.35); pointer-events: none; z-index: 2147483647;
+    transition: background .2s;
+  }
+  #dot.on { background: #3c6; }
+</style>
+<!-- Pixel capture. The DOM tree (below) is the primary semantic layer; this is
+     the escape hatch for pixels. Cross-origin surfaces can't be rasterized here
+     (tainted canvas) — the agent still gets the tree and can execute. -->
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+</head>
+<body>
+<iframe id="surface" title="abacad device surface"></iframe>
+<div id="dot" title="abacad relay connection"></div>
+<script>
+(() => {
+  "use strict";
+  // Token travels in the URL fragment (#…), so it never reaches the server's
+  // access logs or the Referer header — only this page's JS reads it.
+  const token = decodeURIComponent(location.hash.slice(1));
+  const wsProto = location.protocol === "https:" ? "wss" : "ws";
+  const wsURL = wsProto + "://" + location.host + "/device?token=" + encodeURIComponent(token);
+
+  const surface = document.getElementById("surface");
+  const dot = document.getElementById("dot");
+
+  // Default surface: a friendly ready page so opening the URL shows something and
+  // the agent can immediately screenshot / execute / load. srcdoc renders
+  // same-origin with this page, so full control (tree + execute) works out of the box.
+  surface.srcdoc =
+    '<!doctype html><meta charset=utf-8>' +
+    '<body style="font:16px system-ui;margin:0;display:grid;place-items:center;height:100vh;color:#333">' +
+    '<div style="text-align:center"><h1 style="margin:0 0 .3em">abacad browser device</h1>' +
+    '<p style="color:#888">Connected. An agent can now load and drive content here.</p></div>';
+
+  // Access the surface's document/window. Both throw for a cross-origin frame —
+  // callers treat null as "look-only" (screenshot works, scripting doesn't).
+  function sdoc() { try { return surface.contentDocument; } catch (e) { return null; } }
+  function swin() { try { return surface.contentWindow; } catch (e) { return null; } }
+
+  // --- screenshot: pixels (best-effort) + DOM-derived accessibility tree. ---
+  async function capture(includeTree) {
+    const res = { w: surface.clientWidth, h: surface.clientHeight, png_base64: "" };
+    const d = sdoc();
+    try {
+      if (d && window.html2canvas) {
+        const canvas = await window.html2canvas(d.documentElement, {
+          logging: false, useCORS: true, backgroundColor: "#fff",
+          width: surface.clientWidth, height: surface.clientHeight,
+          windowWidth: surface.clientWidth, windowHeight: surface.clientHeight,
+        });
+        res.w = canvas.width; res.h = canvas.height;
+        res.png_base64 = canvas.toDataURL("image/jpeg", 0.7).split(",")[1] || "";
+      }
+    } catch (e) { /* cross-origin / rasterize failure: tree-only, empty image */ }
+    if (includeTree) res.tree = buildTree();
+    return res;
+  }
+
+  const CLICKABLE = { A: 1, BUTTON: 1, INPUT: 1, SELECT: 1, TEXTAREA: 1, SUMMARY: 1, LABEL: 1 };
+  function buildTree() {
+    const d = sdoc();
+    if (!d) return { pkg: surface.src || "(cross-origin surface)", nodes: [] };
+    const sel = "a,button,input,textarea,select,summary,label,[role],[onclick]," +
+      "h1,h2,h3,h4,p,li,td,th,[aria-label]";
+    const nodes = [];
+    d.querySelectorAll(sel).forEach((el) => {
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return;
+      if (r.bottom < 0 || r.right < 0 || r.top > surface.clientHeight || r.left > surface.clientWidth) return;
+      const role = el.getAttribute("role");
+      nodes.push({
+        cls: role || el.tagName,
+        text: String(el.value || el.innerText || el.getAttribute("aria-label") || el.getAttribute("placeholder") || "").trim().slice(0, 200),
+        id: el.id || el.getAttribute("name") || "",
+        clickable: !!CLICKABLE[el.tagName] || el.hasAttribute("onclick") || role === "button" || role === "link",
+        bounds: [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)],
+      });
+    });
+    return { pkg: (d.location && d.location.href) || surface.src || "srcdoc", nodes };
+  }
+
+  // --- input injection (same-origin only; a cross-origin frame can't be scripted). ---
+  function clickAt(x, y) {
+    const d = sdoc();
+    const el = d && d.elementFromPoint(x, y);
+    if (!el) return { dispatched: false };
+    const opts = { bubbles: true, cancelable: true, clientX: x, clientY: y, view: swin() };
+    el.dispatchEvent(new MouseEvent("mousedown", opts));
+    el.dispatchEvent(new MouseEvent("mouseup", opts));
+    el.dispatchEvent(new MouseEvent("click", opts));
+    if (typeof el.focus === "function") el.focus();
+    return { dispatched: true };
+  }
+
+  function scrollBy(x, y, dx, dy) {
+    const d = sdoc(), w = swin();
+    // Scroll the element under the point if it can, else the whole surface.
+    const el = d && d.elementFromPoint(x, y);
+    const step = 40; // wheel line -> px
+    if (el && typeof el.scrollBy === "function") el.scrollBy((dx || 0) * step, (dy || 0) * step);
+    else if (w) w.scrollBy((dx || 0) * step, (dy || 0) * step);
+    return { dispatched: true };
+  }
+
+  function inputText(text) {
+    const d = sdoc();
+    const el = d && d.activeElement;
+    if (el && ("value" in el)) {
+      el.value = text;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      return { set: true };
+    }
+    return { set: false };
+  }
+
+  // --- execute: run JS in the surface's own realm, so `document`/`location` are
+  // the target page's. Cross-origin frames throw on realm access -> clear error. ---
+  async function execute(code) {
+    const w = swin();
+    let AsyncFn;
+    try {
+      AsyncFn = w.eval("(async function(){}).constructor"); // iframe realm's AsyncFunction
+    } catch (e) {
+      throw new Error("cross-origin surface — execute cannot reach inside it; load same-origin content (your own page or set HTML) first");
+    }
+    const fn = new AsyncFn(code);      // globals resolve to the iframe's window
+    const value = await fn.call(w);
+    return { value: value === undefined ? null : value };
+  }
+
+  const handlers = {
+    screenshot: (p) => capture(p ? p.include_ui_tree !== false : true),
+    tap: (p) => clickAt(p.x, p.y),
+    click: (p) => clickAt(p.x, p.y),
+    scroll: (p) => scrollBy(p.x, p.y, p.dx, p.dy),
+    input_text: (p) => inputText(p.text),
+    execute: (p) => execute(p.code || ""),
+  };
+
+  // --- relay connection: dial, dispatch commands, reply, reconnect. ---
+  function connect() {
+    const ws = new WebSocket(wsURL);
+    ws.addEventListener("open", () => dot.classList.add("on"));
+    ws.addEventListener("close", () => { dot.classList.remove("on"); setTimeout(connect, 1000); });
+    ws.addEventListener("error", () => {});
+    ws.addEventListener("message", async (ev) => {
+      let cmd;
+      try { cmd = JSON.parse(ev.data); } catch (e) { return; }
+      const fn = handlers[cmd.method];
+      if (!fn) { ws.send(JSON.stringify({ id: cmd.id, ok: false, error: "unknown method " + cmd.method })); return; }
+      try {
+        const result = await fn(cmd.params || {});
+        ws.send(JSON.stringify({ id: cmd.id, ok: true, result }));
+      } catch (e) {
+        ws.send(JSON.stringify({ id: cmd.id, ok: false, error: String((e && e.message) || e) }));
+      }
+    });
+  }
+
+  if (!token) {
+    surface.srcdoc = '<!doctype html><meta charset=utf-8><body style="font:16px system-ui;padding:2rem;color:#c33">' +
+      'No device token in the URL. Open the link from your abacad dashboard (it ends in <code>/b#&lt;token&gt;</code>).';
+    return;
+  }
+  connect();
+})();
+</script>
+</body>
+</html>

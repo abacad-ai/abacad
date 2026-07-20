@@ -166,6 +166,9 @@ func main() {
 	mux.Handle("GET /blobs/{id}", http.HandlerFunc(blobHandler.Download))
 	mux.Handle("/api/", apiHandler)
 	mux.Handle("GET /downloads/{file}", downloadsHandler(cfg.DownloadsDir))
+	// /b: the browser-device client. Opened as /b#<device-token>; the page acts
+	// as a device (dials /device, answers screenshot/click/scroll/input_text/execute).
+	mux.Handle("GET /b", web.BrowserClient())
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"ok":true,"devices_online":%d}`, len(hub.OnlineIDs()))

@@ -137,9 +137,17 @@ things on the *outside* of the box:
 | **Linux (X11)** | AT-SPI | XTEST + XGetImage | none | ✅ open |
 | **Linux (Wayland)** | AT-SPI | PipeWire portal + libei | portal prompt | ⚠️ gated |
 | **iOS** | ❌ not exposed | view-only, no cross-app input | — | ❌ walled (WDA / cloud) |
+| **Browser** | DOM (same-origin) | synthetic events + `execute` (JS) · html2canvas | none | ✅ zero-install, shallow |
 
 Desktop CLI (SSH) is commodity — reverse-tunneled or via mesh (Tailscale/WireGuard), never a
 naked public port. It's the cheap technical-user beachhead; Android is the bigger prize.
+
+**The browser is the reach end of the spectrum, not the wedge.** Open `<host>/b#<token>` in
+any browser (laptop, phone, TV, kiosk) and the tab *becomes* a device — no app, no permission.
+The trade is depth: a tab can only see and drive its own content, so it is *full* control of
+same-origin content you host (your app, agent-rendered HTML) and *look-only* for a cross-origin
+site loaded in it. Driving the arbitrary open web stays a separate cell (extension / headless
+CDP). So: widest reach, shallowest depth, lightest trust — the opposite corner from Android.
 
 ---
 

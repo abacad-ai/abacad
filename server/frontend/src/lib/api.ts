@@ -119,8 +119,8 @@ export const api = {
 
   devices: () => req<DeviceView[]>("/api/devices"),
   device: (id: string) => req<DeviceView>(`/api/devices/${id}`),
-  createDevice: (name: string) =>
-    req<NewDevice>("/api/devices", { method: "POST", body: JSON.stringify({ name }) }),
+  createDevice: (name: string, platform?: string) =>
+    req<NewDevice>("/api/devices", { method: "POST", body: JSON.stringify({ name, platform }) }),
   renameDevice: (id: string, name: string) =>
     req<void>(`/api/devices/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
   deleteDevice: (id: string) => req<void>(`/api/devices/${id}`, { method: "DELETE" }),
