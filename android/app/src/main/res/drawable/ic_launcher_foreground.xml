@@ -1,30 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  abacad launcher mark: a lowercase "a" (round bowl + stem) with a coral status
-  dot in the counter. Pure vector => infinitely sharp at every density.
-  Drawn on the 108x108 adaptive canvas; the glyph sits inside the ~66dp safe
-  zone so no OEM mask (circle/squircle/rounded-square) clips it.
+  abacad launcher mark: four connected dots (one hub -> three devices) that read as
+  an "A"; the green hub is the single "alive" accent. Drawn in a 512 viewport scaled
+  onto the 108dp adaptive canvas, sized so the whole graph sits inside the ~66% safe
+  circle => no OEM mask (circle / squircle / teardrop) clips a node.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
+    android:viewportWidth="512"
+    android:viewportHeight="512">
 
-    <!-- bowl (blue disc) -->
+    <!-- edges: hub -> three device nodes (silver, half strength) -->
     <path
-        android:fillColor="#13A7F5"
-        android:pathData="M27.6,53.67 a24.75,24.75 0 1,0 49.5,0 a24.75,24.75 0 1,0 -49.5,0 Z" />
-    <!-- stem (blue vertical pill) -->
-    <path
-        android:fillColor="#13A7F5"
-        android:pathData="M75.78,29.58 a4.62,4.62 0 0 1 4.62,4.62 v38.94 a4.62,4.62 0 0 1 -4.62,4.62 a4.62,4.62 0 0 1 -4.62,-4.62 v-38.94 a4.62,4.62 0 0 1 4.62,-4.62 Z" />
-    <!-- counter (white) -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M38.82,53.67 a13.53,13.53 0 1,0 27.06,0 a13.53,13.53 0 1,0 -27.06,0 Z" />
-    <!-- accent dot (coral) -->
-    <path
-        android:fillColor="#FD605E"
-        android:pathData="M44.76,53.67 a7.59,7.59 0 1,0 15.18,0 a7.59,7.59 0 1,0 -15.18,0 Z" />
+        android:strokeColor="#D8DADE"
+        android:strokeWidth="11"
+        android:strokeAlpha="0.5"
+        android:strokeLineCap="round"
+        android:pathData="M256,273 L256,168 M256,273 L149,344 M256,273 L363,344" />
+    <!-- device nodes (silver) -->
+    <path android:fillColor="#D8DADE"
+        android:pathData="M234,168 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0 Z" />
+    <path android:fillColor="#D8DADE"
+        android:pathData="M127,344 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0 Z" />
+    <path android:fillColor="#D8DADE"
+        android:pathData="M341,344 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0 Z" />
+    <!-- hub = live (green) -->
+    <path android:fillColor="#30D158"
+        android:pathData="M230,273 a26,26 0 1,0 52,0 a26,26 0 1,0 -52,0 Z" />
 </vector>

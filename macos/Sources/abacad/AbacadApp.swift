@@ -8,9 +8,13 @@ struct AbacadApp: App {
     @StateObject private var agent = Agent()
 
     var body: some Scene {
-        MenuBarExtra("abacad", systemImage: agent.connected
-                     ? "dot.radiowaves.left.and.right" : "circle.dashed") {
+        MenuBarExtra {
             AgentPanel(agent: agent)
+        } label: {
+            // Our own mono relay mark instead of an SF Symbol; the hub fills in
+            // when connected so the menu bar itself shows "alive" at a glance.
+            Image(nsImage: RelayMark.trayImage(connected: agent.connected))
+                .accessibilityLabel(agent.connected ? "abacad — connected" : "abacad — disconnected")
         }
         .menuBarExtraStyle(.window)
     }

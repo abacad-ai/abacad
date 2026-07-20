@@ -29,6 +29,8 @@ CONF    := release
 BINARY  := .build/$(CONF)/abacad
 DMG     := build/abacad.dmg
 VOLNAME := abacad
+ICNS    := build/abacad.icns
+ICONSET := build/abacad.iconset
 
 # A real Developer ID identity (anything but ad-hoc "-") gets the hardened
 # runtime + a secure timestamp — both are prerequisites for notarization.
@@ -38,12 +40,26 @@ else
 CODESIGN_FLAGS := --options runtime --timestamp
 endif
 
-.PHONY: all app build clean run dmg release _pkg-dmg _notarize-app _notarize-dmg
+.PHONY: all app build clean run dmg release icon _pkg-dmg _notarize-app _notarize-dmg
 
 all: app
 
 build:
 	swift build -c $(CONF)
+
+# App icon: rasterize AppIcon.svg into an .iconset and pack it with iconutil.
+# Needs a Mac (iconutil) and an SVG rasterizer — rsvg-convert (`brew install librsvg`).
+# NOT a dependency of `app`: run it once (or when AppIcon.svg changes) to (re)build
+# $(ICNS); `app` bundles it if present, and builds fine without it (generic icon).
+icon:
+	@command -v rsvg-convert >/dev/null || { echo "ERROR: rsvg-convert not found — 'brew install librsvg'." >&2; exit 1; }
+	rm -rf "$(ICONSET)"; mkdir -p "$(ICONSET)"
+	@for sz in 16 32 128 256 512; do \
+	  rsvg-convert -w $$sz            -h $$sz            AppIcon.svg -o "$(ICONSET)/icon_$${sz}x$${sz}.png"; \
+	  rsvg-convert -w $$((sz*2))      -h $$((sz*2))      AppIcon.svg -o "$(ICONSET)/icon_$${sz}x$${sz}@2x.png"; \
+	done
+	iconutil -c icns "$(ICONSET)" -o "$(ICNS)"
+	@echo "Built $(ICNS)"
 
 # Build + sign the .app bundle. With the ad-hoc default this is dev-grade; with
 # a Developer ID identity it is a distributable, hardened, timestamped signature.
@@ -52,6 +68,8 @@ app: build
 	mkdir -p "$(APP)/Contents/MacOS" "$(APP)/Contents/Resources"
 	cp "$(BINARY)" "$(APP)/Contents/MacOS/abacad"
 	cp Info.plist "$(APP)/Contents/Info.plist"
+	@if [ -f "$(ICNS)" ]; then cp "$(ICNS)" "$(APP)/Contents/Resources/AppIcon.icns"; echo "  + bundled AppIcon.icns"; \
+	 else echo "  (no AppIcon.icns yet — run 'make icon' on a Mac with librsvg to generate it)"; fi
 	codesign --force $(CODESIGN_FLAGS) --sign "$(SIGN_IDENTITY)" --identifier "$(BUNDLE_ID)" "$(APP)"
 	codesign --verify --strict --verbose=2 "$(APP)"
 	@echo "Built $(APP) (signed as $(SIGN_IDENTITY), id $(BUNDLE_ID))"

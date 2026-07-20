@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, Eye, EyeOff, LoaderCircle, MonitorSmartphone, MoveRight } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, LoaderCircle, MoveRight } from "lucide-react";
+import { RelayMark } from "@/components/RelayMark";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/auth";
 import { Button } from "@/components/ui/button";
@@ -46,7 +47,7 @@ export function AuthPage() {
       <div className="relative w-full max-w-[420px]">
         <div className="mb-9 flex flex-col items-center text-center">
           <span className="flex h-12 w-12 items-center justify-center rounded-lg border border-brand/30 bg-brand-soft text-brand">
-            <MonitorSmartphone size={24} strokeWidth={2.2} />
+            <RelayMark className="h-8 w-8" />
           </span>
           <p className="mt-4 font-display text-[26px] font-bold uppercase leading-8 tracking-[0.28em] text-ink">
             abacad

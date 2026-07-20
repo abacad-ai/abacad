@@ -1,5 +1,6 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { LogOut, MonitorSmartphone } from "lucide-react";
+import { LogOut } from "lucide-react";
+import { RelayMark } from "@/components/RelayMark";
 import { type ReactNode } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/auth";
@@ -95,7 +96,7 @@ function Brand() {
       className="flex min-w-0 shrink-0 items-center gap-2.5 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
     >
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-brand/30 bg-brand-soft text-brand">
-        <MonitorSmartphone size={17} strokeWidth={2.2} />
+        <RelayMark className="h-[22px] w-[22px]" />
       </span>
       <span className="hidden min-[420px]:block">
         <span className="block font-display text-[15px] font-bold uppercase leading-4 tracking-[0.22em] text-ink">
