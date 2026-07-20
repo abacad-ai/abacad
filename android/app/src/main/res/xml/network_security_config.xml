@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  No cleartext anywhere by default. This device holds a control channel and the
+  screen's contents, so a single plaintext hop is a full MITM / device takeover.
+  Real deployments must use wss:// (TLS). Cleartext is permitted only for the
+  local dev loopback and the Android emulator's host alias (10.0.2.2).
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

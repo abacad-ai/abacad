@@ -3,8 +3,9 @@
 
     <!--
       Accessibility itself needs NO manifest permission — it's the one-time
-      toggle, and it's what unlocks tree + tap + screenshot. INTERNET (and
-      cleartext, for LAN ws://) are only to reach the abacad server.
+      toggle, and it's what unlocks tree + tap + screenshot. INTERNET is only to
+      reach the abacad server. Cleartext is disabled (see network_security_config);
+      the server must be reached over wss:// (TLS).
     -->
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- WAKE_LOCK: brief CPU hold across a `wake` so the process survives from
@@ -34,7 +35,8 @@
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="abacad"
-        android:usesCleartextTraffic="true"
+        android:usesCleartextTraffic="false"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/Theme.Abacad">
         <!-- DayNight DeviceDefault (themes.xml): follows the system appearance, like
              the dashboard and macOS agent; Theme.of(resources) supplies the matching

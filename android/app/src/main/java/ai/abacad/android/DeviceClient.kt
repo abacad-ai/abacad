@@ -1,5 +1,6 @@
 package ai.abacad.android
 
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -17,9 +18,17 @@ import java.util.concurrent.TimeUnit
  * [executor] (the accessibility service) and sending the reply back.
  *
  * Wire: recv {id, method, params}  ->  send {id, ok, result} | {id, ok:false, error}
+ *
+ * Security:
+ *  - The device token is sent in the `Authorization: Bearer` header, never in the
+ *    connect URL — so it can't leak through logs, the status panel, or a proxy's
+ *    access log. A `?token=` in a stored URL is migrated to the header here.
+ *  - Cleartext `ws://` is refused for any non-loopback host: this device carries a
+ *    control channel and screen contents, so a plaintext hop is a full MITM /
+ *    device takeover. Real deployments must use `wss://`.
  */
 class DeviceClient(
-    private val url: String,
+    rawUrl: String,
     private val executor: (method: String, params: JSONObject, done: (CmdResult) -> Unit) -> Unit,
 ) {
     private val tag = AbacadAccessibilityService.TAG
@@ -33,6 +42,25 @@ class DeviceClient(
     private var connected = false
     private val reconnectRunnable = Runnable { open() }
     private var backoffMs = 1000L
+
+    private val uri: Uri = Uri.parse(rawUrl)
+    private val scheme: String = (uri.scheme ?: "").lowercase()
+    private val host: String = uri.host ?: ""
+
+    // The token is carried as a header; strip it from the URL we actually dial.
+    private val token: String? = uri.getQueryParameter("token")
+    private val connectUrl: String = run {
+        val b = uri.buildUpon().clearQuery()
+        for (name in uri.queryParameterNames) {
+            if (name == "token") continue
+            for (v in uri.getQueryParameters(name)) b.appendQueryParameter(name, v)
+        }
+        b.build().toString()
+    }
+
+    // Safe to log/display: scheme + host + path only, never the token/query.
+    private val safeUrl: String =
+        "$scheme://$host${if (uri.port > 0) ":${uri.port}" else ""}${uri.path ?: ""}"
 
     fun connect() {
         closed = false
@@ -61,11 +89,22 @@ class DeviceClient(
         AbacadStatus.setState(AbacadStatus.State.DISCONNECTED, "disconnected")
     }
 
+    private fun isLoopback(h: String): Boolean =
+        h == "127.0.0.1" || h == "::1" || h == "localhost" || h == "10.0.2.2" // 10.0.2.2 = emulator host
+
     private fun open() {
         if (closed) return
-        Log.i(tag, "ws connecting: $url")
-        AbacadStatus.setState(AbacadStatus.State.CONNECTING, "connecting to $url")
-        ws = client.newWebSocket(Request.Builder().url(url).build(), listener)
+        // Refuse a plaintext control channel to anything but loopback/dev.
+        if (scheme == "ws" && !isLoopback(host)) {
+            Log.e(tag, "refusing plaintext ws:// to $host — use wss://")
+            AbacadStatus.setState(AbacadStatus.State.DISCONNECTED, "refused plaintext ws:// — use wss://")
+            return
+        }
+        Log.i(tag, "ws connecting: $safeUrl")
+        AbacadStatus.setState(AbacadStatus.State.CONNECTING, "connecting to $safeUrl")
+        val req = Request.Builder().url(connectUrl)
+        token?.let { req.header("Authorization", "Bearer $it") }
+        ws = client.newWebSocket(req.build(), listener)
     }
 
     private fun scheduleReconnect() {
@@ -81,9 +120,9 @@ class DeviceClient(
     private val listener = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
             if (webSocket !== ws) return // stale socket (superseded by a forceReconnect)
-            Log.i(tag, "ws open -> $url")
+            Log.i(tag, "ws open -> $safeUrl")
             connected = true
-            AbacadStatus.setState(AbacadStatus.State.CONNECTED, "connected to $url")
+            AbacadStatus.setState(AbacadStatus.State.CONNECTED, "connected to $safeUrl")
             backoffMs = 1000L
         }
 

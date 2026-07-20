@@ -93,7 +93,8 @@ class MainActivity : Activity() {
                 val url = urlField.text.toString().trim()
                 prefs.edit().putString(AbacadAccessibilityService.KEY_SERVER_URL, url).apply()
                 sendBroadcast(Intent(AbacadAccessibilityService.ACTION_RECONNECT).setPackage(packageName))
-                Toast.makeText(this@MainActivity, "Saved. Connecting to $url", Toast.LENGTH_SHORT).show()
+                // Don't echo the URL — it carries the device token.
+                Toast.makeText(this@MainActivity, "Saved. Connecting…", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -236,6 +237,7 @@ class MainActivity : Activity() {
         getSharedPreferences(AbacadAccessibilityService.PREFS, Context.MODE_PRIVATE)
             .edit().putString(AbacadAccessibilityService.KEY_SERVER_URL, url).apply()
         sendBroadcast(Intent(AbacadAccessibilityService.ACTION_RECONNECT).setPackage(packageName))
-        Toast.makeText(this, "Scanned. Connecting to $url", Toast.LENGTH_SHORT).show()
+        // Don't echo the URL — it carries the device token.
+        Toast.makeText(this, "Scanned. Connecting…", Toast.LENGTH_SHORT).show()
     }
 }
