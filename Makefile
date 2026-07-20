@@ -7,7 +7,7 @@ PORT ?= 1419
 # in sync with server/frontend/vite.config.ts if you change it.
 BACKEND_ADDR ?= :1213
 
-.PHONY: dev typecheck tokens android android-install macos macos-run deploy
+.PHONY: dev typecheck tokens android android-install macos macos-run
 
 # Start the Go backend and the Vite frontend together in the foreground.
 # Open http://localhost:$(PORT). Ctrl-C stops both.
@@ -44,10 +44,3 @@ macos:
 # Accessibility and Screen Recording — grant both, then relaunch.
 macos-run:
 	cd macos && $(MAKE) run
-
-# Deploy to production (host: xyz-sg-1, override with DEPLOY_HOST=…): builds the
-# server image + the macOS client dmg, ships both along with the local .env as
-# the server's config, restarts the server, and publishes the dmg at
-# https://abacad.ai/downloads/abacad-macos-latest.dmg. See deploy.sh for the steps.
-deploy:
-	./deploy.sh

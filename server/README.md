@@ -98,11 +98,10 @@ BASE=http://localhost:8848 node test-multi.mjs   # -> MULTI OK
 
 ## Deploy
 
-`make deploy` (repo root) builds the Docker image from the local tree, side-loads it
-onto the production host over SSH (no registry round-trip), restarts the compose
-service, and uploads the macOS client dmg to the served downloads dir — see
-`deploy.sh`. CI also pushes `ghcr.io/abacad-ai/abacad:latest` on main, so
-`docker compose pull && docker compose up -d` on the host converges to CI's build.
+This repo builds no deployment. CI pushes `ghcr.io/abacad-ai/abacad:latest` on every
+push to main; the production deploy — compose file, config, the macOS client dmg,
+restart, health check — lives outside this repo, in the infra repo under
+`deployment/xyz-sg-1/abacad.ai/` (`./deploy.sh` there, see its README).
 
 Production terminates TLS/`wss` at Caddy and proxies to the Go server. The proxy must
 not cap WebSocket frame size below screenshot payloads and needs long/absent idle

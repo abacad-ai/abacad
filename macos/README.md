@@ -48,8 +48,9 @@ make release SIGN_IDENTITY="Developer ID Application: Beijing Xiaoyuanzhu Techno
 # → build/abacad.dmg   (signed, notarized, stapled)
 ```
 
-Team `R3845XW5FZ`. `deploy.sh` runs this automatically (see `MAC_SIGN_IDENTITY` /
-`MAC_NOTARY_PROFILE` there).
+Team `R3845XW5FZ`. Publishing the result is a separate step: copy `build/abacad.dmg`
+into the deploy directory's `downloads/abacad-macos-latest.dmg` (infra repo,
+`deployment/xyz-sg-1/abacad.ai/`) and run its `deploy.sh`.
 
 **One-time notary credential setup.** `make release` reads notary credentials
 from a keychain profile named `abacad-notary` (override with `NOTARY_PROFILE`).
