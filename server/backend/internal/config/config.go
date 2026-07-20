@@ -38,8 +38,11 @@ func (c Config) GoogleEnabled() bool {
 	return c.GoogleClientID != "" && c.GoogleClientSecret != ""
 }
 
-// Load reads flags (which fall back to env) and returns the config.
+// Load reads flags (which fall back to env, which falls back to a .env file)
+// and returns the config.
 func Load() Config {
+	loadDotenv()
+
 	var c Config
 	flag.StringVar(&c.Addr, "addr", envOr("ABACAD_ADDR", ":8848"), "listen address")
 	flag.StringVar(&c.DBPath, "db", envOr("ABACAD_DB", "abacad.db"), "SQLite database path")

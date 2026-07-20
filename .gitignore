@@ -3,3 +3,9 @@
 Thumbs.db
 # Logs
 *.log
+
+# Local secrets / config. Commit .env.example instead — it documents the keys
+# without the values.
+.env
+.env.*
+!.env.example
