@@ -11,9 +11,9 @@ struct AbacadApp: App {
         MenuBarExtra {
             AgentPanel(agent: agent)
         } label: {
-            // Our own mono relay mark instead of an SF Symbol; the hub fills in
-            // when connected so the menu bar itself shows "alive" at a glance.
-            Image(nsImage: RelayMark.trayImage(connected: agent.connected))
+            // Our own mono relay mark instead of an SF Symbol; the glyph is fixed,
+            // connection state is exposed via the accessibility label.
+            Image(nsImage: RelayMark.trayImage())
                 .accessibilityLabel(agent.connected ? "abacad — connected" : "abacad — disconnected")
         }
         .menuBarExtraStyle(.window)
