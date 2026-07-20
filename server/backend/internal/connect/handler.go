@@ -27,10 +27,11 @@ const readLimit = 16 << 20
 
 // Handler bridges /connect clients to device streams.
 type Handler struct {
-	// ResolverFor authenticates the request (MCP token -> account-scoped
-	// resolver), exactly like the MCP endpoint, and reports the account id for
-	// the activity trail. Returning an error rejects 401.
-	ResolverFor func(r *http.Request) (mcp.DeviceResolver, string, error)
+	// ResolverFor authenticates the request (API key -> account-scoped resolver),
+	// exactly like the MCP endpoint, and reports the account id (for the activity
+	// trail) and the key's scope (to gate the tunnel capability). Returning an
+	// error rejects 401.
+	ResolverFor func(r *http.Request) (mcp.DeviceResolver, string, store.KeyScope, error)
 	Activity    *activity.Recorder // persistent account trail; may be nil
 }
 
@@ -38,10 +39,14 @@ type Handler struct {
 // ?token= or Authorization: Bearer, checked by ResolverFor). device may be empty
 // to use the account's default (sole / most-recently-active online) device.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	resolver, accountID, err := h.ResolverFor(r)
+	resolver, accountID, scope, err := h.ResolverFor(r)
 	if err != nil {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="abacad"`)
 		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+	if !scope.AllowsTunnel() {
+		http.Error(w, "this API key is not permitted to open tunnels", http.StatusForbidden)
 		return
 	}
 	target := r.URL.Query().Get("target")

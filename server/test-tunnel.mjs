@@ -6,7 +6,7 @@
 // Prereqs (started by run-tunnel-test.sh):
 //   - the Go server with -seed
 //   - mock-desktop.mjs connected with the seed device token
-// Env: ABACAD_TOKEN=<mcp-token>  [ABACAD_WS=ws://localhost:8848] [ABACAD_DEVICE=<id>]
+// Env: ABACAD_TOKEN=<api-key>  [ABACAD_WS=ws://localhost:8848] [ABACAD_DEVICE=<id>]
 import net from "node:net";
 import WebSocket from "ws";
 

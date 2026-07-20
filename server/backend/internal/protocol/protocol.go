@@ -41,6 +41,16 @@ const (
 	MethodExecute Method = "execute"
 )
 
+// Methods is the full set of device methods, in MCP-tool order. It is the source
+// of truth for validating an API key's method allowlist (list_devices, being
+// metadata rather than a device operation, is not included).
+var Methods = []Method{
+	MethodScreenshot, MethodTap, MethodLongPress, MethodSwipe, MethodInputText,
+	MethodBack, MethodHome, MethodRecents,
+	MethodClick, MethodRightClick, MethodDrag, MethodScroll, MethodPressKeys, MethodComposite,
+	MethodExecute,
+}
+
 // Command is server -> device. id correlates the reply.
 type Command struct {
 	ID     string         `json:"id"`
@@ -74,10 +84,10 @@ type UITree struct {
 
 // ScreenshotResult is the result of a screenshot command.
 type ScreenshotResult struct {
-	W        int     `json:"w"`
-	H        int     `json:"h"`
-	PNGBase64 string `json:"png_base64"`
-	Tree     *UITree `json:"tree,omitempty"` // present when include_ui_tree was true
+	W         int     `json:"w"`
+	H         int     `json:"h"`
+	PNGBase64 string  `json:"png_base64"`
+	Tree      *UITree `json:"tree,omitempty"` // present when include_ui_tree was true
 }
 
 // GestureResult is reported by tap / long_press / swipe.

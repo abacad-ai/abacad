@@ -2,7 +2,7 @@
 // over the /connect tunnel, so the machine behaves as if it were directly
 // connected. Wire it into ssh:
 //
-//   export ABACAD_TOKEN=<mcp-token>
+//   export ABACAD_TOKEN=<api-key>
 //   ssh -o ProxyCommand="node ssh-proxy.mjs %h %p" user@<device-id>
 //
 // %h (the ssh hostname) is used as the abacad device id; %p as the target port
@@ -14,7 +14,7 @@ const server = process.env.ABACAD_WS ?? "ws://localhost:8848";
 const token = process.env.ABACAD_TOKEN;
 
 if (!device || !port || !token) {
-  console.error("usage: ABACAD_TOKEN=<mcp-token> node ssh-proxy.mjs <device-id> <port> [host]");
+  console.error("usage: ABACAD_TOKEN=<api-key> node ssh-proxy.mjs <device-id> <port> [host]");
   process.exit(2);
 }
 

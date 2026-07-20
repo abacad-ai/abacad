@@ -98,30 +98,82 @@ func TestDevicesAndTokens(t *testing.T) {
 	}
 }
 
-func TestMCPTokens(t *testing.T) {
+func TestKeyScopeAllows(t *testing.T) {
+	all := KeyScope{AllDevices: true, AllMethods: true, AllowTunnel: true}
+	if !all.AllowsDevice("anything") || !all.AllowsMethod("execute") || !all.AllowsTunnel() {
+		t.Fatalf("all-wildcards scope should allow everything")
+	}
+	narrow := KeyScope{DeviceIDs: []string{"dev1"}, Methods: []string{"screenshot"}}
+	if !narrow.AllowsDevice("dev1") || narrow.AllowsDevice("dev2") {
+		t.Fatalf("device allowlist not enforced")
+	}
+	if !narrow.AllowsMethod("screenshot") || narrow.AllowsMethod("tap") {
+		t.Fatalf("method allowlist not enforced")
+	}
+	if narrow.AllowsTunnel() {
+		t.Fatalf("tunnel should be off by default")
+	}
+}
+
+func TestAPIKeys(t *testing.T) {
 	s := openTemp(t)
 	a, _ := s.CreateAccount("m@n.com", "h")
+	d1, _, _ := s.CreateDevice(a.ID, "phone", "android")
+	d2, _, _ := s.CreateDevice(a.ID, "mac", "macos")
 
-	if info, _ := s.MCPToken(a.ID); info.Exists {
-		t.Fatalf("no token yet")
-	}
-	tok, err := s.RotateMCPToken(a.ID)
+	// A key scoped to one device + one method, no tunnel.
+	scope := KeyScope{DeviceIDs: []string{d1.ID}, Methods: []string{"screenshot"}}
+	tok, key, err := s.CreateAPIKey(a.ID, "scoped", scope)
 	if err != nil {
-		t.Fatalf("rotate: %v", err)
+		t.Fatalf("create: %v", err)
 	}
-	if acc, err := s.AccountByMCPTokenHash(auth.HashToken(tok)); err != nil || acc.ID != a.ID {
-		t.Fatalf("resolve: %v %+v", err, acc)
+	if key.Name != "scoped" || key.ID == "" {
+		t.Fatalf("unexpected key: %+v", key)
 	}
-	// Re-rotate replaces (one token per account) and kills the old one.
-	tok2, _ := s.RotateMCPToken(a.ID)
-	if _, err := s.AccountByMCPTokenHash(auth.HashToken(tok)); err != ErrNotFound {
-		t.Fatalf("old mcp token should be dead, got %v", err)
+
+	accID, got, err := s.APIKeyScopeByTokenHash(auth.HashToken(tok))
+	if err != nil || accID != a.ID {
+		t.Fatalf("resolve: %v acc=%s", err, accID)
 	}
-	if _, err := s.AccountByMCPTokenHash(auth.HashToken(tok2)); err != nil {
-		t.Fatalf("new mcp token should work: %v", err)
+	if got.AllDevices || got.AllMethods || got.AllowTunnel {
+		t.Fatalf("wildcards should be off: %+v", got)
 	}
-	if info, _ := s.MCPToken(a.ID); !info.Exists || info.LastUsed == 0 {
-		t.Fatalf("info should exist and show last_used after resolve: %+v", info)
+	if !got.AllowsDevice(d1.ID) || got.AllowsDevice(d2.ID) {
+		t.Fatalf("device scope not persisted: %+v", got.DeviceIDs)
+	}
+	if !got.AllowsMethod("screenshot") || got.AllowsMethod("tap") {
+		t.Fatalf("method scope not persisted: %+v", got.Methods)
+	}
+
+	// list reflects the key with last_used stamped by the resolve above.
+	keys, err := s.APIKeysByAccount(a.ID)
+	if err != nil || len(keys) != 1 {
+		t.Fatalf("list: %v n=%d", err, len(keys))
+	}
+	if keys[0].LastUsed == 0 {
+		t.Fatalf("last_used should be stamped after resolve")
+	}
+
+	// Update to all-devices + all-methods + tunnel (wildcards, incl. future devices).
+	wide := KeyScope{AllDevices: true, AllMethods: true, AllowTunnel: true}
+	if err := s.UpdateAPIKey(key.ID, a.ID, "wide", wide); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	_, got2, _ := s.APIKeyScopeByTokenHash(auth.HashToken(tok))
+	d3, _, _ := s.CreateDevice(a.ID, "later", "browser") // created AFTER the key
+	if !got2.AllDevices || !got2.AllowsDevice(d3.ID) || !got2.AllowsTunnel() {
+		t.Fatalf("all-devices wildcard should cover future devices: %+v", got2)
+	}
+
+	// A wrong account can't update or delete.
+	if err := s.UpdateAPIKey(key.ID, "acc_other", "x", wide); err != ErrNotFound {
+		t.Fatalf("cross-account update want ErrNotFound, got %v", err)
+	}
+	if err := s.DeleteAPIKey(key.ID, a.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, _, err := s.APIKeyScopeByTokenHash(auth.HashToken(tok)); err != ErrNotFound {
+		t.Fatalf("deleted key should be dead, got %v", err)
 	}
 }
 

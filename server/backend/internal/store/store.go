@@ -1,6 +1,6 @@
 // Package store is the SQLite persistence layer: accounts, sessions, devices,
-// and per-account MCP tokens. Pure-Go driver (modernc.org/sqlite, no CGO) so the
-// server is a single static-ish binary that's trivial to deploy on one host.
+// and scoped API keys. Pure-Go driver (modernc.org/sqlite, no CGO) so the server
+// is a single static-ish binary that's trivial to deploy on one host.
 package store
 
 import (
@@ -24,7 +24,7 @@ var migrationsFS embed.FS
 // Token prefixes (cosmetic; the whole string is hashed).
 const (
 	deviceTokenPrefix = "abd_dev"
-	mcpTokenPrefix    = "abd_mcp"
+	apiKeyPrefix      = "abd_key"
 )
 
 // ErrNotFound is returned by lookups that match no row. ErrEmailTaken is returned
@@ -52,12 +52,6 @@ type Device struct {
 	Platform  string
 	CreatedAt int64
 	LastSeen  int64
-}
-
-type MCPTokenInfo struct {
-	Exists    bool
-	CreatedAt int64
-	LastUsed  int64
 }
 
 // Open opens (creating if needed) the SQLite database at path and runs
@@ -334,50 +328,248 @@ func (s *Store) scanDevice(row *sql.Row) (Device, error) {
 	return d, err
 }
 
-// --- MCP tokens (one per account) ---
+// --- API keys (scoped bearer credentials for /mcp and /connect) ---
 
-// AccountByMCPTokenHash resolves an MCP bearer token (already hashed) to its
-// account and records last_used.
-func (s *Store) AccountByMCPTokenHash(tokenHash string) (Account, error) {
-	var accountID string
-	err := s.db.QueryRow(`SELECT account_id FROM account_mcp_tokens WHERE token_hash=?`, tokenHash).Scan(&accountID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Account{}, ErrNotFound
-	}
-	if err != nil {
-		return Account{}, err
-	}
-	_, _ = s.db.Exec(`UPDATE account_mcp_tokens SET last_used=? WHERE token_hash=?`, now(), tokenHash)
-	return s.AccountByID(accountID)
+// KeyScope is an API key's capability envelope: which devices it may reach, which
+// methods it may call, and whether it may open a tunnel. AllDevices / AllMethods
+// are wildcards that also cover devices/methods added later — so they take
+// precedence over the explicit DeviceIDs / Methods lists (which are consulted
+// only when the corresponding wildcard is false).
+type KeyScope struct {
+	AllDevices  bool
+	DeviceIDs   []string
+	AllMethods  bool
+	Methods     []string
+	AllowTunnel bool
 }
 
-// RotateMCPToken creates or replaces the account's MCP token and returns the
-// plaintext (shown once).
-func (s *Store) RotateMCPToken(accountID string) (string, error) {
-	token := auth.NewSecret(mcpTokenPrefix)
-	_, err := s.db.Exec(`INSERT INTO account_mcp_tokens(id,account_id,token_hash,created_at,last_used)
-		VALUES(?,?,?,?,0)
-		ON CONFLICT(account_id) DO UPDATE SET token_hash=excluded.token_hash, created_at=excluded.created_at, last_used=0`,
-		auth.NewID("mcptok"), accountID, auth.HashToken(token), now())
-	if err != nil {
-		return "", err
+// AllowsDevice reports whether a key with this scope may drive deviceID.
+func (s KeyScope) AllowsDevice(id string) bool {
+	if s.AllDevices {
+		return true
 	}
-	return token, nil
+	for _, d := range s.DeviceIDs {
+		if d == id {
+			return true
+		}
+	}
+	return false
 }
 
-// MCPToken returns metadata about the account's MCP token (never the secret).
-func (s *Store) MCPToken(accountID string) (MCPTokenInfo, error) {
-	var info MCPTokenInfo
-	err := s.db.QueryRow(`SELECT created_at,last_used FROM account_mcp_tokens WHERE account_id=?`, accountID).
-		Scan(&info.CreatedAt, &info.LastUsed)
+// AllowsMethod reports whether a key with this scope may call an MCP method.
+func (s KeyScope) AllowsMethod(name string) bool {
+	if s.AllMethods {
+		return true
+	}
+	for _, m := range s.Methods {
+		if m == name {
+			return true
+		}
+	}
+	return false
+}
+
+// AllowsTunnel reports whether a key with this scope may open a /connect tunnel.
+func (s KeyScope) AllowsTunnel() bool { return s.AllowTunnel }
+
+// APIKey is one scoped bearer credential. The secret is never stored (only its
+// hash); reads expose the scope but never the secret.
+type APIKey struct {
+	ID        string
+	AccountID string
+	Name      string
+	Scope     KeyScope
+	CreatedAt int64
+	LastUsed  int64
+}
+
+// CreateAPIKey issues a scoped key and returns the plaintext secret (shown once)
+// alongside the stored row. Only its hash is persisted. Device ids in the scope
+// are written to the join table; the caller is responsible for having verified
+// they belong to accountID.
+func (s *Store) CreateAPIKey(accountID, name string, scope KeyScope) (string, APIKey, error) {
+	token := auth.NewSecret(apiKeyPrefix)
+	k := APIKey{ID: auth.NewID("apikey"), AccountID: accountID, Name: name, Scope: scope, CreatedAt: now()}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", APIKey{}, err
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec(
+		`INSERT INTO api_keys(id,account_id,name,token_hash,all_devices,methods,allow_tunnel,created_at,last_used)
+		 VALUES(?,?,?,?,?,?,?,?,0)`,
+		k.ID, accountID, name, auth.HashToken(token),
+		boolToInt(scope.AllDevices), encodeMethods(scope), boolToInt(scope.AllowTunnel), k.CreatedAt); err != nil {
+		return "", APIKey{}, err
+	}
+	if err = insertKeyDevices(tx, k.ID, scope); err != nil {
+		return "", APIKey{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return "", APIKey{}, err
+	}
+	return token, k, nil
+}
+
+// APIKeyScopeByTokenHash resolves an API-key bearer token (already hashed) to its
+// account and scope, recording last_used. This is the /mcp and /connect auth entry
+// point.
+func (s *Store) APIKeyScopeByTokenHash(tokenHash string) (accountID string, scope KeyScope, err error) {
+	var (
+		id          string
+		allDevices  int
+		methods     string
+		allowTunnel int
+	)
+	err = s.db.QueryRow(
+		`SELECT id,account_id,all_devices,methods,allow_tunnel FROM api_keys WHERE token_hash=?`, tokenHash).
+		Scan(&id, &accountID, &allDevices, &methods, &allowTunnel)
 	if errors.Is(err, sql.ErrNoRows) {
-		return MCPTokenInfo{Exists: false}, nil
+		return "", KeyScope{}, ErrNotFound
 	}
 	if err != nil {
-		return MCPTokenInfo{}, err
+		return "", KeyScope{}, err
 	}
-	info.Exists = true
-	return info, nil
+	scope.AllDevices = allDevices != 0
+	scope.AllMethods, scope.Methods = decodeMethods(methods)
+	scope.AllowTunnel = allowTunnel != 0
+	if !scope.AllDevices {
+		if scope.DeviceIDs, err = s.apiKeyDeviceIDs(id); err != nil {
+			return "", KeyScope{}, err
+		}
+	}
+	_, _ = s.db.Exec(`UPDATE api_keys SET last_used=? WHERE token_hash=?`, now(), tokenHash)
+	return accountID, scope, nil
+}
+
+// APIKeysByAccount lists an account's keys, newest first (never the secret).
+func (s *Store) APIKeysByAccount(accountID string) ([]APIKey, error) {
+	rows, err := s.db.Query(
+		`SELECT id,account_id,name,all_devices,methods,allow_tunnel,created_at,last_used
+		   FROM api_keys WHERE account_id=? ORDER BY created_at DESC`, accountID)
+	if err != nil {
+		return nil, err
+	}
+	var out []APIKey
+	for rows.Next() {
+		var (
+			k           APIKey
+			allDevices  int
+			methods     string
+			allowTunnel int
+		)
+		if err := rows.Scan(&k.ID, &k.AccountID, &k.Name, &allDevices, &methods, &allowTunnel, &k.CreatedAt, &k.LastUsed); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		k.Scope.AllDevices = allDevices != 0
+		k.Scope.AllMethods, k.Scope.Methods = decodeMethods(methods)
+		k.Scope.AllowTunnel = allowTunnel != 0
+		out = append(out, k)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	// Close before the per-key device lookups: with a single writer connection an
+	// open rows cursor would block the follow-up queries.
+	rows.Close()
+	for i := range out {
+		if !out[i].Scope.AllDevices {
+			ids, err := s.apiKeyDeviceIDs(out[i].ID)
+			if err != nil {
+				return nil, err
+			}
+			out[i].Scope.DeviceIDs = ids
+		}
+	}
+	return out, nil
+}
+
+// UpdateAPIKey re-configures a key's name and scope (never its secret).
+func (s *Store) UpdateAPIKey(id, accountID, name string, scope KeyScope) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := affectTx(tx.Exec(
+		`UPDATE api_keys SET name=?, all_devices=?, methods=?, allow_tunnel=? WHERE id=? AND account_id=?`,
+		name, boolToInt(scope.AllDevices), encodeMethods(scope), boolToInt(scope.AllowTunnel), id, accountID)); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM api_key_devices WHERE api_key_id=?`, id); err != nil {
+		return err
+	}
+	if err := insertKeyDevices(tx, id, scope); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// DeleteAPIKey removes one of an account's keys (join rows cascade).
+func (s *Store) DeleteAPIKey(id, accountID string) error {
+	return s.affect(s.db.Exec(`DELETE FROM api_keys WHERE id=? AND account_id=?`, id, accountID))
+}
+
+func (s *Store) apiKeyDeviceIDs(keyID string) ([]string, error) {
+	rows, err := s.db.Query(`SELECT device_id FROM api_key_devices WHERE api_key_id=?`, keyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// insertKeyDevices writes a key's explicit device allowlist (a no-op for an
+// all-devices scope). INSERT OR IGNORE tolerates duplicate ids in the input.
+func insertKeyDevices(tx *sql.Tx, keyID string, scope KeyScope) error {
+	if scope.AllDevices {
+		return nil
+	}
+	for _, id := range scope.DeviceIDs {
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO api_key_devices(api_key_id,device_id) VALUES(?,?)`, keyID, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// encodeMethods renders a scope's method allowlist for the api_keys.methods
+// column: "*" for the all-methods wildcard, else a comma-separated verb list
+// (possibly empty for a tunnel-only key).
+func encodeMethods(scope KeyScope) string {
+	if scope.AllMethods {
+		return "*"
+	}
+	return strings.Join(scope.Methods, ",")
+}
+
+func decodeMethods(v string) (all bool, methods []string) {
+	if v == "*" {
+		return true, nil
+	}
+	for _, m := range strings.Split(v, ",") {
+		if m = strings.TrimSpace(m); m != "" {
+			methods = append(methods, m)
+		}
+	}
+	return false, methods
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // --- Blobs ---
@@ -497,7 +689,11 @@ func (s *Store) DeleteSSHKey(id, accountID string) error {
 }
 
 // --- helpers ---
-func (s *Store) affect(res sql.Result, err error) error {
+func (s *Store) affect(res sql.Result, err error) error { return affectTx(res, err) }
+
+// affectTx maps a write that touched no rows to ErrNotFound. Standalone (not a
+// method) so it works with both *sql.DB and *sql.Tx results.
+func affectTx(res sql.Result, err error) error {
 	if err != nil {
 		return err
 	}

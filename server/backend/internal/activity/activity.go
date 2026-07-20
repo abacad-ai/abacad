@@ -29,7 +29,10 @@ const (
 	KindDeviceToken  = "device.token_rotated"
 	KindConnected    = "device.connected"
 	KindDisconnected = "device.disconnected"
-	KindMCPToken     = "mcp.token_rotated"
+	KindMCPToken     = "mcp.token_rotated" // legacy; retained for old trail rows
+	KindAPIKeyCreate = "apikey.created"
+	KindAPIKeyUpdate = "apikey.updated"
+	KindAPIKeyDelete = "apikey.deleted"
 	KindSSHKeyAdd    = "ssh.key_added"
 	KindSSHKeyRemove = "ssh.key_removed"
 	KindSSHSession   = "ssh.session"

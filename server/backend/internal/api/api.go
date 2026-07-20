@@ -76,9 +76,13 @@ func (a *API) Handler() http.Handler {
 	mux.Handle("POST /api/devices/{id}/rotate-token", a.auth(a.rotateDeviceToken))
 	mux.Handle("GET /api/devices/{id}/screenshot", a.auth(a.deviceScreenshot))
 	mux.Handle("GET /api/devices/{id}/events", a.auth(a.deviceEvents))
-	mux.Handle("GET /api/mcp-token", a.auth(a.getMCPToken))
-	mux.Handle("POST /api/mcp-token/rotate", a.auth(a.rotateMCPToken))
 	mux.Handle("GET /api/activities", a.auth(a.listActivities))
+
+	// Scoped API keys authenticate the agent (POST /mcp) and the tunnel (/connect).
+	mux.Handle("GET /api/keys", a.auth(a.listKeys))
+	mux.Handle("POST /api/keys", a.auth(a.createKey))
+	mux.Handle("PATCH /api/keys/{id}", a.auth(a.updateKey))
+	mux.Handle("DELETE /api/keys/{id}", a.auth(a.deleteKey))
 
 	// SSH keys authorize the jump host (ssh <device>.<base-domain>).
 	mux.Handle("GET /api/ssh-keys", a.auth(a.listSSHKeys))
@@ -412,31 +416,196 @@ func (a *API) deviceEvents(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// --- MCP token handlers ---
-func (a *API) getMCPToken(w http.ResponseWriter, r *http.Request) {
-	info, err := a.Store.MCPToken(account(r).ID)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "could not read token")
-		return
+// --- API key handlers ---
+
+// knownMethods is the set of device methods a key may be scoped to, derived from
+// the protocol so the allowlist stays in sync with the MCP tool surface.
+var knownMethods = func() map[string]bool {
+	m := make(map[string]bool, len(protocol.Methods))
+	for _, name := range protocol.Methods {
+		m[string(name)] = true
 	}
-	resp := map[string]any{"exists": info.Exists}
-	if info.Exists {
-		resp["created_at"] = time.Unix(info.CreatedAt, 0).UTC().Format(time.RFC3339)
-		if info.LastUsed > 0 {
-			resp["last_used"] = time.Unix(info.LastUsed, 0).UTC().Format(time.RFC3339)
-		}
-	}
-	writeJSON(w, http.StatusOK, resp)
+	return m
+}()
+
+type keyView struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	AllDevices  bool     `json:"all_devices"`
+	DeviceIDs   []string `json:"device_ids"`
+	AllMethods  bool     `json:"all_methods"`
+	Methods     []string `json:"methods"`
+	AllowTunnel bool     `json:"allow_tunnel"`
+	CreatedAt   string   `json:"created_at"`
+	LastUsed    string   `json:"last_used,omitempty"`
 }
 
-func (a *API) rotateMCPToken(w http.ResponseWriter, r *http.Request) {
-	token, err := a.Store.RotateMCPToken(account(r).ID)
+func viewKey(k store.APIKey) keyView {
+	v := keyView{
+		ID:          k.ID,
+		Name:        k.Name,
+		AllDevices:  k.Scope.AllDevices,
+		DeviceIDs:   k.Scope.DeviceIDs,
+		AllMethods:  k.Scope.AllMethods,
+		Methods:     k.Scope.Methods,
+		AllowTunnel: k.Scope.AllowTunnel,
+		CreatedAt:   time.Unix(k.CreatedAt, 0).UTC().Format(time.RFC3339),
+	}
+	if v.DeviceIDs == nil {
+		v.DeviceIDs = []string{}
+	}
+	if v.Methods == nil {
+		v.Methods = []string{}
+	}
+	if k.LastUsed > 0 {
+		v.LastUsed = time.Unix(k.LastUsed, 0).UTC().Format(time.RFC3339)
+	}
+	return v
+}
+
+// keyBody is the create/update payload. Absent "all_*" flags default to false, so
+// a scope with neither a wildcard nor an explicit list is rejected by buildScope.
+type keyBody struct {
+	Name        string   `json:"name"`
+	AllDevices  bool     `json:"all_devices"`
+	DeviceIDs   []string `json:"device_ids"`
+	AllMethods  bool     `json:"all_methods"`
+	Methods     []string `json:"methods"`
+	AllowTunnel bool     `json:"allow_tunnel"`
+}
+
+func (a *API) listKeys(w http.ResponseWriter, r *http.Request) {
+	keys, err := a.Store.APIKeysByAccount(account(r).ID)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "could not rotate token")
+		writeErr(w, http.StatusInternalServerError, "could not list keys")
 		return
 	}
-	a.record(account(r).ID, store.Activity{Kind: activity.KindMCPToken})
-	writeJSON(w, http.StatusOK, map[string]string{"mcp_token": token, "mcp_url": httpURL(r, "/mcp")})
+	out := make([]keyView, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, viewKey(k))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (a *API) createKey(w http.ResponseWriter, r *http.Request) {
+	var body keyBody
+	if !decode(w, r, &body) {
+		return
+	}
+	scope, ok := a.buildScope(w, r, body)
+	if !ok {
+		return
+	}
+	name := keyName(body.Name)
+	token, k, err := a.Store.CreateAPIKey(account(r).ID, name, scope)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not create key")
+		return
+	}
+	a.record(account(r).ID, store.Activity{Kind: activity.KindAPIKeyCreate, Detail: name})
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"secret":  token, // shown once
+		"mcp_url": httpURL(r, "/mcp"),
+		"key":     viewKey(k),
+	})
+}
+
+func (a *API) updateKey(w http.ResponseWriter, r *http.Request) {
+	var body keyBody
+	if !decode(w, r, &body) {
+		return
+	}
+	scope, ok := a.buildScope(w, r, body)
+	if !ok {
+		return
+	}
+	name := keyName(body.Name)
+	err := a.Store.UpdateAPIKey(r.PathValue("id"), account(r).ID, name, scope)
+	if errors.Is(err, store.ErrNotFound) {
+		writeErr(w, http.StatusNotFound, "key not found")
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not update key")
+		return
+	}
+	a.record(account(r).ID, store.Activity{Kind: activity.KindAPIKeyUpdate, Detail: name})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *API) deleteKey(w http.ResponseWriter, r *http.Request) {
+	// Capture the key's name before it's gone (accounts hold a handful of keys).
+	detail := ""
+	if keys, err := a.Store.APIKeysByAccount(account(r).ID); err == nil {
+		for _, k := range keys {
+			if k.ID == r.PathValue("id") {
+				detail = k.Name
+			}
+		}
+	}
+	err := a.Store.DeleteAPIKey(r.PathValue("id"), account(r).ID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeErr(w, http.StatusNotFound, "key not found")
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not delete key")
+		return
+	}
+	a.record(account(r).ID, store.Activity{Kind: activity.KindAPIKeyDelete, Detail: detail})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// buildScope validates a key body into a store.KeyScope, writing a 400 and
+// returning ok=false on any invalid device or method. "All" wildcards skip the
+// corresponding list entirely.
+func (a *API) buildScope(w http.ResponseWriter, r *http.Request, body keyBody) (store.KeyScope, bool) {
+	scope := store.KeyScope{AllDevices: body.AllDevices, AllMethods: body.AllMethods, AllowTunnel: body.AllowTunnel}
+	if !body.AllDevices {
+		seen := map[string]bool{}
+		for _, id := range body.DeviceIDs {
+			if seen[id] {
+				continue
+			}
+			if _, err := a.Store.DeviceOwnedBy(id, account(r).ID); err != nil {
+				writeErr(w, http.StatusBadRequest, "unknown device in device_ids: "+id)
+				return store.KeyScope{}, false
+			}
+			seen[id] = true
+			scope.DeviceIDs = append(scope.DeviceIDs, id)
+		}
+		if len(scope.DeviceIDs) == 0 {
+			writeErr(w, http.StatusBadRequest, "select at least one device, or choose all devices")
+			return store.KeyScope{}, false
+		}
+	}
+	if !body.AllMethods {
+		seen := map[string]bool{}
+		for _, m := range body.Methods {
+			if seen[m] {
+				continue
+			}
+			if !knownMethods[m] {
+				writeErr(w, http.StatusBadRequest, "unknown method: "+m)
+				return store.KeyScope{}, false
+			}
+			seen[m] = true
+			scope.Methods = append(scope.Methods, m)
+		}
+		// A key with no methods is only meaningful if it can still open tunnels.
+		if len(scope.Methods) == 0 && !body.AllowTunnel {
+			writeErr(w, http.StatusBadRequest, "select at least one method, enable tunnel, or choose all methods")
+			return store.KeyScope{}, false
+		}
+	}
+	return scope, true
+}
+
+func keyName(name string) string {
+	if name = strings.TrimSpace(name); name != "" {
+		return name
+	}
+	return "API key"
 }
 
 // --- SSH key handlers ---

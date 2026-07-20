@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 const navigation = [
   { to: "/", label: "Devices" },
   { to: "/activities", label: "Activities" },
+  { to: "/access", label: "Access" },
   { to: "/settings", label: "Settings" },
 ];
 

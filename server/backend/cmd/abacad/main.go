@@ -113,39 +113,40 @@ func main() {
 		Activity: trail,
 	}
 
-	// /mcp: authenticate the agent by its bearer MCP token -> account -> resolver.
+	// /mcp: authenticate the agent by its bearer API key -> account + scope ->
+	// scoped resolver. The scope also gates which methods the key may call.
 	mcpHandler := &mcp.Handler{
-		ResolverFor: func(r *http.Request) (mcp.DeviceResolver, error) {
+		ResolverFor: func(r *http.Request) (mcp.DeviceResolver, mcp.Scope, error) {
 			token := auth.BearerToken(r)
 			if token == "" {
-				return nil, errors.New("missing bearer token (add your abacad MCP token as Authorization: Bearer …)")
+				return nil, nil, errors.New("missing bearer token (add your abacad API key as Authorization: Bearer …)")
 			}
-			acc, err := st.AccountByMCPTokenHash(auth.HashToken(token))
+			accID, scope, err := st.APIKeyScopeByTokenHash(auth.HashToken(token))
 			if err != nil {
-				return nil, errors.New("invalid MCP token")
+				return nil, nil, errors.New("invalid API key")
 			}
-			return factory.For(acc.ID), nil
+			return factory.ForScope(accID, scope), scope, nil
 		},
 	}
 
-	// /connect: a raw TCP tunnel to a device-reachable target. Same MCP-token
+	// /connect: a raw TCP tunnel to a device-reachable target. Same API-key
 	// identity as /mcp, but accepts the token as ?token= too (matching the device
 	// endpoint), since the agent-side client is a bare WebSocket that may not set
-	// an Authorization header.
+	// an Authorization header. The key's scope must permit tunnels.
 	connectHandler := &connect.Handler{
-		ResolverFor: func(r *http.Request) (mcp.DeviceResolver, string, error) {
+		ResolverFor: func(r *http.Request) (mcp.DeviceResolver, string, store.KeyScope, error) {
 			token := auth.BearerToken(r)
 			if token == "" {
 				token = r.URL.Query().Get("token")
 			}
 			if token == "" {
-				return nil, "", errors.New("missing MCP token")
+				return nil, "", store.KeyScope{}, errors.New("missing API key")
 			}
-			acc, err := st.AccountByMCPTokenHash(auth.HashToken(token))
+			accID, scope, err := st.APIKeyScopeByTokenHash(auth.HashToken(token))
 			if err != nil {
-				return nil, "", errors.New("invalid MCP token")
+				return nil, "", store.KeyScope{}, errors.New("invalid API key")
 			}
-			return factory.For(acc.ID), acc.ID, nil
+			return factory.ForScope(accID, scope), accID, scope, nil
 		},
 		Activity: trail,
 	}
@@ -156,7 +157,7 @@ func main() {
 	}).Handler()
 
 	// /blobs: the data plane. Authorized by any of the server's identities —
-	// dashboard session, MCP bearer, or device token — all resolving to the
+	// dashboard session, API-key bearer, or device token — all resolving to the
 	// owning account, since a device uploads (screenshots, files), an agent and
 	// the dashboard download, and blobs are scoped per account.
 	accountForBlob := func(r *http.Request) (store.Account, error) {
@@ -164,8 +165,8 @@ func main() {
 			return acc, nil // dashboard session cookie
 		}
 		if tok := auth.BearerToken(r); tok != "" {
-			if acc, err := st.AccountByMCPTokenHash(auth.HashToken(tok)); err == nil {
-				return acc, nil // agent MCP bearer
+			if accID, _, err := st.APIKeyScopeByTokenHash(auth.HashToken(tok)); err == nil {
+				return st.AccountByID(accID) // agent API-key bearer
 			}
 		}
 		tok := r.URL.Query().Get("token") // device token (query, matching /device)
@@ -296,10 +297,10 @@ func main() {
 	defer stop()
 
 	go func() {
-		log.Printf("agent MCP endpoint : POST %s/mcp   (Authorization: Bearer <mcp-token>)", cfg.Addr)
+		log.Printf("agent MCP endpoint : POST %s/mcp   (Authorization: Bearer <api-key>)", cfg.Addr)
 		log.Printf("device WebSocket   : %s/device?token=<device-token>", cfg.Addr)
-		log.Printf("tunnel WebSocket   : %s/connect?token=<mcp-token>&device=<id>&target=host:port", cfg.Addr)
-		log.Printf("blob store         : POST %s/blobs · GET %s/blobs/{id}   (session | MCP | device token)", cfg.Addr, cfg.Addr)
+		log.Printf("tunnel WebSocket   : %s/connect?token=<api-key>&device=<id>&target=host:port", cfg.Addr)
+		log.Printf("blob store         : POST %s/blobs · GET %s/blobs/{id}   (session | API key | device token)", cfg.Addr, cfg.Addr)
 		log.Printf("dashboard API      : %s/api/…", cfg.Addr)
 		if cfg.GoogleEnabled() {
 			log.Printf("google sign-in     : enabled  (callback %s)", func() string {
@@ -339,13 +340,14 @@ func seed(st *store.Store) {
 	if err != nil {
 		log.Fatalf("seed device: %v", err)
 	}
-	mcpToken, err := st.RotateMCPToken(acc.ID)
+	apiKey, _, err := st.CreateAPIKey(acc.ID, "Seed key",
+		store.KeyScope{AllDevices: true, AllMethods: true, AllowTunnel: true})
 	if err != nil {
-		log.Fatalf("seed mcp token: %v", err)
+		log.Fatalf("seed api key: %v", err)
 	}
 	log.Printf("SEED account=%s (%s / %s)", acc.ID, email, pass)
 	log.Printf("SEED device_token=%s", devToken)
-	log.Printf("SEED mcp_token=%s", mcpToken)
+	log.Printf("SEED api_key=%s", apiKey)
 }
 
 // deviceLabel matches a browser-device subdomain label: exactly the 16 lowercase

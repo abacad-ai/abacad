@@ -29,10 +29,39 @@ export interface NewDevice {
   browser_url?: string; // set for browser devices: https://<id>.<base-domain>
 }
 
-export interface McpTokenInfo {
-  exists: boolean;
-  created_at?: string;
+// A key's capability envelope. all_devices / all_methods are wildcards that also
+// cover devices/methods added in the future — distinct from listing every current
+// one. When a wildcard is true its companion list is ignored.
+export interface KeyScope {
+  all_devices: boolean;
+  device_ids: string[];
+  all_methods: boolean;
+  methods: string[];
+  allow_tunnel: boolean;
+}
+
+export interface ApiKey extends KeyScope {
+  id: string;
+  name: string;
+  created_at: string;
   last_used?: string;
+}
+
+// The create-key response: the secret is returned exactly once.
+export interface NewApiKey {
+  secret: string;
+  mcp_url: string;
+  key: ApiKey;
+}
+
+// Create/update payload.
+export interface KeyInput {
+  name: string;
+  all_devices: boolean;
+  device_ids: string[];
+  all_methods: boolean;
+  methods: string[];
+  allow_tunnel: boolean;
 }
 
 export interface Me {
@@ -147,8 +176,11 @@ export const api = {
     return req<ActivitiesResult>(`/api/activities${qs ? `?${qs}` : ""}`);
   },
 
-  mcpToken: () => req<McpTokenInfo>("/api/mcp-token"),
-  rotateMcpToken: () => req<{ mcp_token: string; mcp_url: string }>("/api/mcp-token/rotate", { method: "POST" }),
+  keys: () => req<ApiKey[]>("/api/keys"),
+  createKey: (body: KeyInput) => req<NewApiKey>("/api/keys", { method: "POST", body: JSON.stringify(body) }),
+  updateKey: (id: string, body: KeyInput) =>
+    req<void>(`/api/keys/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteKey: (id: string) => req<void>(`/api/keys/${id}`, { method: "DELETE" }),
 
   sshKeys: () => req<SshKey[]>("/api/ssh-keys"),
   addSshKey: (name: string, public_key: string) =>

@@ -21,15 +21,25 @@ type Factory struct {
 	Hub   *relay.Hub
 }
 
-// For returns the DeviceResolver scoped to accountID.
+// For returns a full-access DeviceResolver for accountID (every device). Used by
+// paths whose credential is not a scoped API key — today the SSH jump, which
+// authenticates by public key and reaches all of the account's devices.
 func (f *Factory) For(accountID string) mcp.DeviceResolver {
-	return &accountResolver{store: f.Store, hub: f.Hub, accountID: accountID}
+	return f.ForScope(accountID, store.KeyScope{AllDevices: true, AllMethods: true, AllowTunnel: true})
+}
+
+// ForScope returns a DeviceResolver restricted to the devices an API key's scope
+// permits. Method and tunnel gating live at their own call sites; here we enforce
+// only the device dimension, which both /mcp tools and /connect funnel through.
+func (f *Factory) ForScope(accountID string, scope store.KeyScope) mcp.DeviceResolver {
+	return &accountResolver{store: f.Store, hub: f.Hub, accountID: accountID, scope: scope}
 }
 
 type accountResolver struct {
 	store     *store.Store
 	hub       *relay.Hub
 	accountID string
+	scope     store.KeyScope
 }
 
 // Resolve maps an optional device_id to a live connection the account owns.
@@ -42,6 +52,9 @@ func (a *accountResolver) Resolve(_ context.Context, deviceID string) (*relay.De
 		if err != nil {
 			return nil, err
 		}
+		if !a.scope.AllowsDevice(d.ID) {
+			return nil, fmt.Errorf("device %q (%s) is not permitted for this API key — call list_devices to see the devices it can reach", d.Name, d.ID)
+		}
 		dc, ok := a.hub.Get(d.ID)
 		if !ok {
 			return nil, fmt.Errorf("device %q (%s) is not connected — open the abacad app on it", d.Name, d.ID)
@@ -49,12 +62,15 @@ func (a *accountResolver) Resolve(_ context.Context, deviceID string) (*relay.De
 		return dc, nil
 	}
 
-	// No device_id: pick the most-recently-active device that is online.
+	// No device_id: pick the most-recently-active device that is online and in scope.
 	devices, err := a.store.DevicesByAccount(a.accountID)
 	if err != nil {
 		return nil, err
 	}
 	for _, d := range devices { // already ordered last_seen desc
+		if !a.scope.AllowsDevice(d.ID) {
+			continue
+		}
 		if dc, ok := a.hub.Get(d.ID); ok {
 			return dc, nil
 		}
@@ -71,6 +87,9 @@ func (a *accountResolver) List(_ context.Context) ([]mcp.DeviceSummary, error) {
 	}
 	out := make([]mcp.DeviceSummary, 0, len(devices))
 	for _, d := range devices {
+		if !a.scope.AllowsDevice(d.ID) {
+			continue // don't reveal devices this key can't reach
+		}
 		s := mcp.DeviceSummary{DeviceID: d.ID, Name: d.Name, Online: a.hub.Online(d.ID), Platform: d.Platform}
 		if d.LastSeen > 0 {
 			s.LastSeen = time.Unix(d.LastSeen, 0).UTC().Format(time.RFC3339)

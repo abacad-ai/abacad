@@ -385,14 +385,19 @@ const listDevicesDescription = "List the devices connected to your abacad accoun
 const listDevicesSchema = `{"type":"object","properties":{},"additionalProperties":false}`
 
 // toolInfos returns the tools/list payload (list_devices first, then the device
-// operations, in a stable order).
-func toolInfos() []toolInfo {
+// operations, in a stable order), filtered to the methods this key's scope
+// permits so the agent only sees tools it can actually call. list_devices is
+// always present.
+func toolInfos(scope Scope) []toolInfo {
 	infos := []toolInfo{{
 		Name:        listDevicesName,
 		Description: listDevicesDescription,
 		InputSchema: json.RawMessage(listDevicesSchema),
 	}}
 	for _, t := range actionTools {
+		if scope != nil && !scope.AllowsMethod(t.name) {
+			continue
+		}
 		infos = append(infos, toolInfo{
 			Name:        t.name,
 			Description: t.description,

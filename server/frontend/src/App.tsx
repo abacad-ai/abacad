@@ -6,6 +6,7 @@ import { AuthPage } from "@/pages/AuthPage";
 import { DeviceDetailPage } from "@/pages/DeviceDetailPage";
 import { DevicesPage } from "@/pages/DevicesPage";
 import { LandingPage } from "@/pages/LandingPage";
+import { AccessPage } from "@/pages/AccessPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 
 function Protected({ children }: { children: React.ReactNode }) {
@@ -66,6 +67,14 @@ export function App() {
             element={
               <Protected>
                 <ActivitiesPage />
+              </Protected>
+            }
+          />
+          <Route
+            path="/access"
+            element={
+              <Protected>
+                <AccessPage />
               </Protected>
             }
           />

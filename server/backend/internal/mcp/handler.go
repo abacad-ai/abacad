@@ -11,10 +11,17 @@ import (
 // flow the other way), so 4 MiB is generous.
 const maxBody = 4 << 20
 
-// ResolverFunc builds the per-request DeviceResolver from the HTTP request
-// (Phase 4: bearer token -> account). Returning an error rejects the request
-// with 401 before any JSON-RPC dispatch.
-type ResolverFunc func(r *http.Request) (DeviceResolver, error)
+// Scope authorizes which methods the request's API key may call. list_devices is
+// always allowed (it only ever returns already-scoped devices); every device
+// action tool is checked. Satisfied by store.KeyScope.
+type Scope interface {
+	AllowsMethod(name string) bool
+}
+
+// ResolverFunc builds the per-request DeviceResolver and method Scope from the
+// HTTP request (bearer API key -> account + scope). Returning an error rejects the
+// request with 401 before any JSON-RPC dispatch.
+type ResolverFunc func(r *http.Request) (DeviceResolver, Scope, error)
 
 // Handler serves POST /mcp (Streamable HTTP, stateless).
 type Handler struct {
@@ -30,7 +37,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resolver, err := h.ResolverFor(r)
+	resolver, scope, err := h.ResolverFor(r)
 	if err != nil {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="abacad"`)
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
@@ -52,7 +59,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := dispatch(context.WithoutCancel(r.Context()), req, resolver)
+	resp := dispatch(context.WithoutCancel(r.Context()), req, resolver, scope)
 	if resp == nil {
 		// Notification (e.g. notifications/initialized): acknowledge, no body.
 		w.WriteHeader(http.StatusAccepted)

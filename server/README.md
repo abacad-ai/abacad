@@ -25,7 +25,9 @@ devices, and point their agent at one endpoint — `https://abacad.ai/mcp` — t
 - **Accounts** — email + password → `httpOnly` session cookie (dashboard). Auth is
   deliberately minimal for now; it will be hardened later.
 - **MCP endpoint** (`POST /mcp`) — stateless JSON-RPC (Streamable HTTP). Authenticated
-  by the account's **MCP token** as `Authorization: Bearer <token>`. Tools:
+  by a scoped **API key** as `Authorization: Bearer <token>`. Each key is restricted to
+  a set of devices and methods (and, optionally, the `/connect` tunnel); create and
+  manage keys on the dashboard's **Access** page. Tools:
   `list_devices`, `screenshot`, `tap`, `long_press`, `swipe`, `input_text`, `back`,
   `home`, `recents`. Every action tool takes an optional `device_id`; omit it to use
   your only / most-recently-active device.
@@ -56,13 +58,13 @@ Requires Go and Node.
 ```
 
 Flags: `-addr :8848`, `-db abacad.db`, `-dev-cors` (local dev), `-seed` (mint a dev
-account/device/MCP token and print them). SSH jump host (opt-in): `-ssh-addr :22,:443`,
+account/device/API key and print them). SSH jump host (opt-in): `-ssh-addr :22,:443`,
 `-ssh-host-key <path>`, `-base-domain abacad.ai` — see [`../docs/ssh.md`](../docs/ssh.md).
 
 Register the endpoint with your agent:
 
 ```bash
-claude mcp add --transport http --header "Authorization: Bearer <mcp-token>" \
+claude mcp add --transport http --header "Authorization: Bearer <api-key>" \
   abacad http://localhost:8848/mcp
 ```
 
@@ -76,7 +78,7 @@ cd frontend && npm install && npm run dev       # :5173  (proxies /api /mcp /dev
 ```
 
 Open http://localhost:5173, register, add a device (shows a `wss://…?token=…` URL +
-QR), and generate an MCP token under Settings.
+QR), and create an API key under Access.
 
 ## Verify without a phone
 
@@ -87,9 +89,9 @@ agent (using the real MCP SDK client).
 npm install                              # harness deps (ws + MCP SDK)
 
 # Single-device loop against a seeded server:
-./backend/abacad -db /tmp/abacad.db -seed &     # prints device_token / mcp_token
+./backend/abacad -db /tmp/abacad.db -seed &     # prints device_token / api_key
 SERVER_URL="ws://localhost:8848/device?token=<device_token>" node mock-device.mjs &
-MCP_TOKEN="<mcp_token>" node smoke.mjs           # -> SMOKE OK
+MCP_TOKEN="<api_key>" node smoke.mjs             # -> SMOKE OK
 
 # Multi-tenant isolation/routing (provisions two accounts via the API):
 ./backend/abacad -db /tmp/abacad-multi.db &

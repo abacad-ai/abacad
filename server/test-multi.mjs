@@ -36,8 +36,12 @@ async function provision(email) {
   if (reg.status !== 201) throw new Error(`register ${email}: ${reg.status} ${JSON.stringify(reg.json)}`);
   const cookie = reg.cookie;
   const dev = await api("/api/devices", { method: "POST", body: { name: `Phone-${email}` }, cookie });
-  const mcp = await api("/api/mcp-token/rotate", { method: "POST", cookie });
-  return { cookie, deviceId: dev.json.id, wssUrl: dev.json.wss_url, mcpToken: mcp.json.mcp_token };
+  const key = await api("/api/keys", {
+    method: "POST",
+    body: { name: "test", all_devices: true, all_methods: true, allow_tunnel: true },
+    cookie,
+  });
+  return { cookie, deviceId: dev.json.id, wssUrl: dev.json.wss_url, mcpToken: key.json.secret };
 }
 
 const PNG_1x1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
