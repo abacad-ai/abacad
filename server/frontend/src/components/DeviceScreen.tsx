@@ -114,10 +114,25 @@ export function DeviceScreen({
       </div>
     );
   }
+  return <ScreenPlaceholder icon={OfflineIcon} label="Signal lost" factor={factor} />;
+}
+
+// The empty-screen contents: a device glyph, optionally over a small mono
+// caption. Used for "signal lost" here, and by the add-device picker to draw
+// its type choices in the same frames the grid uses.
+export function ScreenPlaceholder({
+  icon: Icon,
+  label,
+  factor,
+}: {
+  icon: typeof Monitor;
+  label?: string;
+  factor: FormFactor;
+}) {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-ink-subtle">
-      <OfflineIcon size={factor === "handset" ? 24 : 30} strokeWidth={1.25} />
-      <span className="font-mono text-[10px] uppercase tracking-[0.22em]">Signal lost</span>
+      <Icon size={factor === "handset" ? 24 : 30} strokeWidth={1.25} />
+      {label && <span className="font-mono text-[10px] uppercase tracking-[0.22em]">{label}</span>}
     </div>
   );
 }
@@ -135,12 +150,14 @@ export function DeviceFrame({
   aspect,
   maxWidth,
   bare,
+  className,
   children,
 }: {
   factor: FormFactor;
   aspect: number | null;
   maxWidth?: string; // Tailwind max-w-* override; defaults to the grid-card cap.
   bare?: boolean; // A screenshot is up: drop the border/fill and round less.
+  className?: string; // Extra classes on the frame itself (e.g. a selected ring).
   children: React.ReactNode;
 }) {
   const radius = bare ? "rounded-[10px]" : factor === "handset" ? "rounded-[1.7rem]" : "rounded-[12px]";
@@ -150,7 +167,12 @@ export function DeviceFrame({
   return (
     <div className={`mx-auto w-full ${cap}`}>
       <div
-        className={`relative overflow-hidden shadow-[0_10px_24px_-16px_var(--shadow-strong)] transition-transform duration-200 hover:-translate-y-0.5 ${chrome} ${radius}`}
+        className={cn(
+          "relative overflow-hidden shadow-[0_10px_24px_-16px_var(--shadow-strong)] transition-transform duration-200 hover:-translate-y-0.5",
+          chrome,
+          radius,
+          className,
+        )}
         style={{ aspectRatio: ratio }}
       >
         {children}

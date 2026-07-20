@@ -5,14 +5,16 @@ import {
   CheckCircle2,
   Globe,
   LoaderCircle,
+  Monitor,
   Plus,
   RefreshCw,
   ShieldCheck,
   Smartphone,
 } from "lucide-react";
 import { api, type DeviceView } from "@/lib/api";
-import { groupDevices, type FormFactor } from "@/lib/devices";
-import { DeviceFrame, DeviceScreen } from "@/components/DeviceScreen";
+import { groupDevices, platformInfo, NEW_DEVICE_PLATFORMS, type FormFactor } from "@/lib/devices";
+import { cn } from "@/lib/utils";
+import { DeviceFrame, DeviceScreen, ScreenPlaceholder } from "@/components/DeviceScreen";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,6 +24,57 @@ import { CopyField } from "@/components/CopyField";
 import { PageHeader } from "@/components/PageHeader";
 
 const DEVICES_POLL_MS = 5000;
+
+function platformIcon(platform: string, factor: FormFactor) {
+  if (platform === "browser") return Globe;
+  return factor === "handset" ? Smartphone : Monitor;
+}
+
+function PlatformTile({
+  platform,
+  selected,
+  onSelect,
+}: {
+  platform: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const { label, factor } = platformInfo(platform);
+  const Icon = platformIcon(platform, factor);
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onSelect}
+      className="group flex min-w-0 flex-col gap-3 rounded-[1.4rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-4 focus-visible:ring-offset-surface-raised"
+    >
+      <span className="flex h-[168px] w-full items-center justify-center">
+        <DeviceFrame
+          factor={factor}
+          aspect={null}
+          maxWidth={factor === "handset" ? "max-w-[80px]" : "max-w-[210px]"}
+          // These frames are ~half the size of the grid's, so the radius scales
+          // down with them — the default would round a 80px-wide phone to a pill.
+          className={cn(
+            factor === "handset" ? "rounded-[12px]" : "rounded-[8px]",
+            selected && "border-brand ring-1 ring-brand",
+          )}
+        >
+          <ScreenPlaceholder icon={Icon} factor={factor} />
+        </DeviceFrame>
+      </span>
+      <span
+        className={cn(
+          "max-w-full truncate text-center font-display text-sm font-bold leading-tight transition-colors group-hover:text-brand",
+          selected ? "text-brand" : "text-ink",
+        )}
+      >
+        {label}
+      </span>
+    </button>
+  );
+}
 
 interface Reveal {
   title: string;
@@ -176,7 +229,7 @@ export function DevicesPage() {
         open={addOpen}
         onClose={() => setAddOpen(false)}
         title="Add a device"
-        description="Create a named connection credential for a phone or machine."
+        className="sm:max-w-3xl"
       >
         <form onSubmit={addDevice}>
           <div className="flex flex-col gap-2">
@@ -189,27 +242,23 @@ export function DevicesPage() {
               onChange={(event) => setNewName(event.target.value)}
               placeholder="My phone"
             />
-            <p className="text-xs text-ink-subtle">Use a name that makes the device easy to identify in agent commands.</p>
           </div>
-          <div className="mt-4 flex flex-col gap-2">
-            <Label htmlFor="device-type">Device type</Label>
-            <select
-              id="device-type"
-              value={platform}
-              onChange={(event) => setPlatform(event.target.value)}
-              className="min-h-10 rounded-md border border-border bg-surface px-3 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-            >
-              <option value="android">Phone (Android app)</option>
-              <option value="macos">Desktop (macOS app)</option>
-              <option value="browser">Browser tab (no install)</option>
-            </select>
-            <p className="text-xs text-ink-subtle">
-              {platform === "browser"
-                ? "You'll get a link to open in any browser — the tab itself becomes the device the agent drives."
-                : "Install the abacad app on the device, then scan the QR to connect it."}
-            </p>
-          </div>
-          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <fieldset className="mt-6 flex flex-col gap-3">
+            <legend className="mb-3 font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-ink-subtle">
+              Device type
+            </legend>
+            <div role="radiogroup" className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(160px,1fr))]">
+              {NEW_DEVICE_PLATFORMS.map((value) => (
+                <PlatformTile
+                  key={value}
+                  platform={value}
+                  selected={platform === value}
+                  onSelect={() => setPlatform(value)}
+                />
+              ))}
+            </div>
+          </fieldset>
+          <div className="mt-8 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="ghost" onClick={() => setAddOpen(false)}>
               Cancel
             </Button>

@@ -34,6 +34,15 @@ const KNOWN_PLATFORMS: Record<string, PlatformInfo> = {
   browser: { label: "Browser", factor: "desktop" },
 };
 
+// The platforms you can create a device for, in picker order. Each one has a
+// client that can connect; add "windows"/"linux" here once their apps ship —
+// KNOWN_PLATFORMS already knows their label and frame.
+export const NEW_DEVICE_PLATFORMS = ["android", "macos", "browser"];
+
+export function platformInfo(platform: string): PlatformInfo {
+  return KNOWN_PLATFORMS[platform] ?? { label: platform, factor: "desktop" };
+}
+
 // Section order — desktops first, then handsets, with unrecognized labels last.
 const GROUP_ORDER = ["macOS", "Windows", "Linux", "Desktop", "Browser", "iPadOS", "iOS", "Android", "Mobile", "Other"];
 
