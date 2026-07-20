@@ -14,9 +14,15 @@ import ApplicationServices
 struct CommandDispatcher {
     /// Execute a method and return the `result` object, or throw CmdError.
     func execute(method: String, params: [String: Any]) async throws -> [String: Any] {
+        // Any non-screenshot command may change the screen, so invalidate the
+        // shot cache before running it — the next screenshot must never serve a
+        // frame captured before this action. (Matches the Android client.)
+        if method != "screenshot" {
+            await ScreenshotCache.shared.invalidate()
+        }
         switch method {
         case "screenshot":
-            return try await screenshot(includeTree: params.bool("include_ui_tree", true))
+            return try await ScreenshotCache.shared.screenshot(includeTree: params.bool("include_ui_tree", true))
 
         // Mobile verbs, mapped onto desktop input for cross-platform compatibility.
         case "tap":
@@ -78,13 +84,6 @@ struct CommandDispatcher {
     }
 
     // MARK: Handlers
-
-    private func screenshot(includeTree: Bool) async throws -> [String: Any] {
-        let shot = try await ScreenCapture.capture()
-        var result: [String: Any] = ["w": shot.w, "h": shot.h, "png_base64": shot.base64]
-        if includeTree, let tree = AccessibilityTree.capture() { result["tree"] = tree }
-        return result
-    }
 
     /// Replace the focused field's contents via AX (matches Android's input_text
     /// "set text" semantics). Falls back to typing if the element rejects the set.
