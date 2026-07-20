@@ -3,11 +3,15 @@
 # Run on a Mac (needs Swift/Xcode toolchain). This box (Linux) cannot build it.
 #
 # ── Signing & notarization ───────────────────────────────────────────────────
-#   SIGN_IDENTITY  : codesign identity.
-#                      "-" = ad-hoc (local dev only; NOT distributable —
-#                            Gatekeeper blocks it and TCC grants are unstable).
-#                    For distribution use the Developer ID Application cert:
-#                      make release SIGN_IDENTITY="Developer ID Application: Beijing Xiaoyuanzhu Technology Co., Ltd. (R3845XW5FZ)"
+#   SIGN_IDENTITY  : codesign identity. Auto-detected: the team's Developer ID
+#                    cert if it is in the keychain, else ad-hoc "-".
+#                    Prefer the real identity even for local dev — ad-hoc's
+#                    designated requirement is a bare cdhash, so every rebuild
+#                    looks like a brand-new app to TCC and the Accessibility /
+#                    Screen Recording grants silently stop applying (the old row
+#                    lingers in System Settings, still checked, pointing at the
+#                    dead hash). Developer ID's requirement is identifier + team,
+#                    which survives rebuilds, so you grant once and never again.
 #   BUNDLE_ID      : reverse-DNS id; must match CFBundleIdentifier in Info.plist.
 #   TEAM_ID        : Apple Developer team id (R3845XW5FZ).
 #   NOTARY_PROFILE : name of a keychain profile holding notary credentials,
@@ -19,10 +23,16 @@
 #                        --apple-id you@example.com --team-id R3845XW5FZ \
 #                        --password <app-specific-password>
 # ─────────────────────────────────────────────────────────────────────────────
-SIGN_IDENTITY  ?= -
 BUNDLE_ID      ?= ai.abacad.mac
 TEAM_ID        ?= R3845XW5FZ
 NOTARY_PROFILE ?= abacad-notary
+
+DEV_ID := Developer ID Application: Beijing Xiaoyuanzhu Technology Co., Ltd. ($(TEAM_ID))
+ifeq ($(shell security find-identity -v -p codesigning 2>/dev/null | grep -c "$(TEAM_ID)"),0)
+SIGN_IDENTITY ?= -
+else
+SIGN_IDENTITY ?= $(DEV_ID)
+endif
 
 APP     := build/abacad.app
 CONF    := release
@@ -40,7 +50,7 @@ else
 CODESIGN_FLAGS := --options runtime --timestamp
 endif
 
-.PHONY: all app build clean run dmg release icon _pkg-dmg _notarize-app _notarize-dmg
+.PHONY: all app build clean run dmg release icon trust-reset _pkg-dmg _notarize-app _notarize-dmg
 
 all: app
 
@@ -131,6 +141,15 @@ _notarize-dmg:
 # Screen Recording — grant both in System Settings, then relaunch.
 run: app
 	open "$(APP)"
+
+# Forget every TCC grant for this bundle id. Needed once after switching off
+# ad-hoc signing: the rows left behind in System Settings are keyed to dead
+# cdhashes, and a stale row shadows the new signature instead of being replaced.
+# Quit the app first; re-grant on the next launch and the grant then sticks.
+trust-reset:
+	-tccutil reset ScreenCapture $(BUNDLE_ID)
+	-tccutil reset Accessibility $(BUNDLE_ID)
+	@echo "Cleared TCC grants for $(BUNDLE_ID) — relaunch and grant once more."
 
 clean:
 	rm -rf .build build
