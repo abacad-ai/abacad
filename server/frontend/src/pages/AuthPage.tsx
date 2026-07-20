@@ -26,7 +26,7 @@ export function AuthPage() {
     try {
       const me = mode === "login" ? await api.login(email, password) : await api.register(email, password);
       setMe(me);
-      nav("/");
+      nav("/devices");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Unable to continue. Check your connection and try again.");
     } finally {

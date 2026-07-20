@@ -15,6 +15,7 @@ import { api, type ActivityItem, type DeviceView } from "@/lib/api";
 import { clockTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/PageHeader";
 
 const PAGE_SIZE = 50;
 
@@ -242,15 +243,11 @@ export function ActivitiesPage() {
 
   return (
     <div>
-      <header className="mb-7">
-        <p className="font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-brand">
-          console / activities
-        </p>
-        <h1 className="mt-3 font-display text-3xl font-bold leading-tight text-ink sm:text-4xl">Activities</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">
-          The workspace trail: sign-ins, credential changes, device connections, and every command an agent ran.
-        </p>
-      </header>
+      <PageHeader
+        eyebrow="console / activities"
+        title="Activities"
+        description="The workspace trail: sign-ins, credential changes, device connections, and every command an agent ran."
+      />
 
       <div className="mb-6 flex flex-wrap items-center gap-2.5">
         <span className="flex h-10 items-center gap-1.5 font-mono text-[11px] uppercase tracking-wider text-ink-subtle">

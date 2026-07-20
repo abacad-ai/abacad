@@ -5,10 +5,9 @@ import { type ReactNode } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/auth";
 import { cn } from "@/lib/utils";
-import { ThemeToggle } from "@/components/ThemeToggle";
 
 const navigation = [
-  { to: "/", label: "Devices" },
+  { to: "/devices", label: "Devices" },
   { to: "/activities", label: "Activities" },
   { to: "/settings", label: "Settings" },
 ];
@@ -34,20 +33,18 @@ export function Layout({ children }: { children: ReactNode }) {
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-3 px-4 sm:gap-5 sm:px-6">
           <Brand />
 
-          <nav
-            aria-label="Primary navigation"
-            className="flex items-center gap-1 rounded-full border border-border bg-surface p-1"
-        >
+          <nav aria-label="Primary navigation" className="flex items-center gap-1 sm:gap-2">
             {navigation.map((item) => {
-              const active = loc.pathname === item.to;
+              const active =
+                item.to === "/devices" ? loc.pathname.startsWith("/devices") : loc.pathname === item.to;
               return (
                 <Link
                   key={item.to}
                   to={item.to}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "flex h-8 items-center rounded-full px-3 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand sm:px-3.5",
-                    active ? "bg-brand-soft text-brand" : "text-ink-muted hover:text-ink",
+                    "rounded-md px-2 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand sm:px-2.5",
+                    active ? "font-semibold text-ink" : "font-medium text-ink-muted hover:text-ink",
                   )}
                 >
                   {item.label}
@@ -57,7 +54,6 @@ export function Layout({ children }: { children: ReactNode }) {
           </nav>
 
           <div className="ml-auto flex items-center gap-2">
-            <ThemeToggle />
             {me && (
               <>
                 <span
@@ -92,7 +88,7 @@ export function Layout({ children }: { children: ReactNode }) {
 function Brand() {
   return (
     <Link
-      to="/"
+      to="/devices"
       className="flex min-w-0 shrink-0 items-center gap-2.5 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
     >
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-brand/30 bg-brand-soft text-brand">

@@ -54,6 +54,10 @@
 
 html {
   background: var(--canvas);
+  /* Always reserve the scrollbar gutter so the centered content column never
+     shifts horizontally when a route's height crosses the viewport height —
+     that shift is the "jitter" seen when clicking between short and tall pages. */
+  scrollbar-gutter: stable;
 }
 
 html,

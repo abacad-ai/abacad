@@ -5,6 +5,7 @@ import { ActivitiesPage } from "@/pages/ActivitiesPage";
 import { AuthPage } from "@/pages/AuthPage";
 import { DeviceDetailPage } from "@/pages/DeviceDetailPage";
 import { DevicesPage } from "@/pages/DevicesPage";
+import { LandingPage } from "@/pages/LandingPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 
 function Protected({ children }: { children: React.ReactNode }) {
@@ -26,7 +27,7 @@ function Protected({ children }: { children: React.ReactNode }) {
 function LoginRoute() {
   const { me, loading } = useAuth();
   if (loading) return null;
-  if (me) return <Navigate to="/" replace />;
+  if (me) return <Navigate to="/devices" replace />;
   return <AuthPage />;
 }
 
@@ -35,9 +36,10 @@ export function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
+          <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginRoute />} />
           <Route
-            path="/"
+            path="/devices"
             element={
               <Protected>
                 <DevicesPage />

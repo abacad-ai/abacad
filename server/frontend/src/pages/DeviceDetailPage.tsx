@@ -74,7 +74,7 @@ export function DeviceDetailPage() {
   return (
     <div>
       <Link
-        to="/"
+        to="/devices"
         className="inline-flex h-10 items-center gap-1.5 text-[13px] font-semibold text-ink-muted transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
       >
         <ArrowLeft size={16} />
@@ -91,7 +91,7 @@ export function DeviceDetailPage() {
             This device doesn't exist or belongs to another workspace.
           </p>
           <Link
-            to="/"
+            to="/devices"
             className="mt-6 inline-flex h-11 items-center justify-center rounded-md border border-border-strong bg-surface px-4 text-sm font-semibold text-ink transition-colors hover:border-ink-subtle hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
           >
             Back to devices

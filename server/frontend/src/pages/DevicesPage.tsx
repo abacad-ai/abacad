@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Modal } from "@/components/Modal";
 import { CopyField } from "@/components/CopyField";
+import { PageHeader } from "@/components/PageHeader";
 
 const DEVICES_POLL_MS = 5000;
 
@@ -97,12 +98,17 @@ export function DevicesPage() {
 
   return (
     <div>
-      <div className="mb-7 flex justify-end">
-        <Button onClick={() => setAddOpen(true)}>
-          <Plus size={17} />
-          Add device
-        </Button>
-      </div>
+      <PageHeader
+        eyebrow="console / devices"
+        title="Devices"
+        description="Every phone, machine, and browser you've paired. Open one to view its screen and live activity."
+        actions={
+          <Button onClick={() => setAddOpen(true)}>
+            <Plus size={17} />
+            Add device
+          </Button>
+        }
+      />
 
       {actionError && (
         <div role="alert" className="mb-5 flex items-center justify-between gap-3 rounded-md border border-danger/25 bg-danger-soft px-4 py-3 text-sm text-danger">
