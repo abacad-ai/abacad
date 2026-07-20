@@ -33,6 +33,12 @@ const (
 	MethodScroll     Method = "scroll"
 	MethodPressKeys  Method = "press_keys"
 	MethodComposite  Method = "composite"
+
+	// Browser method. A browser device runs the semantic verbs
+	// (screenshot/click/scroll/input_text) against its content iframe, plus
+	// `execute` — the escape hatch that evaluates JavaScript in that surface.
+	// Non-browser devices reject it as an unknown method.
+	MethodExecute Method = "execute"
 )
 
 // Command is server -> device. id correlates the reply.
@@ -98,4 +104,12 @@ type KeyResult struct {
 // return their frames here, in step order. Empty when the sequence took no shots.
 type CompositeResult struct {
 	Shots []ScreenshotResult `json:"shots"`
+}
+
+// ExecuteResult is reported by execute: the JSON-serialized return value of the
+// evaluated JavaScript. Value is null/absent when the code returned undefined.
+// A thrown exception comes back as a failed Reply (ok:false, error) instead, so
+// the agent sees it as a tool error rather than a value.
+type ExecuteResult struct {
+	Value json.RawMessage `json:"value,omitempty"`
 }

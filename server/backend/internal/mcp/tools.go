@@ -322,6 +322,39 @@ var actionTools = []actionTool{
 			return out
 		},
 	},
+
+	// --- Browser tool (a browser device runs it in its content iframe; other
+	// platforms reject it as unknown). ---
+	{
+		name:        "execute",
+		description: "(browser) Evaluate JavaScript inside the browser device's surface and return the JSON-serialized result. This is the browser's power verb — prefer it over pixel clicks for anything structured. The code runs as the body of an async function, so you can return a value and await promises: e.g. return document.title; return [...document.querySelectorAll('a')].map(a => a.href); return await fetch('/api/x').then(r => r.json()). Use it to read page state, act by selector (document.querySelector('#go').click(); el.value = 'hi'), set content (document.body.innerHTML = ...), or navigate the surface (location.href = 'https://example.com'). Loading your own / same-origin content gives full control — read, script, and inject. Navigating to a cross-origin site drops you to look-only: screenshot still works, but the browser blocks scripting across origins so execute can't reach inside; load same-origin content again to restore control. A thrown error is returned as a tool error.",
+		schema:      `{"type":"object","properties":{"code":{"type":"string","description":"JavaScript to evaluate; runs as an async function body, so use return <value> to get a result back"},` + deviceIDSchema + `},"required":["code"],"additionalProperties":false}`,
+		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
+			var a struct {
+				Code string `json:"code"`
+			}
+			if err := json.Unmarshal(args, &a); err != nil {
+				return errorResult("invalid args: " + err.Error())
+			}
+			if a.Code == "" {
+				return errorResult("execute requires a non-empty code string")
+			}
+			raw, err := dc.Send(ctx, protocol.MethodExecute, map[string]any{"code": a.Code}, commandTimeout)
+			if err != nil {
+				return errorResult(err.Error())
+			}
+			var r protocol.ExecuteResult
+			_ = json.Unmarshal(raw, &r)
+			if len(r.Value) == 0 || string(r.Value) == "null" {
+				return textResult("execute ok (no value returned)")
+			}
+			pretty, e := json.MarshalIndent(json.RawMessage(r.Value), "", "  ")
+			if e != nil {
+				pretty = r.Value
+			}
+			return textResult(string(pretty))
+		},
+	},
 }
 
 // globalAction builds a no-argument nav-key tool (back / home / recents).
@@ -348,7 +381,7 @@ func textResult(s string) toolResult {
 
 // listDevicesTool describes the account's devices so the agent can pick one.
 const listDevicesName = "list_devices"
-const listDevicesDescription = "List the devices connected to your abacad account, with their id, name, platform (e.g. android, macos), and whether they are currently online. Use the platform to pick the right verbs — mobile devices take tap/swipe, desktops take click/scroll/press_keys. Pass a device_id to any other tool to target a specific device; omit it to use your only / most-recently-active device."
+const listDevicesDescription = "List the devices connected to your abacad account, with their id, name, platform (e.g. android, macos, browser), and whether they are currently online. Use the platform to pick the right verbs — mobile devices take tap/swipe, desktops take click/scroll/press_keys, and a browser device is best driven with execute (run JS in the page) alongside screenshot/click/scroll. Pass a device_id to any other tool to target a specific device; omit it to use your only / most-recently-active device."
 const listDevicesSchema = `{"type":"object","properties":{},"additionalProperties":false}`
 
 // toolInfos returns the tools/list payload (list_devices first, then the device

@@ -55,7 +55,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true, // non-browser client (Android app / mock); no Origin to check
+		// Skip the same-origin check on purpose. Native clients (Android/mac) send
+		// no Origin, and a browser device client is served from its own page and
+		// dials in with an Origin that need not match this host (e.g. an
+		// <id>.abacad.ai surface hitting the API host). Origin is not the security
+		// boundary here: the connection is authenticated by the per-device token in
+		// the query string, not by an ambient cookie, so cross-site forgery can't
+		// mint a valid device connection.
+		InsecureSkipVerify: true,
 	})
 	if err != nil {
 		return // Accept already wrote the error
