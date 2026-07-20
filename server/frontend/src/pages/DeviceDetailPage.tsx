@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import {
   Cable,
@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Smartphone,
   TerminalSquare,
+  Trash2,
   Unplug,
 } from "lucide-react";
 import { ApiError, api, type ActivityItem, type DeviceView } from "@/lib/api";
@@ -179,6 +180,7 @@ export function DeviceDetailPage() {
             </MetaRow>
             <MetaRow label="Added">{relativeTime(device.created_at)}</MetaRow>
           </dl>
+          <DeleteDevice device={device} />
         </Column>
 
         <Column title="Access">
@@ -311,6 +313,67 @@ function ConnectionUrl({ deviceId }: { deviceId: string }) {
             New connection URL
           </Button>
         </>
+      )}
+      {failed && <p className="mt-2 text-xs leading-5 text-danger">{failed}</p>}
+    </div>
+  );
+}
+
+// Removing a device revokes its token and drops whatever client is connected —
+// unrecoverable, so it sits last in the Setup card behind an inline confirm that
+// spells out the consequence. On success the device no longer exists, so there's
+// nothing left to show: go back to the list.
+function DeleteDevice({ device }: { device: DeviceView }) {
+  const navigate = useNavigate();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  // A new device id means a different device: never carry an armed confirm over.
+  useEffect(() => {
+    setConfirming(false);
+    setFailed(null);
+  }, [device.id]);
+
+  const remove = async () => {
+    setBusy(true);
+    setFailed(null);
+    try {
+      await api.deleteDevice(device.id);
+      navigate("/devices", { replace: true });
+    } catch (err) {
+      setFailed((err as Error).message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-5 border-t border-border pt-4">
+      {confirming ? (
+        <>
+          <p className="mb-3 text-sm leading-6 text-ink-muted">
+            Delete <span className="font-semibold text-ink">{device.name}</span>? Its token is revoked and any
+            connected client is dropped. This can't be undone — you'd have to add the device again.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="destructive" disabled={busy} onClick={() => void remove()}>
+              {busy && <LoaderCircle size={16} className="animate-spin" />}
+              Delete device
+            </Button>
+            <Button variant="ghost" disabled={busy} onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+          </div>
+        </>
+      ) : (
+        <Button
+          variant="ghost"
+          className="text-danger hover:bg-danger-soft hover:text-danger"
+          onClick={() => setConfirming(true)}
+        >
+          <Trash2 size={16} />
+          Delete device
+        </Button>
       )}
       {failed && <p className="mt-2 text-xs leading-5 text-danger">{failed}</p>}
     </div>
