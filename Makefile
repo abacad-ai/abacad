@@ -7,7 +7,12 @@ PORT ?= 1419
 # in sync with server/frontend/vite.config.ts if you change it.
 BACKEND_ADDR ?= :1213
 
-.PHONY: dev typecheck tokens android android-install macos macos-run
+# Where the server looks for public release artifacts. The backend runs with
+# server/backend as its working directory and defaults to a relative
+# "abacad-downloads" (ABACAD_DOWNLOADS overrides it), so this is that directory.
+DOWNLOADS ?= server/backend/abacad-downloads
+
+.PHONY: dev typecheck tokens android android-install macos macos-run publish publish-macos publish-android
 
 # Start the Go backend and the Vite frontend together in the foreground.
 # Open http://localhost:$(PORT). Ctrl-C stops both.
@@ -44,3 +49,23 @@ macos:
 # Accessibility and Screen Recording — grant both, then relaunch.
 macos-run:
 	cd macos && $(MAKE) run
+
+# Publish the built clients to the downloads directory under the names the
+# server serves at /downloads/ and lists on the public /downloads page:
+# abacad-<platform>-latest.<ext>. Building a client leaves it in its own build
+# tree; only this step makes it downloadable. In production the same thing
+# happens by copying the artifact onto the deploy volume — no restart needed.
+publish: publish-macos publish-android
+	@ls -lh $(DOWNLOADS)
+
+# The .app is what you run locally; the .dmg is what people download, so this
+# packages one (macos/Makefile's dmg target = app + hdiutil). For a signed,
+# notarized artifact run `cd macos && make release` first, then this copies it.
+publish-macos:
+	cd macos && $(MAKE) dmg
+	@mkdir -p $(DOWNLOADS)
+	cp macos/build/abacad.dmg $(DOWNLOADS)/abacad-macos-latest.dmg
+
+publish-android: android
+	@mkdir -p $(DOWNLOADS)
+	cp android/app/build/outputs/apk/debug/app-debug.apk $(DOWNLOADS)/abacad-android-latest.apk

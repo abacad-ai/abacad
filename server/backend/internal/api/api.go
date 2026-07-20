@@ -37,6 +37,10 @@ type API struct {
 	Shots      *screenshot.Store  // per-device last-screenshot cache
 	BaseDomain string             // domain devices are addressed under, for the ssh_host hint
 
+	// DownloadsDir is the directory of published client builds served at
+	// /downloads/; GET /api/downloads lists what it holds. See downloads.go.
+	DownloadsDir string
+
 	// Google OAuth. Empty client id/secret disables the "Sign in with Google"
 	// routes and hides the button; RedirectURL is derived from the request when
 	// blank. See oauth.go.
@@ -65,6 +69,9 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/auth/config", a.authConfig)
 	mux.HandleFunc("GET /api/auth/google/start", a.googleStart)
 	mux.HandleFunc("GET /api/auth/google/callback", a.googleCallback)
+
+	// Public: the client downloads page is reachable without an account.
+	mux.HandleFunc("GET /api/downloads", a.listDownloads)
 
 	// Authenticated endpoints.
 	mux.Handle("GET /api/auth/me", a.auth(a.me))

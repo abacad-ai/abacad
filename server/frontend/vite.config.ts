@@ -20,6 +20,9 @@ export default defineConfig({
       // SPA routes and would proxy those page loads to Go instead of serving
       // the dev index.html. Only the exact WS path (plus its ?token=) proxies.
       "^/device(\\?|$)": { target: "ws://localhost:1213", ws: true },
+      // Release artifacts live on Go's disk. Regex again: only /downloads/<file>
+      // proxies, so the bare /downloads SPA page still renders from dev.
+      "^/downloads/.": { target: "http://localhost:1213", changeOrigin: false },
     },
   },
   build: { outDir: "dist", emptyOutDir: true },

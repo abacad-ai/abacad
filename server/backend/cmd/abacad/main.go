@@ -153,6 +153,7 @@ func main() {
 
 	apiHandler := (&api.API{
 		Store: st, Hub: hub, Events: evlog, Activity: trail, Shots: shots, BaseDomain: cfg.BaseDomain,
+		DownloadsDir: cfg.DownloadsDir,
 		GoogleClientID: cfg.GoogleClientID, GoogleClientSecret: cfg.GoogleClientSecret, GoogleRedirectURL: cfg.GoogleRedirectURL,
 	}).Handler()
 

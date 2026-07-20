@@ -5,6 +5,7 @@ import { ActivitiesPage } from "@/pages/ActivitiesPage";
 import { AuthPage } from "@/pages/AuthPage";
 import { DeviceDetailPage } from "@/pages/DeviceDetailPage";
 import { DevicesPage } from "@/pages/DevicesPage";
+import { DownloadsPage } from "@/pages/DownloadsPage";
 import { LandingPage } from "@/pages/LandingPage";
 import { AccessPage } from "@/pages/AccessPage";
 import { SettingsPage } from "@/pages/SettingsPage";
@@ -52,6 +53,9 @@ export function App() {
         <Routes>
           <Route path="/" element={<RootRoute />} />
           <Route path="/login" element={<LoginRoute />} />
+          {/* Public: you download a client before you have an account. The
+              artifacts themselves are served by Go at /downloads/<file>. */}
+          <Route path="/downloads" element={<DownloadsPage />} />
           {/* Devices moved to "/"; keep the old path working for bookmarks. */}
           <Route path="/devices" element={<Navigate to="/" replace />} />
           <Route

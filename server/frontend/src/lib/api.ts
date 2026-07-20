@@ -108,6 +108,15 @@ export interface ActivitiesResult {
   next_before?: number; // absent once the trail is exhausted
 }
 
+// One published client build, as found on the server's downloads directory.
+export interface ClientBuild {
+  platform: string; // "macos", "android", …
+  file: string;
+  url: string; // /downloads/<file>
+  size: number; // bytes
+  updated_at: number; // unix seconds
+}
+
 export interface ActivityQuery {
   before?: number;
   device?: string;
@@ -152,6 +161,9 @@ export const api = {
   login: (email: string, password: string) =>
     req<Me>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   logout: () => req<void>("/api/auth/logout", { method: "POST" }),
+
+  // Public (no session): the downloads page works signed out.
+  downloads: () => req<ClientBuild[]>("/api/downloads"),
 
   devices: () => req<DeviceView[]>("/api/devices"),
   device: (id: string) => req<DeviceView>(`/api/devices/${id}`),
