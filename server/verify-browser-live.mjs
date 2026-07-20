@@ -26,6 +26,13 @@ const page = await browser.newPage({ viewport: { width: 900, height: 640 } });
 const consoleErrs = [];
 page.on("console", (m) => { if (m.type() === "error") consoleErrs.push(m.text()); });
 page.on("pageerror", (e) => consoleErrs.push(String(e)));
+// html2canvas must load same-origin (vendored), never from a CDN.
+const cdnHits = [], hcHits = [];
+page.on("request", (req) => {
+  const u = req.url();
+  if (/jsdelivr|unpkg|cdnjs|googleapis/.test(u)) cdnHits.push(u);
+  if (/\/_hc\.js(\?|$)/.test(u)) hcHits.push(u);
+});
 
 await page.goto(DEVICE_URL, { waitUntil: "load" });
 // The dot turns green when the relay socket opens — i.e. the Host-based auth
@@ -64,6 +71,8 @@ const hasImage = shot.content.some((c) => c.type === "image" && typeof c.data ==
 check("screenshot returns a DOM tree", /"nodes"/.test(shotText));
 check("tree reflects the mutation (button id=go)", /"go"/.test(shotText) && /Go/.test(shotText), "");
 check("screenshot returns pixels (html2canvas)", hasImage, hasImage ? "" : "empty image — html2canvas may be unreachable/failed");
+check("html2canvas served same-origin (vendored, no CDN)", cdnHits.length === 0 && hcHits.length > 0,
+  `cdn=${cdnHits.length} /_hc.js=${hcHits.length}`);
 
 // click by the button's bounds; verify by wiring a flag the click should set
 await call("execute", { code: "window.__clicked=false; document.getElementById('go').addEventListener('click',()=>window.__clicked=true);" });

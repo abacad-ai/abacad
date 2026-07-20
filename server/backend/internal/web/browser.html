@@ -19,8 +19,9 @@
 </style>
 <!-- Pixel capture. The DOM tree (below) is the primary semantic layer; this is
      the escape hatch for pixels. Cross-origin surfaces can't be rasterized here
-     (tainted canvas) — the agent still gets the tree and can execute. -->
-<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+     (tainted canvas) — the agent still gets the tree and can execute. Served
+     same-origin (vendored, not a CDN) so it works on locked-down networks. -->
+<script src="/_hc.js"></script>
 </head>
 <body>
 <iframe id="surface" title="abacad device surface"></iframe>

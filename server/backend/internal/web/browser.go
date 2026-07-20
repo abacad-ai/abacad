@@ -24,3 +24,19 @@ func BrowserClient() http.Handler {
 		_, _ = w.Write(browserClientHTML)
 	})
 }
+
+// html2canvasJS is the pixel-capture library, vendored (not loaded from a CDN) so
+// a device on a locked-down network — a kiosk, a lobby TV — still captures pixels.
+// The client references it same-origin at /_hc.js.
+//
+//go:embed html2canvas.min.js
+var html2canvasJS []byte
+
+// Html2Canvas serves the vendored html2canvas library.
+func Html2Canvas() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		_, _ = w.Write(html2canvasJS)
+	})
+}

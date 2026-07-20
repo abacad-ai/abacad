@@ -193,6 +193,9 @@ func main() {
 	mux.Handle("GET /blobs/{id}", http.HandlerFunc(blobHandler.Download))
 	mux.Handle("/api/", apiHandler)
 	mux.Handle("GET /downloads/{file}", downloadsHandler(cfg.DownloadsDir))
+	// Vendored html2canvas for the browser client (referenced same-origin as
+	// /_hc.js). On a device host the hostMux passes this path through to here.
+	mux.Handle("GET /_hc.js", web.Html2Canvas())
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"ok":true,"devices_online":%d}`, len(hub.OnlineIDs()))
