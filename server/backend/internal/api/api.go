@@ -204,6 +204,7 @@ type deviceView struct {
 	ID           string `json:"id"`
 	Name         string `json:"name"`
 	Online       bool   `json:"online"`
+	Activity     string `json:"activity,omitempty"` // "active" | "asleep" when online; absent when offline
 	Platform     string `json:"platform,omitempty"` // e.g. "android", "macos"; blank if unset
 	LastSeen     string `json:"last_seen,omitempty"`
 	CreatedAt    string `json:"created_at"`
@@ -739,6 +740,9 @@ func (a *API) viewDevice(d store.Device) deviceView {
 		Online:    a.Hub.Online(d.ID),
 		Platform:  d.Platform,
 		CreatedAt: time.Unix(d.CreatedAt, 0).UTC().Format(time.RFC3339),
+	}
+	if act, ok := a.Hub.Activity(d.ID); ok {
+		v.Activity = string(act)
 	}
 	if d.LastSeen > 0 {
 		v.LastSeen = time.Unix(d.LastSeen, 0).UTC().Format(time.RFC3339)

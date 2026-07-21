@@ -119,12 +119,17 @@ class AbacadAccessibilityService : AccessibilityService() {
     }
 
     /** System power/screen signals. Screen-on & unlock force an immediate reconnect (so a socket
-     *  that died during idle comes back at once instead of waiting out the backoff); power
+     *  that died during idle comes back at once instead of waiting out the backoff) and report the
+     *  device awake; screen-off reports it asleep (still connected, just idle); power
      *  plugged/unplugged re-evaluates the off-charger session wakelock. */
     private val systemReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
-                Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> device?.forceReconnect()
+                Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> {
+                    device?.forceReconnect()
+                    device?.sendPresence("active")
+                }
+                Intent.ACTION_SCREEN_OFF -> device?.sendPresence("asleep")
                 Intent.ACTION_POWER_CONNECTED, Intent.ACTION_POWER_DISCONNECTED -> updateSessionWakeLock()
             }
         }
@@ -145,6 +150,7 @@ class AbacadAccessibilityService : AccessibilityService() {
             systemReceiver,
             IntentFilter().apply {
                 addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_SCREEN_OFF)
                 addAction(Intent.ACTION_USER_PRESENT)
                 addAction(Intent.ACTION_POWER_CONNECTED)
                 addAction(Intent.ACTION_POWER_DISCONNECTED)
@@ -172,6 +178,12 @@ class AbacadAccessibilityService : AccessibilityService() {
         return super.onUnbind(intent)
     }
 
+    /** The device's power state for presence reporting: an interactive screen is "active". */
+    private fun currentActivityState(): String {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        return if (pm.isInteractive) "active" else "asleep"
+    }
+
     private fun connectFromPrefs() {
         val url = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(KEY_SERVER_URL, "")?.trim().orEmpty()
@@ -184,7 +196,7 @@ class AbacadAccessibilityService : AccessibilityService() {
             releaseSessionWakeLock()
             return
         }
-        device = DeviceClient(url, ::execute).also { it.connect() }
+        device = DeviceClient(url, ::execute) { currentActivityState() }.also { it.connect() }
         // Run at foreground-service priority + hold the socket alive through screen-off so the
         // device stays reachable while it "sleeps" (see docs/power-lockscreen.md).
         startForegroundConnection()

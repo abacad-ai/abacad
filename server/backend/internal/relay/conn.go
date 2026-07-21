@@ -85,6 +85,12 @@ type DeviceConn struct {
 
 	onCmd CommandObserver // may be nil; notified on every Send completion
 
+	// activity holds the device's last-reported power state (protocol.Activity).
+	// Defaults to active; updated by presence frames in ReadPump. It's a display
+	// signal only — the device stays reachable while asleep, so it doesn't gate
+	// command routing.
+	activity atomic.Value
+
 	reasonMu    sync.Mutex
 	closeReason string // why ReadPump exited; read after the pump returns
 
@@ -94,18 +100,43 @@ type DeviceConn struct {
 
 // NewDeviceConn wraps an accepted WebSocket. The caller must run ReadPump.
 func NewDeviceConn(deviceID string, ws *websocket.Conn) *DeviceConn {
-	return &DeviceConn{
+	c := &DeviceConn{
 		DeviceID: deviceID,
 		ws:       ws,
 		pending:  make(map[string]chan protocol.Reply),
 		streams:  make(map[uint64]*Stream),
 		closed:   make(chan struct{}),
 	}
+	c.activity.Store(protocol.ActivityActive) // assume awake until told otherwise
+	return c
 }
 
 // SetCommandObserver installs (or clears) the per-command observer. Call before
 // ReadPump starts.
 func (c *DeviceConn) SetCommandObserver(obs CommandObserver) { c.onCmd = obs }
+
+// Activity returns the device's last-reported power state. A fresh connection is
+// active until a presence frame says otherwise.
+func (c *DeviceConn) Activity() protocol.Activity {
+	if a, ok := c.activity.Load().(protocol.Activity); ok {
+		return a
+	}
+	return protocol.ActivityActive
+}
+
+// setActivity records a device-reported power state, ignoring unknown values. A
+// real transition is logged so the server trail shows when a device slept/woke.
+func (c *DeviceConn) setActivity(a protocol.Activity) {
+	if a != protocol.ActivityActive && a != protocol.ActivityAsleep {
+		return
+	}
+	prev, _ := c.activity.Load().(protocol.Activity)
+	if a == prev {
+		return
+	}
+	c.activity.Store(a)
+	log.Printf("[device] device=%s activity=%s", c.DeviceID, a)
+}
 
 // writeFrame serializes one WebSocket write. coder/websocket requires writes be
 // serialized, and commands (text) and tunnel frames (binary) share the socket,
@@ -290,6 +321,18 @@ func (c *DeviceConn) ReadPump(ctx context.Context) {
 			continue
 		}
 		if typ != websocket.MessageText {
+			continue
+		}
+		// Presence frames are unsolicited (no id) and tagged; handle them before
+		// the reply path so they don't get dropped as an unknown id.
+		var probe struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(data, &probe) == nil && probe.Type == "presence" {
+			var p protocol.Presence
+			if json.Unmarshal(data, &p) == nil {
+				c.setActivity(p.State)
+			}
 			continue
 		}
 		var reply protocol.Reply

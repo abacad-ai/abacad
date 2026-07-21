@@ -67,6 +67,28 @@ type Reply struct {
 	Error  string          `json:"error,omitempty"`
 }
 
+// Activity is a device's coarse power state, reported by the device itself. The
+// server cannot infer it: a socket kept alive through sleep (the device holds a
+// wakelock so its pings keep flowing) is byte-for-byte identical to an awake
+// one. "active" = screen interactive; "asleep" = screen off but still connected
+// and reachable (a command auto-wakes it). Unknown/absent is treated as active.
+type Activity string
+
+const (
+	ActivityActive Activity = "active"
+	ActivityAsleep Activity = "asleep"
+)
+
+// Presence is an unsolicited device -> server frame reporting a change in the
+// device's power state. Unlike a Reply it has no id — the server distinguishes
+// it by the "type":"presence" tag before the reply path. Servers that predate
+// this frame ignore it (no matching pending id), so a device may send it to any
+// server version safely.
+type Presence struct {
+	Type  string   `json:"type"` // always "presence"
+	State Activity `json:"state"`
+}
+
 // UITreeNode is one element of the on-screen accessibility tree.
 type UITreeNode struct {
 	Cls       string `json:"cls"`

@@ -10,6 +10,13 @@ import { type DeviceView } from "@/lib/api";
 
 export type FormFactor = "handset" | "desktop";
 
+// Liveness rank for sorting: active (2) > asleep (1) > offline (0). An asleep
+// device is still online, just idle, so it outranks an offline one.
+function liveness(d: DeviceView): number {
+  if (!d.online) return 0;
+  return d.activity === "asleep" ? 1 : 2;
+}
+
 export interface PlatformInfo {
   label: string;
   factor: FormFactor;
@@ -102,8 +109,9 @@ export function groupDevices(devices: DeviceView[]): PlatformGroup[] {
   return [...groups.values()]
     .map((group) => ({
       ...group,
+      // Sort within a group: active first, then asleep (still online), then offline.
       devices: [...group.devices].sort(
-        (a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name),
+        (a, b) => liveness(b) - liveness(a) || a.name.localeCompare(b.name),
       ),
     }))
     .sort((a, b) => rank(a.label) - rank(b.label) || a.label.localeCompare(b.label));

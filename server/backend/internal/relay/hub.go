@@ -1,6 +1,10 @@
 package relay
 
-import "sync"
+import (
+	"sync"
+
+	"abacad/internal/protocol"
+)
 
 // Hub maps device_id -> the single live DeviceConn for that device. A device may
 // reconnect (network blip, app restart); a new connection for an id evicts the
@@ -54,6 +58,16 @@ func (h *Hub) Get(deviceID string) (*DeviceConn, bool) {
 func (h *Hub) Online(deviceID string) bool {
 	_, ok := h.Get(deviceID)
 	return ok
+}
+
+// Activity returns a device's last-reported power state and whether it's online.
+// Offline devices report ("", false); the caller shows no activity for them.
+func (h *Hub) Activity(deviceID string) (protocol.Activity, bool) {
+	dc, ok := h.Get(deviceID)
+	if !ok {
+		return "", false
+	}
+	return dc.Activity(), true
 }
 
 // OnlineIDs returns the set of device ids with a live connection.

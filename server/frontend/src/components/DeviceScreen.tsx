@@ -23,6 +23,7 @@ export function DeviceScreen({
   factor,
   onAspect,
   onShot,
+  pauseWhenAsleep,
 }: {
   device: DeviceView;
   factor: FormFactor;
@@ -30,6 +31,11 @@ export function DeviceScreen({
   // Reports whether a real screenshot is currently on screen (online or offline)
   // vs. a placeholder — the frame drops its chrome when a screenshot is shown.
   onShot?: (shown: boolean) => void;
+  // When the device is asleep, each poll would auto-wake it. On the grid (many
+  // devices, a passing glance) we don't want that, so pass true to freeze on the
+  // last frame while asleep. The detail page leaves it off: you opened one device
+  // to look at it, so keeping the view live — waking it — is the intent.
+  pauseWhenAsleep?: boolean;
 }) {
   const [liveFrame, setLiveFrame] = useState<string | null>(null);
   const [broken, setBroken] = useState(false);
@@ -49,8 +55,9 @@ export function DeviceScreen({
   // it as the device's new last screenshot) which we preload, then swap in — so
   // the visible image never flashes to empty mid-load. The last live frame is
   // kept when the device drops, so it lingers (grayscaled) instead of vanishing.
+  const frozenAsleep = pauseWhenAsleep && device.online && device.activity === "asleep";
   useEffect(() => {
-    if (!device.online) return;
+    if (!device.online || frozenAsleep) return;
     let alive = true;
     let timer: ReturnType<typeof setTimeout>;
     let seq = 0;
@@ -76,7 +83,7 @@ export function DeviceScreen({
       alive = false;
       clearTimeout(timer);
     };
-  }, [device.online, device.id, base]);
+  }, [device.online, frozenAsleep, device.id, base]);
 
   const OfflineIcon = factor === "handset" ? Smartphone : Monitor;
   const shown = !broken ? liveFrame ?? savedFrame : null;

@@ -139,7 +139,7 @@ export function DeviceDetailPage() {
         >
           {device.name}
         </h1>
-        <StatusPill online={device.online} />
+        <StatusPill online={device.online} activity={device.activity} />
         <span className="rounded-full border border-border bg-surface px-2.5 py-1 font-mono text-[11px] font-medium uppercase tracking-wider text-ink-muted">
           {platform?.label}
         </span>
@@ -449,15 +449,22 @@ function sshCommand(sshHost: string): string {
   return `ssh -J ${jump} ${sshHost}`;
 }
 
-function StatusPill({ online }: { online: boolean }) {
+// Three honest states: Online (active, green pulse), Asleep (connected but screen
+// off — amber, steady), Offline (no socket — grey). "Asleep" is still reachable;
+// it's a heads-up that a command will wake the screen first, not an error.
+function StatusPill({ online, activity }: { online: boolean; activity?: string }) {
+  const asleep = online && activity === "asleep";
+  const label = !online ? "Offline" : asleep ? "Asleep" : "Online";
+  const wrap = !online
+    ? "bg-surface-hover text-ink-muted"
+    : asleep
+      ? "bg-warning-soft text-warning"
+      : "bg-success-soft text-success";
+  const dot = !online ? "bg-ink-subtle" : asleep ? "bg-warning" : "animate-pulse bg-success";
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider ${
-        online ? "bg-success-soft text-success" : "bg-surface-hover text-ink-muted"
-      }`}
-    >
-      <span className={`h-1.5 w-1.5 rounded-full ${online ? "animate-pulse bg-success" : "bg-ink-subtle"}`} />
-      {online ? "Online" : "Offline"}
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider ${wrap}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
+      {label}
     </span>
   );
 }

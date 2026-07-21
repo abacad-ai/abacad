@@ -30,6 +30,10 @@ import java.util.concurrent.TimeUnit
 class DeviceClient(
     rawUrl: String,
     private val executor: (method: String, params: JSONObject, done: (CmdResult) -> Unit) -> Unit,
+    // Returns the device's current power state ("active" | "asleep") so we can
+    // report it to the server on connect. The service supplies it (it knows the
+    // screen state); null means "always report active".
+    private val currentActivity: (() -> String)? = null,
 ) {
     private val tag = AbacadAccessibilityService.TAG
     private val client = OkHttpClient.Builder()
@@ -89,6 +93,21 @@ class DeviceClient(
         AbacadStatus.setState(AbacadStatus.State.DISCONNECTED, "disconnected")
     }
 
+    /**
+     * Report a power-state change ("active" | "asleep") to the server. Best-effort:
+     * dropped if the socket isn't up (on reconnect, onOpen re-reports the current
+     * state anyway). The server treats it as a display signal — an asleep device
+     * stays reachable, and any command still auto-wakes it.
+     */
+    fun sendPresence(state: String) {
+        val sock = ws ?: return
+        if (!connected) return
+        try { sock.send(presenceFrame(state)) } catch (_: Exception) {}
+    }
+
+    private fun presenceFrame(state: String): String =
+        JSONObject().put("type", "presence").put("state", state).toString()
+
     private fun isLoopback(h: String): Boolean =
         h == "127.0.0.1" || h == "::1" || h == "localhost" || h == "10.0.2.2" // 10.0.2.2 = emulator host
 
@@ -124,6 +143,9 @@ class DeviceClient(
             connected = true
             AbacadStatus.setState(AbacadStatus.State.CONNECTED, "connected to $safeUrl")
             backoffMs = 1000L
+            // Tell the server our current power state up front, so a device that
+            // connects while the screen is already off shows as asleep, not active.
+            currentActivity?.let { webSocket.send(presenceFrame(it())) }
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {

@@ -5,6 +5,7 @@ export interface DeviceView {
   id: string;
   name: string;
   online: boolean;
+  activity?: "active" | "asleep"; // present only when online; "asleep" = screen off but reachable
   platform?: string; // e.g. "android", "macos"; blank if unset
   last_seen?: string;
   created_at: string;
