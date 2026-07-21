@@ -67,6 +67,20 @@ var (
 // DefaultTimeout matches the v0 server's 15s per-command deadline.
 const DefaultTimeout = 15 * time.Second
 
+// Server-side liveness. The client already pings every 20s, but a half-open
+// socket (the phone froze in Doze, the radio dropped, a NAT rebinding) leaves
+// the server's Read blocked with no error — so without our own probe a gone
+// device lingers as "online" (worse, as "asleep") until TCP eventually breaks.
+// We ping the device on an interval and require a pong within a deadline; a miss
+// closes the socket, which drops it from the hub → honestly offline. This is
+// what makes "asleep" (still answering) mean something different from "offline"
+// (not answering). The interval sits above the client's 20s so the two don't
+// beat against each other.
+const (
+	pingInterval = 30 * time.Second
+	pongTimeout  = 10 * time.Second
+)
+
 // DeviceConn is one live device WebSocket. All exported methods are safe for
 // concurrent use: many MCP requests may target the same device at once.
 type DeviceConn struct {
@@ -91,6 +105,11 @@ type DeviceConn struct {
 	// command routing.
 	activity atomic.Value
 
+	// Liveness probe cadence; defaulted from pingInterval/pongTimeout in
+	// NewDeviceConn. Fields (not the consts directly) so tests can shrink them.
+	pingInterval time.Duration
+	pongTimeout  time.Duration
+
 	reasonMu    sync.Mutex
 	closeReason string // why ReadPump exited; read after the pump returns
 
@@ -108,6 +127,8 @@ func NewDeviceConn(deviceID string, ws *websocket.Conn) *DeviceConn {
 		closed:   make(chan struct{}),
 	}
 	c.activity.Store(protocol.ActivityActive) // assume awake until told otherwise
+	c.pingInterval = pingInterval
+	c.pongTimeout = pongTimeout
 	return c
 }
 
@@ -310,6 +331,7 @@ func classify(err error) (outcome, detail string) {
 // connection is closed and all in-flight Sends have been failed.
 func (c *DeviceConn) ReadPump(ctx context.Context) {
 	defer c.close()
+	go c.pingLoop(ctx) // probes liveness; exits when the socket closes
 	for {
 		typ, data, err := c.ws.Read(ctx)
 		if err != nil {
@@ -349,6 +371,39 @@ func (c *DeviceConn) ReadPump(ctx context.Context) {
 	}
 }
 
+// pingLoop probes the device on an interval and requires a pong within
+// pongTimeout. A miss (the peer is frozen or gone, not merely idle) records the
+// reason and closes the socket, which unblocks ReadPump and drops the device
+// from the hub. It exits when the socket closes for any reason. coder/websocket
+// requires Ping run concurrently with the reader (ReadPump), which it always is,
+// and Ping serializes its own control-frame write, so it's safe alongside Send.
+func (c *DeviceConn) pingLoop(ctx context.Context) {
+	t := time.NewTicker(c.pingInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-c.closed:
+			return
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			pctx, cancel := context.WithTimeout(ctx, c.pongTimeout)
+			err := c.ws.Ping(pctx)
+			cancel()
+			if err != nil {
+				select {
+				case <-c.closed:
+					return // already closing; the real reason is set elsewhere
+				default:
+				}
+				c.setCloseReason(fmt.Errorf("no pong within %s", c.pongTimeout))
+				c.close()
+				return
+			}
+		}
+	}
+}
+
 // close is idempotent: it closes the socket, signals closed, and fails all
 // pending waiters and live streams.
 func (c *DeviceConn) close() {
@@ -376,7 +431,9 @@ func (c *DeviceConn) Close() { c.close() }
 
 // setCloseReason records why ReadPump exited, translating a clean WebSocket close
 // into "close <code> <reason>" and leaving raw I/O errors (network drop, read
-// limit) as-is.
+// limit) as-is. First writer wins: when the ping loop closes the socket it sets
+// the true reason ("no pong…") first, and the "use of closed connection" error
+// ReadPump then observes must not clobber it.
 func (c *DeviceConn) setCloseReason(err error) {
 	reason := err.Error()
 	var ce websocket.CloseError
@@ -388,7 +445,9 @@ func (c *DeviceConn) setCloseReason(err error) {
 		}
 	}
 	c.reasonMu.Lock()
-	c.closeReason = reason
+	if c.closeReason == "" {
+		c.closeReason = reason
+	}
 	c.reasonMu.Unlock()
 }
 
