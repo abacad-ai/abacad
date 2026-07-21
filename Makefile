@@ -62,6 +62,7 @@ CODESIGN_FLAGS := --options runtime --timestamp
 endif
 
 .PHONY: dev tokens android android-release \
+        linux linux-run linux-test \
         macos macos-icon macos-dmg macos-release macos-trust-reset macos-clean \
         publish publish-macos publish-android \
         _mac-pkg-dmg _mac-notarize-app _mac-notarize-dmg
@@ -93,6 +94,22 @@ android:
 # Output: android/app/build/outputs/apk/release/app-release.apk
 android-release:
 	cd android && ./gradlew assembleRelease
+
+# ── Linux ────────────────────────────────────────────────────────────────────
+# Headless X11 device client (pure-Go, no cgo). Builds anywhere with a Go
+# toolchain. Output: linux/build/abacad
+
+# Build the daemon.
+linux:
+	cd linux && go build -o build/abacad ./cmd/abacad
+
+# Build + run against a relay: make linux-run URL=wss://host/device?token=…
+linux-run: linux
+	./linux/build/abacad --server-url "$(URL)"
+
+# Unit tests plus the headless end-to-end suite under Xvfb (skips if Xvfb absent).
+linux-test:
+	cd linux && go test ./... && go test -tags e2e -run TestXvfbE2E ./internal/e2e
 
 # ── macOS ────────────────────────────────────────────────────────────────────
 # Needs a Mac with the Swift/Xcode toolchain; these targets do not build elsewhere.

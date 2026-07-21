@@ -21,12 +21,14 @@ as the task allows and only drops down when it must:
 The **Supported Platforms** column marks per-platform status:
 
 - ✅ shipped and working
-- 🟡 planned / designed (next build — the macOS native client)
+- 🟡 native client built — the desktop clients (macOS, Linux); working but not yet
+  proven across the range of real end-user hardware/sessions
 - 🔮 envisioned (in the vision matrix, not yet designed)
 - — not applicable to that platform's form factor
 
 Platform backends: **Android** = AccessibilityService · **macOS** = AXUIElement +
-ScreenCaptureKit + CGEvent · **Windows** = UIA · **Linux** = AT-SPI / X11.
+ScreenCaptureKit + CGEvent · **Windows** = UIA · **Linux** = XGB (GetImage) +
+XTEST (input) today; AT-SPI semantic tree is the next Linux build.
 
 abacad's leverage is the **semantic** rungs (the accessibility tree). Pixel/coordinate
 operations are the escape hatch for when structure runs out (canvas, WebView, games) —
@@ -57,17 +59,24 @@ The tool surface an agent drives, split by form factor.
 
 | Capability | Rung | Description | Status |
 |---|---|---|---|
-| `screenshot` | accessibility / pixels | One frame plus the accessibility UI tree by default (`include_ui_tree`) via AXUIElement + ScreenCaptureKit — windows/controls with role, text, id, bounds. Set the param false for canvas screens. | macOS 🟡 · Windows 🔮 · Linux 🔮 |
-| `click` | pixels | Left click at absolute pixel coordinates, with optional modifier keys held. | macOS 🟡 · Windows 🔮 · Linux 🔮 |
-| `right_click` | pixels | Right / secondary click to open a context menu. | macOS 🟡 · Windows 🔮 · Linux 🔮 |
-| `drag` | pixels | Press, move, and release between two points — move a window, select a range, drag-and-drop. | macOS 🟡 · Windows 🔮 · Linux 🔮 |
-| `scroll` | pixels | Wheel / two-finger scroll by a delta at a point. | macOS 🟡 · Windows 🔮 · Linux 🔮 |
-| `input_text` | accessibility | Set the focused field's contents. Click the field to focus it first, then call. | macOS 🟡 · Windows 🔮 · Linux 🔮 |
-| `press_keys` | accessibility / pixels | Full keyboard and modifier chords (⌘-C, ⌘-Tab, Esc). | macOS 🟡 · Windows 🔮 · Linux 🔮 |
-| `composite` | accessibility / pixels | Run an ordered sequence of steps in one call — `click`/`right_click`, `drag`, `scroll`, text, key presses (incl. modifier-held clicks like ⌘-click), `wait(ms)`, and `screenshot`s — executed on-device with real timing. Two wins: batch several actions plus a final screenshot into one round-trip, and express fine-grained input the flat verbs can't (modifier-fused clicks, timing-sensitive sequences, multi-waypoint paths). The primitive the named verbs are sugar over. | macOS 🟡 · Windows 🔮 · Linux 🔮 |
+| `screenshot` | accessibility / pixels | One frame plus the accessibility UI tree by default (`include_ui_tree`) via AXUIElement + ScreenCaptureKit — windows/controls with role, text, id, bounds. Set the param false for canvas screens. | macOS 🟡 · Windows 🔮 · Linux 🟡 |
+| `click` | pixels | Left click at absolute pixel coordinates, with optional modifier keys held. | macOS 🟡 · Windows 🔮 · Linux 🟡 |
+| `right_click` | pixels | Right / secondary click to open a context menu. | macOS 🟡 · Windows 🔮 · Linux 🟡 |
+| `drag` | pixels | Press, move, and release between two points — move a window, select a range, drag-and-drop. | macOS 🟡 · Windows 🔮 · Linux 🟡 |
+| `scroll` | pixels | Wheel / two-finger scroll by a delta at a point. | macOS 🟡 · Windows 🔮 · Linux 🟡 |
+| `input_text` | accessibility | Set the focused field's contents. Click the field to focus it first, then call. | macOS 🟡 · Windows 🔮 · Linux 🟡 |
+| `press_keys` | accessibility / pixels | Full keyboard and modifier chords (⌘-C, ⌘-Tab, Esc). | macOS 🟡 · Windows 🔮 · Linux 🟡 |
+| `composite` | accessibility / pixels | Run an ordered sequence of steps in one call — `click`/`right_click`, `drag`, `scroll`, text, key presses (incl. modifier-held clicks like ⌘-click), `wait(ms)`, and `screenshot`s — executed on-device with real timing. Two wins: batch several actions plus a final screenshot into one round-trip, and express fine-grained input the flat verbs can't (modifier-fused clicks, timing-sensitive sequences, multi-waypoint paths). The primitive the named verbs are sugar over. | macOS 🟡 · Windows 🔮 · Linux 🟡 |
 | Clipboard get / set | API | Read and write the device clipboard, both directions. | macOS 🟡 · Windows 🔮 · Linux 🔮 |
-| TCP tunnel (`/connect`) | API | Raw TCP stream to a `host:port` reachable from the device — ssh, rsync, a DB client. | macOS 🟡 · Windows 🔮 · Linux 🔮 |
+| TCP tunnel (`/connect`) | API | Raw TCP stream to a `host:port` reachable from the device — ssh, rsync, a DB client. | macOS 🟡 · Windows 🔮 · Linux 🟡 |
 | File transfer (`/blobs`) | API | Generic HTTP upload / download of binary payloads by blob id. | Any ✅ |
+
+On **Linux** the input + pixel rungs above are live (XGB capture, XTEST input), but
+`screenshot` returns an **empty** UI tree (`{pkg:"", nodes:[]}`) for now — the AT-SPI
+semantic tree is the next Linux build. So a Linux device is currently pixel-driven;
+prefer coordinates from the screenshot over the (empty) tree. `input_text` types into
+the focused element rather than replacing its contents (no focused-field API without
+AT-SPI), and Wayland sessions need XWayland — see `linux/README.md`.
 
 ### Browser
 
