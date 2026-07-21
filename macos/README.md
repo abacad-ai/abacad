@@ -22,14 +22,14 @@ directly to click points.
 
 ## Build (on a Mac — needs Swift/Xcode; a Linux box cannot build this)
 
-The bundle id is `ai.abacad.mac` (set in `Info.plist` and the `Makefile`; keep the
-two in sync if you ever change it).
+The bundle id is `ai.abacad.mac` (set in `Info.plist` and the root `Makefile`; keep
+the two in sync if you ever change it). All targets live in the root `Makefile` and
+run from the repo root — there is no Makefile in this directory.
 
 ```sh
-cd macos
-# ad-hoc signing (fine for local dev):
-make
-open build/abacad.app
+# from the repo root; ad-hoc signing if no Developer ID cert is in the keychain:
+make macos
+open macos/build/abacad.app
 ```
 
 > TCC (Accessibility, Screen Recording) grants are keyed to the signing identity +
@@ -38,21 +38,23 @@ open build/abacad.app
 
 ### Distribution build (signed + notarized)
 
-`make release` produces a Gatekeeper-clean `.dmg`: Developer ID Application
+`make macos-release` produces a Gatekeeper-clean `.dmg`: Developer ID Application
 signature, hardened runtime, secure timestamp, notarized by Apple, and the
 notarization ticket stapled onto both the `.app` and the `.dmg` (so it passes
 offline, even after the app is copied out of the image).
 
 ```sh
-make release SIGN_IDENTITY="Developer ID Application: Beijing Xiaoyuanzhu Technology Co., Ltd. (R3845XW5FZ)"
-# → build/abacad.dmg   (signed, notarized, stapled)
+make macos-release SIGN_IDENTITY="Developer ID Application: Beijing Xiaoyuanzhu Technology Co., Ltd. (R3845XW5FZ)"
+# → macos/build/abacad.dmg   (signed, notarized, stapled)
 ```
 
-Team `R3845XW5FZ`. Publishing the result is a separate step: copy `build/abacad.dmg`
-into the deploy directory's `downloads/abacad-macos-latest.dmg` (infra repo,
-`deployment/xyz-sg-1/abacad.ai/`) and run its `deploy.sh`.
+Team `R3845XW5FZ`. Publishing the result is a separate step: `make publish-macos`
+copies the dmg into the local downloads directory; in production, copy
+`macos/build/abacad.dmg` into the deploy directory's
+`downloads/abacad-macos-latest.dmg` (infra repo, `deployment/xyz-sg-1/abacad.ai/`)
+and run its `deploy.sh`.
 
-**One-time notary credential setup.** `make release` reads notary credentials
+**One-time notary credential setup.** `make macos-release` reads notary credentials
 from a keychain profile named `abacad-notary` (override with `NOTARY_PROFILE`).
 Create it once with an App Store Connect API key
 (App Store Connect → Users and Access → Integrations → Keys):
@@ -66,9 +68,9 @@ xcrun notarytool store-credentials abacad-notary \
 Verify a finished build with:
 
 ```sh
-spctl -a -vv build/abacad.app                                        # → accepted / Notarized Developer ID
-spctl -a -t open --context context:primary-signature -vv build/abacad.dmg
-xcrun stapler validate build/abacad.dmg                              # offline ticket check
+spctl -a -vv macos/build/abacad.app                                  # → accepted / Notarized Developer ID
+spctl -a -t open --context context:primary-signature -vv macos/build/abacad.dmg
+xcrun stapler validate macos/build/abacad.dmg                        # offline ticket check
 ```
 
 ## Grant permissions (one-time, requires a human — cannot be scripted)
