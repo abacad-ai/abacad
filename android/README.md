@@ -43,6 +43,46 @@ export ANDROID_HOME=$HOME/Library/Android/sdk   # or just open android/ in Andro
 Needs a JDK 17+ — Android Studio bundles one:
 `export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"`.
 
+## Release builds & signing
+Android has no unsigned install path. Debug builds are auto-signed with
+`~/.android/debug.keystore` and are fine on your own phone, but the APK people download
+must be a **release** build — a debug build is `debuggable`, so anyone with ADB access to a
+user's phone could attach to a service that reads the screen and injects taps.
+
+```bash
+make android-release      # -> app/build/outputs/apk/release/app-release.apk
+make publish-android      # the above, copied into the server's downloads dir
+```
+
+The release key is **permanent**: Android refuses to install an update signed by a
+different key, so replacing it means every user must uninstall first (losing their
+pairing). It therefore lives outside the repo and outside any build tree, at
+`~/.abacad/android-release.jks`, with credentials in `~/.gradle/gradle.properties`:
+
+```properties
+abacadReleaseStoreFile=~/.abacad/android-release.jks
+abacadReleaseStorePassword=...
+abacadReleaseKeyAlias=abacad
+abacadReleaseKeyPassword=...
+```
+
+**Back that keystore up.** To create one on a new machine (or if it's ever lost — which
+strands every existing install):
+
+```bash
+keytool -genkeypair -keystore ~/.abacad/android-release.jks -storetype PKCS12 \
+  -alias abacad -keyalg RSA -keysize 4096 -validity 10950 -dname "CN=abacad, O=abacad, C=US"
+```
+
+`assembleRelease` fails with a pointer here if the properties aren't set — it never falls
+back to the debug key, because shipping one debug-signed release locks users out of every
+properly signed update afterwards. Signatures are v2 + v3 (v3 carries proof-of-rotation,
+the only path to ever changing the key without forcing uninstalls).
+
+Sideloading caveats that signing does *not* remove: users still tap through "install from
+unknown sources", and Play Protect still shows a scan warning on first install. Only Play
+Store distribution clears those.
+
 ## Use
 1. Start the server: `cd ../server && npm install && npm start` — note the machine's LAN IP.
 2. Open **abacad**, enter `ws://<server-ip>:8848/device`, tap **Save & Connect**.

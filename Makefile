@@ -12,7 +12,7 @@ BACKEND_ADDR ?= :1213
 # "abacad-downloads" (ABACAD_DOWNLOADS overrides it), so this is that directory.
 DOWNLOADS ?= server/backend/abacad-downloads
 
-.PHONY: dev typecheck tokens android android-install macos macos-run publish publish-macos publish-android
+.PHONY: dev typecheck tokens android android-release android-install macos macos-run publish publish-macos publish-android
 
 # Start the Go backend and the Vite frontend together in the foreground.
 # Open http://localhost:$(PORT). Ctrl-C stops both.
@@ -32,9 +32,17 @@ typecheck:
 tokens:
 	node design/generate.mjs
 
-# Build the debug APK. Output: android/app/build/outputs/apk/debug/app-debug.apk
+# Build the debug APK — what you install on your own phone while developing.
+# Output: android/app/build/outputs/apk/debug/app-debug.apk
 android:
 	cd android && ./gradlew assembleDebug
+
+# Build the signed release APK — what other people download. Needs the release
+# keystore configured in ~/.gradle/gradle.properties (see android/README.md);
+# the build fails loudly rather than emitting an unsigned or debug-signed APK.
+# Output: android/app/build/outputs/apk/release/app-release.apk
+android-release:
+	cd android && ./gradlew assembleRelease
 
 # Build (via the android target) and install the debug APK onto the connected device.
 android-install: android
@@ -66,6 +74,9 @@ publish-macos:
 	@mkdir -p $(DOWNLOADS)
 	cp macos/build/abacad.dmg $(DOWNLOADS)/abacad-macos-latest.dmg
 
-publish-android: android
+# The debug APK is debuggable — anyone with ADB access to a user's phone could
+# attach to a service that reads the screen and injects taps. Publish the
+# release build only.
+publish-android: android-release
 	@mkdir -p $(DOWNLOADS)
-	cp android/app/build/outputs/apk/debug/app-debug.apk $(DOWNLOADS)/abacad-android-latest.apk
+	cp android/app/build/outputs/apk/release/app-release.apk $(DOWNLOADS)/abacad-android-latest.apk
