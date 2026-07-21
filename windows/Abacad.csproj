@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RootNamespace>Abacad</RootNamespace>
+    <AssemblyName>Abacad</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+
+    <!-- Tray app: WinForms for the NotifyIcon + settings window. WPF is enabled
+         only to pull in the System.Windows.Automation (UI Automation) client
+         assemblies — the app draws no WPF UI. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
+
+    <!-- Build this Windows-targeted TFM on any OS (Linux/macOS CI), even though
+         the runtime (UIA / tray / SendInput) only executes on Windows. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+
+    <!-- PerMonitorV2 so GDI capture, UIA BoundingRectangle, and SendInput's
+         absolute coordinates all agree in physical pixels — the "1 screenshot
+         pixel == 1 click unit" invariant the macOS/Android clients hold. The
+         app.manifest declares the same; keep them in sync. -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+
+    <Product>abacad</Product>
+    <AssemblyTitle>abacad</AssemblyTitle>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- DPAPI (ProtectedData) is a separate package even on Windows-targeting
+         .NET; it encrypts the server URL (which carries the device token) at rest. -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+  </ItemGroup>
+
+</Project>
