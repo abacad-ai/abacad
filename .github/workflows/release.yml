@@ -1,0 +1,150 @@
+# Build every client and publish them to a GitHub Release.
+#
+# Trigger with a version tag:
+#
+#     git tag v0.1.0 && git push origin v0.1.0
+#
+# Each client builds on the runner that has its toolchain and signing material:
+#   - Linux (CLI/daemon) and Windows (tray) cross-build on free cloud runners.
+#   - macOS (.dmg, Developer ID + notarized) and Android (signed APK) build on
+#     the self-hosted Mac mini, where the keys live — they never touch GitHub
+#     secrets. See the repo README / Makefile header for the box's prerequisites
+#     (login-keychain Developer ID cert, `abacad-notary` profile,
+#     ~/.abacad/android-release.jks + ~/.gradle/gradle.properties).
+#
+# Artifacts are named to match the server's publishing convention
+# (abacad-<platform>-latest.<ext>, and the exact abacad-linux-{amd64,arm64}
+# names install.sh fetches), so the infra deploy can `gh release download <tag>`
+# and drop them onto the volume with no renaming.
+#
+# workflow_dispatch runs the four build jobs as a smoke test but publishes
+# nothing — the release job is gated on a v* tag.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+# One release run per ref; a newer tag push cancels an in-flight build of the
+# same ref rather than racing it to the Release.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Linux client (CLI/daemon) — pure Go, cross-compiled amd64 + arm64 ────────
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: linux/go.sum
+      - run: make linux-release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            linux/build/abacad-linux-amd64
+            linux/build/abacad-linux-arm64
+          if-no-files-found: error
+
+  # ── Windows tray app — self-contained single exe, cross-built on Linux ───────
+  # The csproj stamps its Version from the repo-root VERSION file at build time,
+  # so there is nothing to inject here — the whole monorepo shares one number.
+  windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Publish self-contained exe
+        run: |
+          dotnet publish windows/Abacad.csproj -c Release -r win-x64 \
+            --self-contained -p:PublishSingleFile=true -o windows/publish
+          cp windows/publish/Abacad.exe abacad-windows-latest.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: abacad-windows-latest.exe
+          if-no-files-found: error
+
+  # ── macOS menu-bar app — signed, notarized, stapled .dmg ─────────────────────
+  # Self-hosted Mac mini. A login zsh gives the same PATH as an interactive
+  # shell (~/.zshenv → go, ~/.zprofile → brew shellenv), which the LaunchAgent
+  # runner otherwise lacks.
+  macos:
+    runs-on: [self-hosted, macOS, ARM64]
+    defaults:
+      run:
+        shell: zsh -l -e -o pipefail {0}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build, sign & notarize
+        run: make macos-release
+      - name: Stage release name
+        run: cp macos/build/abacad.dmg abacad-macos-latest.dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: abacad-macos-latest.dmg
+          if-no-files-found: error
+
+  # ── Android app — signed release APK ─────────────────────────────────────────
+  # Same Mac mini; keystore + credentials already provisioned there.
+  android:
+    runs-on: [self-hosted, macOS, ARM64]
+    defaults:
+      run:
+        shell: zsh -l -e -o pipefail {0}
+    env:
+      JAVA_HOME: /opt/homebrew/opt/openjdk@17
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble signed release APK
+        run: |
+          export ANDROID_HOME="$HOME/Library/Android/sdk"
+          make android-release
+      - name: Stage release name
+        run: cp android/app/build/outputs/apk/release/app-release.apk abacad-android-latest.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: abacad-android-latest.apk
+          if-no-files-found: error
+
+  # ── Gather every artifact and publish the GitHub Release ─────────────────────
+  # Only on a real tag; a workflow_dispatch smoke run stops after the builds.
+  release:
+    needs: [linux, windows, macos, android]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      # Every client stamps its build from the repo-root VERSION file, so the tag
+      # must agree with it — otherwise the Release name and the binaries inside
+      # would report different versions. Bump VERSION, commit, then tag v<VERSION>.
+      - name: Tag must match VERSION
+        run: |
+          want="v$(cat VERSION)"
+          if [ "${GITHUB_REF_NAME}" != "$want" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} != v$(cat VERSION) (run 'make bump-version' and re-tag)"
+            exit 1
+          fi
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: dist/*
