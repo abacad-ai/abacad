@@ -52,13 +52,27 @@ process can already read the UIA tree, capture the screen, and inject input.
 
 ## Connect
 
+The easy path — **`abacad connect`** (device-authorization grant, no copy-paste):
+
+```
+abacad connect                       # or: abacad connect --server https://my.host
+```
+
+It prints a URL and a short code; open the URL while signed in, approve, and the
+issued credential is stored for you. Start abacad (the tray app) and the dot turns
+green — it auto-connects on every launch after that. This is the console peer of
+the Linux/macOS `abacad connect`.
+
+Or provision manually:
+
 1. Provision a Windows device on the server and copy its `wss://…/device?token=…`
-   URL. Provision with `POST /api/devices {"name":"My PC","platform":"windows"}`
-   so `list_devices` shows it as a desktop (the dashboard's add-device picker now
-   offers a **Windows** tile).
-2. Paste the URL into the panel and click **Connect**. The dot turns green.
-3. From your MCP client, target this device — desktop verbs (`click`, `scroll`,
-   `press_keys`, `composite`) now drive the PC.
+   URL (`POST /api/devices {"name":"My PC","platform":"windows"}`, or the
+   dashboard's **Windows** add-device tile).
+2. Paste the URL into the tray settings panel and click **Connect**. The dot turns
+   green.
+
+Either way, from your MCP client, target this device — desktop verbs (`click`,
+`scroll`, `press_keys`, `composite`) now drive the PC.
 
 The URL carries the device token, so it is stored encrypted at rest with **DPAPI**
 (only this Windows user account can decrypt it) and sent in the `Authorization`
