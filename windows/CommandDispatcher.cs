@@ -97,6 +97,11 @@ sealed class CommandDispatcher
                 return ScreenRecorder.Shared.Handle(p, blobs);
             }
 
+            // Live view (screen_recording live channel): view-only RFB server over
+            // the reverse-connect WebSocket.
+            case "vnc":
+                return VncServer.Shared.Handle(p);
+
             // Mobile navigation keys have no desktop analogue.
             case "back":
             case "home":

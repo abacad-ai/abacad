@@ -114,6 +114,11 @@ struct CommandDispatcher {
                 throw CmdError.message(#"screen_recording action must be "start", "stop", or "status""#)
             }
 
+        // Live view (screen_recording live channel): a view-only RFB server spoken
+        // over the reverse-connect WebSocket.
+        case "vnc":
+            return try await VNCHandler.shared.handle(params: params)
+
         // Mobile navigation keys have no desktop analogue.
         case "back", "home", "recents":
             throw CmdError.message("\(method) has no desktop analogue — use click / press_keys")

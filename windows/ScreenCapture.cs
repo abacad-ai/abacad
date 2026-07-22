@@ -35,6 +35,33 @@ static class ScreenCapture
         return new Shot(w, h, System.Convert.ToBase64String(ms.GetBuffer(), 0, (int)ms.Length));
     }
 
+    // Capture the primary display as raw 32-bit BGRX pixels (bytes B,G,R,X per
+    // pixel) — the format the VNC server sends as a Raw rectangle.
+    public static (int W, int H, byte[] Pixels) CaptureRawBGRA()
+    {
+        int w = Math.Max(1, GetSystemMetrics(SM_CXSCREEN));
+        int h = Math.Max(1, GetSystemMetrics(SM_CYSCREEN));
+
+        using var bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(bmp))
+            g.CopyFromScreen(0, 0, 0, 0, new Size(w, h), CopyPixelOperation.SourceCopy);
+
+        // Format32bppArgb is B,G,R,A in memory (little-endian) — exactly the BGRX
+        // bytes the RFB Raw rect wants (alpha byte ignored by the pixel format).
+        var data = bmp.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+        var pixels = new byte[w * h * 4];
+        try
+        {
+            for (int y = 0; y < h; y++)
+                Marshal.Copy(data.Scan0 + y * data.Stride, pixels, y * w * 4, w * 4);
+        }
+        finally
+        {
+            bmp.UnlockBits(data);
+        }
+        return (w, h, pixels);
+    }
+
     const int SM_CXSCREEN = 0, SM_CYSCREEN = 1;
 
     [DllImport("user32.dll")]

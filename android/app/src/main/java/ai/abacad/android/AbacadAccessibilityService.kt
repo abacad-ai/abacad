@@ -99,6 +99,9 @@ class AbacadAccessibilityService : AccessibilityService() {
     /** screen_recording file channel (MediaProjection -> MediaRecorder -> /blobs). */
     private val screenRecorder by lazy { ScreenRecorder(this) }
 
+    /** screen_recording live channel: view-only RFB server over reverse-connect WS. */
+    private val vncServer by lazy { VncServer(this) }
+
     /** Held for the life of the connection but only while unplugged, so pings keep firing and the
      *  socket survives Doze off-charger. On a charger there's no Doze, so we skip it (see
      *  [updateSessionWakeLock]). Distinct from [wakeLock], the transient wake-from-dark hold. */
@@ -376,6 +379,18 @@ class AbacadAccessibilityService : AccessibilityService() {
             }
             return
         }
+        // Live view: start/stop the RFB server (the long-lived session runs on its
+        // own thread). Network + capture, not a main-thread one-shot.
+        if (method == "vnc") {
+            fileIoExecutor.execute {
+                try {
+                    done(CmdResult.Ok(vncServer.handle(params)))
+                } catch (e: Exception) {
+                    done(CmdResult.Err(e.message ?: e.toString()))
+                }
+            }
+            return
+        }
         handler.post {
             ensureAwake(
                 onReady = {
@@ -437,6 +452,50 @@ class AbacadAccessibilityService : AccessibilityService() {
         }
         shotWaiters.add(ShotWaiter(includeTree, done))
         if (!shotCapturing) startShotCapture()
+    }
+
+    /**
+     * Capture the screen as raw 32-bit BGRX pixels (bytes B,G,R,X) for the VNC
+     * server's Raw framebuffer. Blocks the caller (a VNC background thread) until
+     * the async accessibility capture completes; returns null on failure.
+     */
+    internal fun captureRawBGRA(): Triple<Int, Int, ByteArray>? {
+        val latch = java.util.concurrent.CountDownLatch(1)
+        var out: Triple<Int, Int, ByteArray>? = null
+        takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
+            override fun onSuccess(result: ScreenshotResult) {
+                var hb: HardwareBuffer? = null
+                try {
+                    hb = result.hardwareBuffer
+                    val bmp = Bitmap.wrapHardwareBuffer(hb, result.colorSpace)?.copy(Bitmap.Config.ARGB_8888, false)
+                    if (bmp != null) {
+                        val w = bmp.width
+                        val h = bmp.height
+                        val px = IntArray(w * h)
+                        bmp.getPixels(px, 0, w, 0, 0, w, h)
+                        val buf = ByteArray(w * h * 4)
+                        var o = 0
+                        for (p in px) {
+                            buf[o++] = (p and 0xff).toByte() // B
+                            buf[o++] = ((p shr 8) and 0xff).toByte() // G
+                            buf[o++] = ((p shr 16) and 0xff).toByte() // R
+                            buf[o++] = 0 // X
+                        }
+                        out = Triple(w, h, buf)
+                    }
+                } catch (_: Exception) {
+                } finally {
+                    hb?.close()
+                    latch.countDown()
+                }
+            }
+
+            override fun onFailure(errorCode: Int) {
+                latch.countDown()
+            }
+        })
+        latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
+        return out
     }
 
     /** Kick one fresh capture; its outcome is delivered to every queued [shotWaiters]. */
