@@ -34,6 +34,12 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
+    <!-- Package visibility (Android 11+): so live view can detect + launch the
+         droidVNC-NG companion (the real RFB server for the live channel). -->
+    <queries>
+        <package android:name="net.christianbeier.droidvnc_ng" />
+    </queries>
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"

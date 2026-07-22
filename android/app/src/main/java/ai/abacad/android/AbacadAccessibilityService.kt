@@ -99,6 +99,10 @@ class AbacadAccessibilityService : AccessibilityService() {
     /** screen_recording file channel (MediaProjection -> MediaRecorder -> /blobs). */
     private val screenRecorder by lazy { ScreenRecorder(this) }
 
+    /** screen_recording live channel: pipes the reverse-connect WS to the
+     *  droidVNC-NG companion's localhost RFB server. */
+    private val vncPipe by lazy { VncPipe(this) }
+
     /** Held for the life of the connection but only while unplugged, so pings keep firing and the
      *  socket survives Doze off-charger. On a charger there's no Doze, so we skip it (see
      *  [updateSessionWakeLock]). Distinct from [wakeLock], the transient wake-from-dark hold. */
@@ -376,11 +380,17 @@ class AbacadAccessibilityService : AccessibilityService() {
             }
             return
         }
-        // Live view: not yet available on Android — pending a real RFB server
-        // (LibVNCServer via NDK / droidVNC-NG approach over MediaProjection), not the
-        // removed hand-rolled Raw server. Linux serves live view today (x11vnc).
+        // Live view: launch the droidVNC-NG companion (real RFB server over
+        // MediaProjection) and pipe the reverse-connect WS to it. Network + a
+        // long-lived pipe, not a main-thread one-shot.
         if (method == "vnc") {
-            done(CmdResult.Err("live view is not yet available on Android"))
+            fileIoExecutor.execute {
+                try {
+                    done(CmdResult.Ok(vncPipe.handle(params)))
+                } catch (e: Exception) {
+                    done(CmdResult.Err(e.message ?: e.toString()))
+                }
+            }
             return
         }
         handler.post {
