@@ -131,6 +131,33 @@ a {
   );
 }
 
+/* Rotating brand lockups in the landing hero. The visible word swaps with a
+   fade + slide + blur; the global reduced-motion rule below neutralises it. */
+.rot-slot {
+  display: inline-block;
+}
+
+.rot-word {
+  display: inline-block;
+  transition:
+    opacity 0.32s cubic-bezier(0.2, 0.7, 0.2, 1),
+    transform 0.32s cubic-bezier(0.2, 0.7, 0.2, 1),
+    filter 0.32s ease;
+}
+
+.rot-word.leave {
+  opacity: 0;
+  transform: translateY(-0.3em);
+  filter: blur(3px);
+}
+
+.rot-word.enter {
+  opacity: 0;
+  transform: translateY(0.42em);
+  filter: blur(3px);
+  transition: none;
+}
+
 /* Pulsing "live" dot for online status. */
 .pulse-dot {
   animation: pulse-dot 2.2s ease-in-out infinite;

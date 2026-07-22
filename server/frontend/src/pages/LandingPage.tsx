@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
 import { ArrowRight, Download, Layers, MoveRight, Plug, ShieldCheck } from "lucide-react";
 import { PublicLayout } from "@/components/PublicLayout";
+import { RotatingLockup } from "@/components/RotatingLockup";
+import { AGENTS, DEVICES } from "@/components/brandLockups";
 import { buttonVariants } from "@/components/ui/button";
 import { useAuth } from "@/auth";
 import { cn } from "@/lib/utils";
@@ -14,15 +16,20 @@ export function LandingPage() {
   return (
     <PublicLayout>
       <div className="relative z-10 mx-auto flex w-full max-w-6xl flex-1 flex-col items-center px-4 py-16 text-center sm:px-6 sm:py-24">
-        <p className="font-mono text-[11px] font-medium uppercase tracking-[0.28em] text-brand">
-          a device interface for agents
-        </p>
-        <h1 className="mt-5 max-w-3xl font-display text-4xl font-bold leading-[1.08] tracking-tight text-ink sm:text-6xl">
-          Give your agent eyes and hands.
+        <span className="inline-flex items-center gap-2 rounded-full border border-border bg-surface/60 px-3 py-1.5 font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-ink-muted">
+          <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
+          works with any MCP agent
+        </span>
+        <h1
+          className="mt-6 max-w-4xl font-display text-4xl font-bold leading-[1.14] tracking-tight text-ink sm:text-6xl"
+          aria-label="Give a device to your coding agent."
+        >
+          Give <RotatingLockup items={DEVICES} intervalMs={2600} /> to your{" "}
+          <RotatingLockup items={AGENTS} intervalMs={3000} startDelayMs={1300} />.
         </h1>
-        <p className="mt-5 max-w-2xl text-base leading-7 text-ink-muted sm:text-lg">
-          abacad turns a phone, Mac, or browser into a device an AI agent can see and control —
-          once, from anywhere, with you supervising every step.
+        <p className="mt-6 max-w-2xl text-base leading-7 text-ink-muted sm:text-lg">
+          Connect a phone, laptop, or browser as a device — then point your coding agent at one
+          endpoint and let it drive, with you approving every step.
         </p>
 
         <div className="mt-9 flex flex-col items-center gap-3 sm:flex-row">
