@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Radio, X } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { api } from "../lib/api";
 
 type State = "idle" | "connecting" | "connected" | "error";
 
-// LiveView is the noVNC panel on the device detail page: a real-time view of the
-// device screen (and, with a VNC client, control), served over the decoupled VNC
-// path — POST vnc/start mints a viewer ticket and tells the device to start its
-// VNC server + reverse-connect, then stock noVNC connects to /vnc/watch?ticket=…
-// (the browser's session cookie authorizes the watch). noVNC is loaded lazily so
-// its bundle only ships when someone opens a live session.
+// LiveView is the "Screen Recording" hero on the device detail page: a real-time
+// view of the device screen (and, with a VNC client, control), served over the
+// decoupled VNC path. POST vnc/start mints a viewer ticket and tells the device to
+// start its VNC server + reverse-connect; stock noVNC (loaded lazily) then connects
+// to /vnc/watch?ticket=… (the browser's session cookie authorizes the watch).
+//
+// It's mounted only while the Screen Recording tab is active, so it auto-connects
+// on mount and tears the session down on unmount (tab switch / leaving the page).
 export function LiveView({ deviceId, online }: { deviceId: string; online: boolean }) {
   const [state, setState] = useState<State>("idle");
   const [err, setErr] = useState("");
@@ -17,23 +19,16 @@ export function LiveView({ deviceId, online }: { deviceId: string; online: boole
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rfbRef = useRef<any>(null);
 
-  const teardown = useCallback(
-    (stopServer: boolean) => {
-      if (rfbRef.current) {
-        try {
-          rfbRef.current.disconnect();
-        } catch {
-          /* already gone */
-        }
-        rfbRef.current = null;
+  const disconnect = useCallback(() => {
+    if (rfbRef.current) {
+      try {
+        rfbRef.current.disconnect();
+      } catch {
+        /* already gone */
       }
-      if (stopServer) api.vncStop(deviceId).catch(() => {});
-    },
-    [deviceId],
-  );
-
-  // Always tear the session down when leaving the page.
-  useEffect(() => () => teardown(true), [teardown]);
+      rfbRef.current = null;
+    }
+  }, []);
 
   const start = useCallback(async () => {
     setErr("");
@@ -68,66 +63,48 @@ export function LiveView({ deviceId, online }: { deviceId: string; online: boole
     }
   }, [deviceId]);
 
-  const stop = useCallback(() => {
-    teardown(true);
-    setState("idle");
-  }, [teardown]);
-
-  const active = state === "connecting" || state === "connected";
+  // Auto-connect on mount (tab selected); tear the session down on unmount.
+  useEffect(() => {
+    if (online) start();
+    return () => {
+      disconnect();
+      api.vncStop(deviceId).catch(() => {});
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
-    <section className="mt-8">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
-          <Radio className="h-4 w-4 text-ink-muted" />
-          Live view
-        </h2>
-        {active ? (
-          <button
-            onClick={stop}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-ink-muted hover:text-ink"
-          >
-            <X className="h-3.5 w-3.5" />
-            Stop
-          </button>
-        ) : (
-          <button
-            onClick={start}
-            disabled={!online}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-ink hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Radio className="h-3.5 w-3.5" />
-            {online ? "Start live view" : "Device offline"}
-          </button>
-        )}
-      </div>
-
-      {/* The noVNC canvas mounts into this container. Kept mounted whenever a
-          session is active so the ref is stable across state changes. */}
-      <div className="relative overflow-hidden rounded-xl border border-border bg-black/80">
-        <div
-          ref={containerRef}
-          className="min-h-[240px] w-full"
-          style={{ display: active ? "block" : "none" }}
-        />
-        {state !== "connected" && (
-          <div className="flex min-h-[240px] items-center justify-center p-6 text-center text-sm text-ink-muted">
-            {state === "connecting" && (
-              <span className="inline-flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Connecting…
-              </span>
-            )}
-            {state === "error" && <span className="text-red-400">{err}</span>}
-            {state === "idle" && (
-              <span>
-                Watch the device in real time. Live view opens a VNC session over an
-                encrypted, ticketed connection.
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-    </section>
+    <div className="relative overflow-hidden rounded-[12px] border border-border bg-black/80">
+      {/* noVNC mounts its canvas here; shown only once connected so the placeholder
+          states below don't overlap it. */}
+      <div
+        ref={containerRef}
+        className="min-h-[320px] w-full"
+        style={{ display: state === "connected" ? "block" : "none" }}
+      />
+      {state !== "connected" && (
+        <div className="flex min-h-[320px] items-center justify-center p-6 text-center text-sm text-ink-muted">
+          {!online ? (
+            <span>Device is offline.</span>
+          ) : state === "error" ? (
+            <div className="space-y-3">
+              <p className="text-red-400">{err}</p>
+              <button
+                type="button"
+                onClick={start}
+                className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-ink hover:bg-surface-2"
+              >
+                Retry
+              </button>
+            </div>
+          ) : (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              {state === "connecting" ? "Connecting…" : "Starting live view…"}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

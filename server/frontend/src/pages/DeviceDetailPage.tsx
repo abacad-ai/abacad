@@ -32,6 +32,7 @@ export function DeviceDetailPage() {
   const [events, setEvents] = useState<ActivityItem[] | null>(null);
   const [aspect, setAspect] = useState<number | null>(null);
   const [hasShot, setHasShot] = useState(false);
+  const [view, setView] = useState<"screenshot" | "recording">("screenshot");
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsKey, setNeedsKey] = useState(false);
@@ -145,25 +146,42 @@ export function DeviceDetailPage() {
         <span className="rounded-full border border-border bg-surface px-2.5 py-1 font-mono text-[11px] font-medium uppercase tracking-wider text-ink-muted">
           {platform?.label}
         </span>
+
+        {/* Switch the hero between the 2s screenshot poll and the live VNC view. */}
+        <div className="inline-flex rounded-full border border-border bg-surface p-0.5 text-[11px] font-medium">
+          {(["screenshot", "recording"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setView(v)}
+              className={cn(
+                "rounded-full px-2.5 py-1 transition",
+                view === v ? "bg-surface-2 text-ink" : "text-ink-muted hover:text-ink",
+              )}
+            >
+              {v === "screenshot" ? "Screenshot" : "Screen Recording"}
+            </button>
+          ))}
+        </div>
       </header>
 
-      {/* The screenshot is the hero — it spans the full content width. The frame
-          sizes itself to the capture's aspect ratio; only handsets keep a cap so a
-          tall portrait shot doesn't blow up the page. */}
+      {/* The hero spans the full content width. Screenshot: the 2s poll, in a frame
+          that sizes to the capture's aspect ratio (handsets capped so a tall shot
+          doesn't blow up the page). Screen Recording: the live VNC view. */}
       <div className="mt-6">
-        <DeviceFrame
-          factor={factor}
-          aspect={aspect}
-          bare={hasShot}
-          maxWidth={factor === "handset" ? "max-w-[360px]" : ""}
-        >
-          <DeviceScreen device={device} factor={factor} onAspect={setAspect} onShot={setHasShot} />
-        </DeviceFrame>
+        {view === "screenshot" ? (
+          <DeviceFrame
+            factor={factor}
+            aspect={aspect}
+            bare={hasShot}
+            maxWidth={factor === "handset" ? "max-w-[360px]" : ""}
+          >
+            <DeviceScreen device={device} factor={factor} onAspect={setAspect} onShot={setHasShot} />
+          </DeviceFrame>
+        ) : (
+          <LiveView deviceId={device.id} online={device.online} />
+        )}
       </div>
-
-      {/* Live view: a real-time VNC session, opened on demand over the decoupled
-          VNC path (separate from the 2s screenshot poll above). */}
-      <LiveView deviceId={device.id} online={device.online} />
 
       {/* Setup and Access share the first row; Activities gets the full width of
           the row below. Both collapse to a single column on narrow viewports. */}
