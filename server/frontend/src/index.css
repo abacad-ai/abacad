@@ -177,7 +177,10 @@ a {
   line-height: 0;
 }
 
+/* `display: inline-block` overrides Tailwind's preflight (`svg { display: block }`),
+   which would otherwise drop each mark onto its own line and defeat the sizing. */
 .brand-mark svg {
+  display: inline-block;
   height: 0.82em;
   width: auto;
   vertical-align: -0.11em;
