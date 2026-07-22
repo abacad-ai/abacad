@@ -27,10 +27,24 @@ func newDispatcher(x *x11.Conn) *dispatcher {
 	return &dispatcher{x: x, cache: newShotCache(x, emptyTree)}
 }
 
+// displayVerbs are the methods that need a live X backend — every screen-capture
+// and input verb. On a shell-only (headless) device, where x is nil, these are
+// rejected up front rather than nil-dereferencing the absent backend; the SSH
+// tunnel lane, which bypasses the dispatcher, keeps working.
+var displayVerbs = map[string]bool{
+	"screenshot": true, "tap": true, "long_press": true, "swipe": true,
+	"input_text": true, "click": true, "right_click": true, "drag": true,
+	"scroll": true, "press_keys": true, "composite": true,
+}
+
 // execute runs a method and returns its result object, or an error.
 func (d *dispatcher) execute(method string, params map[string]any) (map[string]any, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+
+	if d.x == nil && displayVerbs[method] {
+		return nil, fmt.Errorf("%s needs a display; this is a shell-only device — drive it over SSH (run_command)", method)
+	}
 
 	// Any non-screenshot command may change the screen, so invalidate the shot
 	// cache before running it — the next screenshot must never serve a frame

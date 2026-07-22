@@ -35,6 +35,7 @@ const KNOWN_PLATFORMS: Record<string, PlatformInfo> = {
   windows: { label: "Windows", factor: "desktop" },
   win32: { label: "Windows", factor: "desktop" },
   linux: { label: "Linux", factor: "desktop" },
+  "linux-headless": { label: "Linux (headless)", factor: "desktop" },
   android: { label: "Android", factor: "handset" },
   ios: { label: "iOS", factor: "handset" },
   ipados: { label: "iPadOS", factor: "handset" },
@@ -42,9 +43,10 @@ const KNOWN_PLATFORMS: Record<string, PlatformInfo> = {
 };
 
 // The platforms you can create a device for, in picker order. Each one has a
-// client that can connect; add "linux" here once its app ships — KNOWN_PLATFORMS
-// already knows its label and frame.
-export const NEW_DEVICE_PLATFORMS = ["android", "macos", "windows", "browser"];
+// client that can connect. Headless Linux isn't offered here — a display-less
+// box enrolls itself via `abacad connect`, which reports "linux-headless" on its
+// own, rather than being hand-created in the dashboard.
+export const NEW_DEVICE_PLATFORMS = ["android", "macos", "windows", "linux", "browser"];
 
 export function platformInfo(platform: string): PlatformInfo {
   return KNOWN_PLATFORMS[platform] ?? { label: platform, factor: "desktop" };

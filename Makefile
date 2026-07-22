@@ -62,7 +62,7 @@ CODESIGN_FLAGS := --options runtime --timestamp
 endif
 
 .PHONY: dev tokens android android-release \
-        linux linux-run linux-test \
+        linux linux-release linux-run linux-test \
         macos macos-icon macos-dmg macos-release macos-trust-reset macos-clean \
         publish publish-macos publish-android \
         _mac-pkg-dmg _mac-notarize-app _mac-notarize-dmg
@@ -102,6 +102,14 @@ android-release:
 # Build the daemon.
 linux:
 	cd linux && go build -o build/abacad ./cmd/abacad
+
+# Cross-compile the release binaries install.sh serves (pure-Go → CGO off, any
+# host cross-compiles). Copy the outputs into the server's downloads dir to
+# publish. Output: linux/build/abacad-linux-{amd64,arm64}
+linux-release:
+	cd linux && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/abacad-linux-amd64 ./cmd/abacad
+	cd linux && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o build/abacad-linux-arm64 ./cmd/abacad
+	@echo "Built linux/build/abacad-linux-amd64 and -arm64"
 
 # Build + run against a relay: make linux-run URL=wss://host/device?token=…
 linux-run: linux

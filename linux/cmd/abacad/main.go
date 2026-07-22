@@ -28,6 +28,14 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
 	log.SetPrefix("abacad: ")
 
+	// `abacad connect` runs the device-authorization pairing flow and exits; a
+	// bare `abacad` (below) runs the daemon from the saved config. Branch before
+	// the daemon's flag set so connect owns its own flags.
+	if len(os.Args) > 1 && os.Args[1] == "connect" {
+		runConnect(os.Args[2:])
+		return
+	}
+
 	var flagURL, flagToken string
 	flag.StringVar(&flagURL, "server-url", "", "relay device URL, wss://host/device[?token=…]")
 	flag.StringVar(&flagToken, "token", "", "device token (alternative to ?token= in the URL)")
@@ -43,13 +51,20 @@ func main() {
 		serverURL = appendToken(serverURL, token)
 	}
 
+	// A display is optional. On a box with no X server (a rack server, a
+	// container, a cloud VM) we run shell-only: the daemon still holds the relay
+	// socket and serves the SSH tunnel, and the dispatcher cleanly rejects the
+	// screen/input verbs. Only Fatal-ing here would make headless boxes — the
+	// whole point of a CLI client — impossible to run.
 	x, err := x11.Open()
 	if err != nil {
-		log.Fatalf("cannot open display: %v", err)
+		log.Printf("no display (%v) — running shell-only; screen/input verbs are rejected, the SSH tunnel still works", err)
+		x = nil
+	} else {
+		defer x.Close()
+		w, h := x.Size()
+		log.Printf("X11 display ready (%dx%d)", w, h)
 	}
-	defer x.Close()
-	w, h := x.Size()
-	log.Printf("X11 display ready (%dx%d)", w, h)
 
 	a, err := agent.New(serverURL, x)
 	if err != nil {
