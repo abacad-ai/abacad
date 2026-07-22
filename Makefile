@@ -71,11 +71,46 @@ else
 CODESIGN_FLAGS := --options runtime --timestamp
 endif
 
-.PHONY: dev tokens bump-version version android android-release \
+.PHONY: build build-debug build-release debug release \
+        dev tokens bump-version version android android-release \
         linux linux-release linux-run linux-test \
         macos macos-icon macos-dmg macos-release macos-trust-reset macos-clean \
+        windows windows-debug windows-release \
         publish publish-macos publish-android \
         _mac-pkg-dmg _mac-notarize-app _mac-notarize-dmg
+
+# Build every client platform, both variants. Run this on macOS, the only host
+# that can build the macOS client (the others build there with their own
+# toolchains). A trailing word selects one variant:
+#
+#   make build          → debug + release for all four platforms
+#   make build debug    → debug/dev builds only (fast, local; macOS ad-hoc signed)
+#   make build release  → publishable builds only (signed; macOS notarized dmg)
+#
+# `debug`/`release` after `build` are parsed as the variant here, not run as
+# separate goals. The release half needs the macOS signing/notary setup (see
+# macos-release) and emits an UNSIGNED Windows .exe — there's no Authenticode
+# cert path yet.
+_BUILD_MODE := $(filter debug release,$(MAKECMDGOALS))
+
+build:
+ifeq ($(_BUILD_MODE),)
+	@$(MAKE) build-debug
+	@$(MAKE) build-release
+else
+	@$(MAKE) build-$(_BUILD_MODE)
+endif
+
+# No-op stubs so `make build debug` / `make build release` don't fail on an
+# unknown goal; `build` above consumes the variant word.
+debug release:
+	@:
+
+build-debug: android linux macos windows-debug
+	@echo "Built debug clients: Android, Linux, macOS, Windows (v$(VERSION))"
+
+build-release: android-release linux-release macos-release windows-release
+	@echo "Built release clients: Android, Linux, macOS, Windows (v$(VERSION))"
 
 # Start the Go backend and the Vite frontend together in the foreground.
 # Open http://localhost:$(PORT). Ctrl-C stops both.
@@ -173,6 +208,22 @@ linux-run: linux
 # Unit tests plus the headless end-to-end suite under Xvfb (skips if Xvfb absent).
 linux-test:
 	cd linux && go test ./... && go test -tags e2e -run TestXvfbE2E ./internal/e2e
+
+# ── Windows ──────────────────────────────────────────────────────────────────
+# Tray client targeting Windows 10/11. The .NET SDK can cross-build it from
+# macOS or Linux. Output: windows/bin/<Debug|Release>/net8.0-windows/
+
+# `windows` (bare) is the release build, for back-compat and `make windows`.
+windows: windows-release
+
+windows-debug:
+	dotnet build windows/Abacad.csproj -c Debug
+
+# Release config, but UNSIGNED: there's no Authenticode/code-signing cert path in
+# the repo yet, so the .exe runs but SmartScreen warns on download. TODO: sign
+# here once a cert is available.
+windows-release:
+	dotnet build windows/Abacad.csproj -c Release
 
 # ── macOS ────────────────────────────────────────────────────────────────────
 # Needs a Mac with the Swift/Xcode toolchain; these targets do not build elsewhere.
