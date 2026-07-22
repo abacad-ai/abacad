@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -383,6 +384,102 @@ var actionTools = []actionTool{
 		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"path":{"type":"string","description":"absolute source path on the device"},"max_inline_bytes":{"type":"integer","description":"cap on inlined text (default 65536); larger files return a blob id only"}},"required":["path"],"additionalProperties":false}`,
 		fileCall:    pullFile,
 	},
+
+	// --- Screen recording (file channel). Continuous capture, recorded on-device
+	// at full quality and uploaded to /blobs on stop; the agent fetches the finished
+	// clip from GET /blobs/{id}. The live (VNC) channel is a later addition. ---
+	{
+		name:        "screen_recording",
+		description: "Record the connected device's screen to a high-quality video file — the moving-picture counterpart of screenshot, for capturing a whole flow (an app test, a demo you'll edit into a promo). Drive it with action: \"start\" begins an on-device recording at full resolution and frame rate — pass file={enabled:true} and optionally audio/fps/max_duration_seconds — then keep issuing your normal verbs (tap/click/…) while it records in the background. \"stop\" finalizes the clip and begins transferring it; because a full-quality clip can be large, the upload runs in the background. \"status\" reports progress — poll it after stop until a download link appears, then fetch the bytes from GET /blobs/{id}. One recording per device at a time.",
+		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"action":{"type":"string","enum":["start","stop","status"],"description":"start a recording, stop and transfer it, or report status"},"file":{"type":"object","description":"the file channel: record to a high-quality on-device video file, transferred afterward","properties":{"enabled":{"type":"boolean","description":"turn the file channel on (required for start)"},"fps":{"type":"integer","description":"frames per second (default = native/max)"},"audio":{"type":"boolean","description":"include system audio (default false)"},"format":{"type":"string","description":"container/codec (default \"mp4\", H.264)"},"max_duration_seconds":{"type":"integer","description":"safety cap on recording length"}},"additionalProperties":false}},"required":["action"],"additionalProperties":false}`,
+		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
+			var a struct {
+				Action string `json:"action"`
+				File   *struct {
+					Enabled            *bool   `json:"enabled"`
+					FPS                *int    `json:"fps"`
+					Audio              *bool   `json:"audio"`
+					Format             *string `json:"format"`
+					MaxDurationSeconds *int    `json:"max_duration_seconds"`
+				} `json:"file"`
+			}
+			if err := json.Unmarshal(args, &a); err != nil {
+				return errorResult("invalid args: " + err.Error())
+			}
+			params := map[string]any{"action": a.Action}
+			switch a.Action {
+			case "start":
+				// Only the file channel exists today; live is not yet implemented.
+				if a.File == nil || a.File.Enabled == nil || !*a.File.Enabled {
+					return errorResult("screen_recording start requires file={enabled:true} (the live channel is not implemented yet)")
+				}
+				file := map[string]any{}
+				if a.File.FPS != nil {
+					file["fps"] = *a.File.FPS
+				}
+				if a.File.Audio != nil {
+					file["audio"] = *a.File.Audio
+				}
+				if a.File.Format != nil {
+					file["format"] = *a.File.Format
+				}
+				if a.File.MaxDurationSeconds != nil {
+					file["max_duration_seconds"] = *a.File.MaxDurationSeconds
+				}
+				params["file"] = file
+			case "stop", "status":
+				// no extra params
+			default:
+				return errorResult(`screen_recording action must be "start", "stop", or "status"`)
+			}
+			raw, err := dc.Send(ctx, protocol.MethodScreenRecording, params, commandTimeout)
+			if err != nil {
+				return errorResult(err.Error())
+			}
+			var r protocol.ScreenRecordingResult
+			if err := json.Unmarshal(raw, &r); err != nil {
+				return errorResult("bad screen_recording result: " + err.Error())
+			}
+			return textResult(formatRecording(a.Action, r))
+		},
+	},
+}
+
+// formatRecording renders a screen_recording reply for the agent, surfacing the
+// download reference (GET /blobs/{id}) once the finished clip has uploaded, and
+// otherwise nudging the agent to poll status while the transfer runs.
+func formatRecording(action string, r protocol.ScreenRecordingResult) string {
+	if r.Error != "" {
+		return fmt.Sprintf("screen_recording %s: state=%s error=%s", action, r.State, r.Error)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "screen_recording %s: state=%s", action, r.State)
+	if r.Width > 0 && r.Height > 0 {
+		fmt.Fprintf(&b, " %dx%d", r.Width, r.Height)
+	}
+	if r.FPS > 0 {
+		fmt.Fprintf(&b, " @%dfps", r.FPS)
+	}
+	if r.DurationMs > 0 {
+		fmt.Fprintf(&b, " dur=%.1fs", float64(r.DurationMs)/1000)
+	} else if r.ElapsedMs > 0 {
+		fmt.Fprintf(&b, " elapsed=%.1fs", float64(r.ElapsedMs)/1000)
+	}
+	if r.SizeBytes > 0 {
+		fmt.Fprintf(&b, " %d bytes", r.SizeBytes)
+	}
+	if r.TransferState != "" {
+		fmt.Fprintf(&b, " transfer=%s", r.TransferState)
+	}
+	if r.BlobID != "" {
+		fmt.Fprintf(&b, "\ndownload: GET /blobs/%s", r.BlobID)
+		if r.SHA256 != "" {
+			fmt.Fprintf(&b, " (sha256 %s)", r.SHA256)
+		}
+	} else if action == "stop" || r.TransferState == "uploading" {
+		b.WriteString("\n(uploading — call screen_recording action=\"status\" until the download link appears)")
+	}
+	return b.String()
 }
 
 // maxInlineDefault bounds how much of a pulled file is returned inline in the

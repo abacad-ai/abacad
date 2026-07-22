@@ -93,6 +93,28 @@ struct CommandDispatcher {
             let (id, size, sha) = try await blobs.upload(srcPath: src)
             return ["blob_id": id, "size": size, "sha256": sha]
 
+        // Screen recording (file channel). Records the display to a high-quality
+        // .mp4 on disk, then uploads it via /blobs on stop; the agent fetches the
+        // finished clip from GET /blobs/{id}. Needs the data plane to transfer.
+        case "screen_recording":
+            guard let blobs = blobClient else { throw CmdError.message("screen recording needs the /blobs data plane, which is not configured on this device") }
+            let action = params.string("action")
+            switch action {
+            case "start":
+                let file = (params["file"] as? [String: Any]) ?? [:]
+                return try await ScreenRecorder.shared.start(
+                    blobs: blobs,
+                    fps: file.int("fps", 0),
+                    audio: file.bool("audio", false),
+                    maxDurationSeconds: file.int("max_duration_seconds", 0))
+            case "stop":
+                return await ScreenRecorder.shared.stop()
+            case "status":
+                return await ScreenRecorder.shared.status()
+            default:
+                throw CmdError.message(#"screen_recording action must be "start", "stop", or "status""#)
+            }
+
         // Mobile navigation keys have no desktop analogue.
         case "back", "home", "recents":
             throw CmdError.message("\(method) has no desktop analogue — use click / press_keys")

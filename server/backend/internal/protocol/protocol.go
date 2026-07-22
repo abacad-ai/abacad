@@ -46,6 +46,14 @@ const (
 	// on-device path. A device without a filesystem verb rejects them as unknown.
 	MethodPushFile Method = "push_file" // server-staged blob -> device file
 	MethodPullFile Method = "pull_file" // device file -> blob the agent can read
+
+	// Screen recording: a continuous on-device capture, written to a local file at
+	// full quality and uploaded to /blobs on stop — the moving-picture counterpart
+	// of screenshot. One method carries the whole lifecycle via an "action" param
+	// (start|stop|status), mirroring the single screen_recording MCP tool. The bytes
+	// ride the /blobs data plane (the device uploads on stop), never this socket.
+	// The live (VNC) observation channel is a separate future addition.
+	MethodScreenRecording Method = "screen_recording"
 )
 
 // Methods is the full set of device methods, in MCP-tool order. It is the source
@@ -57,6 +65,7 @@ var Methods = []Method{
 	MethodClick, MethodRightClick, MethodDrag, MethodScroll, MethodPressKeys, MethodComposite,
 	MethodExecute,
 	MethodPushFile, MethodPullFile,
+	MethodScreenRecording,
 }
 
 // Command is server -> device. id correlates the reply.
@@ -171,4 +180,33 @@ type PullFileResult struct {
 	BlobID string `json:"blob_id"`
 	Size   int64  `json:"size"`
 	SHA256 string `json:"sha256"` // hex
+}
+
+// ScreenRecordingResult is reported by screen_recording for every action. Fields
+// are populated as the action and state warrant:
+//
+//   - start  → State = "recording".
+//   - status → State, plus ElapsedMs / SizeBytes while recording or transferring;
+//     once the finished file has uploaded, TransferState = "ready" and BlobID set.
+//   - stop   → the finalized file's metadata (Width/Height/FPS/DurationMs/SizeBytes/
+//     Codec) with TransferState = "uploading"; the upload runs in the background,
+//     so the agent polls status until TransferState = "ready" and BlobID appears.
+//
+// State walks idle → recording → stopped → uploading → ready (or failed). The
+// transfer is async because a full-quality clip can be far larger than the
+// command window; only the blob id and metadata ever cross this socket — the bytes
+// go device → /blobs over HTTP, and the agent fetches them from GET /blobs/{id}.
+type ScreenRecordingResult struct {
+	State         string `json:"state"`                 // idle | recording | stopped | uploading | ready | failed
+	ElapsedMs     int64  `json:"elapsed_ms,omitempty"`  // wall time recorded so far (status while recording)
+	DurationMs    int64  `json:"duration_ms,omitempty"` // final clip length (stop/ready)
+	Width         int    `json:"width,omitempty"`       // captured pixel dimensions
+	Height        int    `json:"height,omitempty"`
+	FPS           int    `json:"fps,omitempty"`
+	SizeBytes     int64  `json:"size_bytes,omitempty"`
+	Codec         string `json:"codec,omitempty"`          // e.g. "h264"
+	TransferState string `json:"transfer_state,omitempty"` // "" | uploading | ready | failed
+	BlobID        string `json:"blob_id,omitempty"`        // set once uploaded; fetch GET /blobs/{id}
+	SHA256        string `json:"sha256,omitempty"`         // hex, of the uploaded bytes
+	Error         string `json:"error,omitempty"`          // failure detail when State/TransferState = failed
 }
