@@ -97,10 +97,11 @@ sealed class CommandDispatcher
                 return ScreenRecorder.Shared.Handle(p, blobs);
             }
 
-            // Live view (screen_recording live channel): view-only RFB server over
-            // the reverse-connect WebSocket.
+            // Live view (screen_recording live channel): not yet available on
+            // Windows — pending a real VNC server (bundled TigerVNC / LibVNCServer),
+            // not the removed hand-rolled Raw server. Linux serves live view today.
             case "vnc":
-                return VncServer.Shared.Handle(p);
+                throw new CmdException("live view is not yet available on Windows");
 
             // Mobile navigation keys have no desktop analogue.
             case "back":
