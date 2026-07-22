@@ -69,12 +69,13 @@ type actionTool struct {
 // verbs plus the desktop verbs (click/right_click/drag/scroll/press_keys/composite).
 // The list is a global superset — a device answers the subset it implements and
 // rejects the rest as "unknown method", so no per-platform filtering is needed.
-// Each tool gains an optional device_id selector for multi-device accounts.
+// Every tool's schema leads with an optional device_id selector (the first
+// property, by convention) for multi-device accounts.
 var actionTools = []actionTool{
 	{
 		name:        "screenshot",
 		description: "Look at the connected device's screen. Returns a JPEG of the current screen and, by default, the accessibility UI tree: the foreground package plus a list of nodes, each with class, text, resource id, a clickable flag, and screen bounds [left, top, right, bottom]. Use the tree to decide what to interact with — tap the center of a node's bounds. Set include_ui_tree=false for canvas/game screens where the tree is empty or noise (you still get the image). The device is woken automatically if its screen was off.",
-		schema:      `{"type":"object","properties":{"include_ui_tree":{"type":"boolean","description":"also return the accessibility UI tree (default true)"},` + deviceIDSchema + `},"additionalProperties":false}`,
+		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"include_ui_tree":{"type":"boolean","description":"also return the accessibility UI tree (default true)"}},"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
 			var a struct {
 				IncludeUITree *bool `json:"include_ui_tree"`
@@ -103,7 +104,7 @@ var actionTools = []actionTool{
 	{
 		name:        "tap",
 		description: "Tap the connected device screen at absolute pixel coordinates. Get coordinates from a screenshot's UI tree node bounds — tap the center of the target node.",
-		schema:      `{"type":"object","properties":{"x":{"type":"integer","description":"x pixel coordinate"},"y":{"type":"integer","description":"y pixel coordinate"},` + deviceIDSchema + `},"required":["x","y"],"additionalProperties":false}`,
+		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"x":{"type":"integer","description":"x pixel coordinate"},"y":{"type":"integer","description":"y pixel coordinate"}},"required":["x","y"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
 			var a struct{ X, Y int }
 			if err := json.Unmarshal(args, &a); err != nil {
@@ -121,7 +122,7 @@ var actionTools = []actionTool{
 	{
 		name:        "long_press",
 		description: "Press and hold at absolute pixel coordinates for duration_ms (default 600). Use for context menus, drag handles, and other press-and-hold interactions where a plain tap won't do.",
-		schema:      `{"type":"object","properties":{"x":{"type":"integer","description":"x pixel coordinate"},"y":{"type":"integer","description":"y pixel coordinate"},"duration_ms":{"type":"integer","description":"hold duration in ms (default 600)"},` + deviceIDSchema + `},"required":["x","y"],"additionalProperties":false}`,
+		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"x":{"type":"integer","description":"x pixel coordinate"},"y":{"type":"integer","description":"y pixel coordinate"},"duration_ms":{"type":"integer","description":"hold duration in ms (default 600)"}},"required":["x","y"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
 			var a struct {
 				X, Y       int
@@ -146,7 +147,7 @@ var actionTools = []actionTool{
 	{
 		name:        "swipe",
 		description: "Swipe/drag on the connected device from (x1,y1) to (x2,y2) over duration_ms (default 300). Use for scrolling and navigation — e.g. to advance a vertical video feed, swipe from a lower point to a higher point (bottom -> top); a shorter duration flings faster. Absolute pixels; get screen size from a screenshot.",
-		schema:      `{"type":"object","properties":{"x1":{"type":"integer","description":"start x pixel"},"y1":{"type":"integer","description":"start y pixel"},"x2":{"type":"integer","description":"end x pixel"},"y2":{"type":"integer","description":"end y pixel"},"duration_ms":{"type":"integer","description":"gesture duration in ms (default 300)"},` + deviceIDSchema + `},"required":["x1","y1","x2","y2"],"additionalProperties":false}`,
+		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"x1":{"type":"integer","description":"start x pixel"},"y1":{"type":"integer","description":"start y pixel"},"x2":{"type":"integer","description":"end x pixel"},"y2":{"type":"integer","description":"end y pixel"},"duration_ms":{"type":"integer","description":"gesture duration in ms (default 300)"}},"required":["x1","y1","x2","y2"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
 			var a struct {
 				X1, Y1, X2, Y2 int
@@ -171,7 +172,7 @@ var actionTools = []actionTool{
 	{
 		name:        "input_text",
 		description: "Type text into the currently focused input field on the connected device. Tap the field first to focus it, then call this. Replaces the field's current contents. For submitting/searching, follow with the on-screen action button (e.g. tap the keyboard's Enter/Search key via its node).",
-		schema:      `{"type":"object","properties":{"text":{"type":"string","description":"text to place into the focused field"},` + deviceIDSchema + `},"required":["text"],"additionalProperties":false}`,
+		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"text":{"type":"string","description":"text to place into the focused field"}},"required":["text"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
 			var a struct {
 				Text string `json:"text"`
@@ -196,7 +197,7 @@ var actionTools = []actionTool{
 	{
 		name:        "click",
 		description: "(desktop) Left-click at absolute pixel coordinates, optionally holding modifier keys (for ⇧-click, ⌘-click, etc.). Get coordinates from a screenshot's UI tree node bounds — click the center of the target. Set count=2 for a double-click.",
-		schema:      `{"type":"object","properties":{"x":{"type":"integer","description":"x pixel coordinate"},"y":{"type":"integer","description":"y pixel coordinate"},"modifiers":{"type":"array","items":{"type":"string","enum":["cmd","shift","opt","ctrl"]},"description":"modifier keys held during the click"},"count":{"type":"integer","description":"click count (2 = double-click; default 1)"},` + deviceIDSchema + `},"required":["x","y"],"additionalProperties":false}`,
+		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"x":{"type":"integer","description":"x pixel coordinate"},"y":{"type":"integer","description":"y pixel coordinate"},"modifiers":{"type":"array","items":{"type":"string","enum":["cmd","shift","opt","ctrl"]},"description":"modifier keys held during the click"},"count":{"type":"integer","description":"click count (2 = double-click; default 1)"}},"required":["x","y"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
 			var a struct {
 				X, Y      int
@@ -222,7 +223,7 @@ var actionTools = []actionTool{
 	{
 		name:        "right_click",
 		description: "(desktop) Right / secondary click at absolute pixel coordinates to open a context menu.",
-		schema:      `{"type":"object","properties":{"x":{"type":"integer","description":"x pixel coordinate"},"y":{"type":"integer","description":"y pixel coordinate"},` + deviceIDSchema + `},"required":["x","y"],"additionalProperties":false}`,
+		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"x":{"type":"integer","description":"x pixel coordinate"},"y":{"type":"integer","description":"y pixel coordinate"}},"required":["x","y"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
 			var a struct{ X, Y int }
 			if err := json.Unmarshal(args, &a); err != nil {
@@ -240,7 +241,7 @@ var actionTools = []actionTool{
 	{
 		name:        "drag",
 		description: "(desktop) Press at (x1,y1), move to (x2,y2), and release — move a window, select a range, or drag-and-drop. duration_ms (default 300) paces the movement; modifiers are held for the duration.",
-		schema:      `{"type":"object","properties":{"x1":{"type":"integer"},"y1":{"type":"integer"},"x2":{"type":"integer"},"y2":{"type":"integer"},"duration_ms":{"type":"integer","description":"drag duration in ms (default 300)"},"modifiers":{"type":"array","items":{"type":"string","enum":["cmd","shift","opt","ctrl"]}},` + deviceIDSchema + `},"required":["x1","y1","x2","y2"],"additionalProperties":false}`,
+		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"x1":{"type":"integer"},"y1":{"type":"integer"},"x2":{"type":"integer"},"y2":{"type":"integer"},"duration_ms":{"type":"integer","description":"drag duration in ms (default 300)"},"modifiers":{"type":"array","items":{"type":"string","enum":["cmd","shift","opt","ctrl"]}}},"required":["x1","y1","x2","y2"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
 			var a struct {
 				X1, Y1, X2, Y2 int
@@ -266,7 +267,7 @@ var actionTools = []actionTool{
 	{
 		name:        "scroll",
 		description: "(desktop) Scroll at absolute pixel coordinates by a wheel delta. Positive dy scrolls content up (finger-down / page moves up); negative dy scrolls down. dx scrolls horizontally. Units are wheel lines.",
-		schema:      `{"type":"object","properties":{"x":{"type":"integer"},"y":{"type":"integer"},"dx":{"type":"integer","description":"horizontal wheel delta (default 0)"},"dy":{"type":"integer","description":"vertical wheel delta"},` + deviceIDSchema + `},"required":["x","y","dy"],"additionalProperties":false}`,
+		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"x":{"type":"integer"},"y":{"type":"integer"},"dx":{"type":"integer","description":"horizontal wheel delta (default 0)"},"dy":{"type":"integer","description":"vertical wheel delta"}},"required":["x","y","dy"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
 			var a struct {
 				X, Y, Dx, Dy int
@@ -286,7 +287,7 @@ var actionTools = []actionTool{
 	{
 		name:        "press_keys",
 		description: "(desktop) Press a key chord — a set of keys pressed together and released, like a person hitting ⌘-C or Esc. Use key names (\"cmd\",\"shift\",\"opt\",\"ctrl\",\"enter\",\"tab\",\"esc\",\"space\",\"delete\",\"left\",\"right\",\"up\",\"down\") and single characters (\"c\",\"a\"). Order the modifiers first, then the main key, e.g. [\"cmd\",\"c\"]. For typing prose into a field, use input_text instead.",
-		schema:      `{"type":"object","properties":{"keys":{"type":"array","items":{"type":"string"},"description":"keys pressed together as a chord, modifiers first"},` + deviceIDSchema + `},"required":["keys"],"additionalProperties":false}`,
+		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"keys":{"type":"array","items":{"type":"string"},"description":"keys pressed together as a chord, modifiers first"}},"required":["keys"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
 			var a struct {
 				Keys []string `json:"keys"`
@@ -309,7 +310,7 @@ var actionTools = []actionTool{
 	{
 		name:        "composite",
 		description: "(desktop) Run an ordered sequence of low-level steps in ONE call, executed on-device with real timing — use for precise, multi-step, or timing-sensitive input that the single-shot verbs can't express, and to batch several actions plus a screenshot into one round-trip. Each step is an object with an \"op\": pointer_down/pointer_move/pointer_up {x,y,button?}, key_down/key_up {key}, type {text}, wait {ms}, click {x,y}, or screenshot {}. Any screenshot steps return their frames in order.",
-		schema:      `{"type":"object","properties":{"steps":{"type":"array","items":{"type":"object"},"description":"ordered list of step objects, each with an op field"},` + deviceIDSchema + `},"required":["steps"],"additionalProperties":false}`,
+		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"steps":{"type":"array","items":{"type":"object"},"description":"ordered list of step objects, each with an op field"}},"required":["steps"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
 			var a struct {
 				Steps []json.RawMessage `json:"steps"`
@@ -339,7 +340,7 @@ var actionTools = []actionTool{
 	{
 		name:        "execute",
 		description: "(browser) Evaluate JavaScript inside the browser device's page and return the JSON-serialized result. This is the browser's power verb — prefer it over pixel clicks for anything structured. The code runs as the body of an async function, so you can return a value and await promises: e.g. return document.title; return [...document.querySelectorAll('a')].map(a => a.href); return await fetch('/api/x').then(r => r.json()). Use it to read page state, act by selector (document.querySelector('#go').click(); el.value = 'hi'), and build content in place (document.body.innerHTML = ...). It always has full control because it runs in the device page itself. Do NOT navigate away — location.href = '...', or clicking/submitting anything that unloads the page: a top-level navigation unloads the device client and takes the device OFFLINE with no way back until someone reopens it. A thrown error is returned as a tool error.",
-		schema:      `{"type":"object","properties":{"code":{"type":"string","description":"JavaScript to evaluate; runs as an async function body, so use return <value> to get a result back"},` + deviceIDSchema + `},"required":["code"],"additionalProperties":false}`,
+		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"code":{"type":"string","description":"JavaScript to evaluate; runs as an async function body, so use return <value> to get a result back"}},"required":["code"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
 			var a struct {
 				Code string `json:"code"`
@@ -373,13 +374,13 @@ var actionTools = []actionTool{
 	{
 		name:        "push_file",
 		description: "Write a file onto the connected device's filesystem at an absolute path. Provide the bytes inline as text (for a text file) or content_base64 (for binary); exactly one. The device fetches the bytes over HTTP and writes them, so large files are fine. Returns the bytes written and their sha256. Parent directories must already exist. This is a real filesystem write — the path is whatever you pass, subject to the device user's permissions.",
-		schema:      `{"type":"object","properties":{"path":{"type":"string","description":"absolute destination path on the device"},"content":{"type":"string","description":"file contents as UTF-8 text (use this for text files)"},"content_base64":{"type":"string","description":"file contents as base64 (use this for binary files); mutually exclusive with content"},"mode":{"type":"integer","description":"unix file mode, e.g. 493 for 0755 (default 420 = 0644)"},` + deviceIDSchema + `},"required":["path"],"additionalProperties":false}`,
+		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"path":{"type":"string","description":"absolute destination path on the device"},"content":{"type":"string","description":"file contents as UTF-8 text (use this for text files)"},"content_base64":{"type":"string","description":"file contents as base64 (use this for binary files); mutually exclusive with content"},"mode":{"type":"integer","description":"unix file mode, e.g. 493 for 0755 (default 420 = 0644)"}},"required":["path"],"additionalProperties":false}`,
 		fileCall:    pushFile,
 	},
 	{
 		name:        "pull_file",
 		description: "Read a file from the connected device's filesystem at an absolute path. The device uploads the bytes over HTTP; small text files (<= 64 KiB) are returned inline, otherwise you get the blob id, size, and sha256 and can fetch the raw bytes from GET /blobs/{id}. Use this to inspect configs, logs, or any file the device user can read.",
-		schema:      `{"type":"object","properties":{"path":{"type":"string","description":"absolute source path on the device"},"max_inline_bytes":{"type":"integer","description":"cap on inlined text (default 65536); larger files return a blob id only"},` + deviceIDSchema + `},"required":["path"],"additionalProperties":false}`,
+		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"path":{"type":"string","description":"absolute source path on the device"},"max_inline_bytes":{"type":"integer","description":"cap on inlined text (default 65536); larger files return a blob id only"}},"required":["path"],"additionalProperties":false}`,
 		fileCall:    pullFile,
 	},
 }
