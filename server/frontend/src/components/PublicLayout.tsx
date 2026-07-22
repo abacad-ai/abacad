@@ -7,8 +7,9 @@ import { useAuth } from "@/auth";
 import { cn } from "@/lib/utils";
 
 // Chrome for the signed-out public pages (homepage, downloads). The header
-// carries the brand and the sign-in actions only — no section nav, so the public
-// site stays a single path into the console rather than a second navigation
+// carries just the brand — no section nav and no auth buttons for signed-out
+// visitors (the hero owns the single "Get started" call to action), so the
+// public site stays one path into the console rather than a second navigation
 // system competing with the dashboard's.
 export function PublicLayout({ children }: { children: ReactNode }) {
   const { me } = useAuth();
@@ -32,27 +33,16 @@ export function PublicLayout({ children }: { children: ReactNode }) {
             </span>
           </Link>
 
-          <div className="ml-auto flex items-center gap-2 sm:gap-3">
-            {me ? (
+          {/* Signed-out visitors get their single "Get started" in the hero, so
+              the header stays clean — only signed-in users get a console shortcut. */}
+          {me ? (
+            <div className="ml-auto flex items-center gap-2 sm:gap-3">
               <Link to="/" className={cn(buttonVariants({ size: "sm" }))}>
                 Open console
                 <ArrowRight size={16} />
               </Link>
-            ) : (
-              <>
-                <Link
-                  to="/login"
-                  className="rounded-md px-2.5 py-1.5 text-sm font-medium text-ink-muted transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand sm:px-3"
-                >
-                  Sign in
-                </Link>
-                <Link to="/login" className={cn(buttonVariants({ size: "sm" }))}>
-                  Get started
-                  <ArrowRight size={16} />
-                </Link>
-              </>
-            )}
-          </div>
+            </div>
+          ) : null}
         </div>
       </header>
 

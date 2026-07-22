@@ -131,31 +131,66 @@ a {
   );
 }
 
-/* Rotating brand lockups in the landing hero. The visible word swaps with a
-   fade + slide + blur; the global reduced-motion rule below neutralises it. */
+/* Rotating brand lockups in the landing hero. Every item is stacked in one grid
+   cell, so the slot is always as wide/tall as the widest lockup and the words
+   around it ("Give", "to your") never reflow. Only the active item is shown; it
+   swaps with a fade + slide + blur (neutralised by the reduced-motion rule
+   below). Each icon is inlined exactly once, so marks that carry internal ids
+   (Gemini, Linux) never collide. */
 .rot-slot {
-  display: inline-block;
+  display: inline-grid;
+  justify-items: center;
 }
 
-.rot-word {
-  display: inline-block;
+.rot-item {
+  grid-area: 1 / 1;
+  opacity: 0;
   transition:
     opacity 0.32s cubic-bezier(0.2, 0.7, 0.2, 1),
     transform 0.32s cubic-bezier(0.2, 0.7, 0.2, 1),
     filter 0.32s ease;
 }
 
-.rot-word.leave {
+.rot-item.active {
+  opacity: 1;
+}
+
+.rot-item.leave {
   opacity: 0;
   transform: translateY(-0.3em);
   filter: blur(3px);
 }
 
-.rot-word.enter {
+.rot-item.enter {
   opacity: 0;
   transform: translateY(0.42em);
   filter: blur(3px);
   transition: none;
+}
+
+/* Vendored brand SVGs (brandLockups.ts) are used verbatim — size and colour are
+   applied here, from the outside, so the artwork is never edited. Marks scale to
+   the surrounding font; monochrome marks (.mono) follow the text colour. The one
+   theming wrinkle: Tux's body and Android's eyes ship pure black, which would
+   vanish in dark mode, so those exact fills are nudged to the ink token. */
+.brand-mark {
+  line-height: 0;
+}
+
+.brand-mark svg {
+  height: 0.82em;
+  width: auto;
+  vertical-align: -0.11em;
+}
+
+.brand-mark.mono svg,
+.brand-mark.mono svg * {
+  fill: currentColor;
+}
+
+.brand-mark svg path[fill="#000"],
+.brand-mark svg path[fill="#202124"] {
+  fill: var(--ink);
 }
 
 /* Pulsing "live" dot for online status. */

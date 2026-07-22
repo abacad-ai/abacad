@@ -3,16 +3,15 @@ import type { Brand } from "@/components/brandLockups";
 import { cn } from "@/lib/utils";
 
 // A single brand mark rendered inline. The SVG strings are static, sanitized
-// assets from our own design tooling (see brandLockups.ts), so injecting them is
-// safe; doing it this way keeps the official multi-path artwork byte-for-byte and
-// lets each mark size to the surrounding font (height is set in `em`).
-function BrandMark({ svg }: { svg: string }) {
+// assets vendored verbatim from thesvg.org (see brandLockups.ts), so injecting
+// them is safe. The markup is untouched: `.brand-mark` sizes it to the font and
+// handles light/dark colour externally, and `.mono` maps a black/white mark to
+// the current text colour — none of it edits the artwork.
+function BrandMark({ brand }: { brand: Brand }) {
   return (
     <span
-      className="inline-flex items-center"
-      style={{ lineHeight: 0 }}
-      aria-hidden="true"
-      dangerouslySetInnerHTML={{ __html: svg }}
+      className={cn("brand-mark", brand.mono && "mono")}
+      dangerouslySetInnerHTML={{ __html: brand.svg }}
     />
   );
 }
@@ -23,7 +22,7 @@ function Lockup({ brand }: { brand: Brand }) {
   return (
     <span className="whitespace-nowrap">
       {brand.art ? <span className="text-ink">{brand.art} </span> : null}
-      <BrandMark svg={brand.svg} />
+      <BrandMark brand={brand} />
       <span className="font-bold text-ink"> {brand.name}</span>
     </span>
   );
@@ -85,11 +84,21 @@ export function RotatingLockup({
     };
   }, [reduced, items.length, intervalMs, startDelayMs]);
 
+  // Every item is stacked in one grid cell, so the slot stays as wide as the
+  // widest lockup and the words around it never reflow. Only the active item is
+  // visible; it fades/slides/blurs on each swap. Inlining each icon exactly once
+  // keeps SVGs with internal ids (Gemini, Linux) from colliding. Hidden from the
+  // a11y tree — the <h1> carries the real, static label.
   return (
-    <span className="rot-slot">
-      <span className={cn("rot-word", phase !== "idle" && phase)}>
-        <Lockup brand={items[index]} />
-      </span>
+    <span className="rot-slot" aria-hidden="true">
+      {items.map((brand, i) => (
+        <span
+          key={i}
+          className={cn("rot-item", i === index && (phase === "idle" ? "active" : phase))}
+        >
+          <Lockup brand={brand} />
+        </span>
+      ))}
     </span>
   );
 }

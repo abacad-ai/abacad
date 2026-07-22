@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, Download, Layers, MoveRight, Plug, ShieldCheck } from "lucide-react";
+import { ArrowRight, Layers, MoveRight, Plug, ShieldCheck } from "lucide-react";
 import { PublicLayout } from "@/components/PublicLayout";
 import { RotatingLockup } from "@/components/RotatingLockup";
 import { AGENTS, DEVICES } from "@/components/brandLockups";
@@ -21,11 +21,11 @@ export function LandingPage() {
           works with any MCP agent
         </span>
         <h1
-          className="mt-6 max-w-4xl font-display text-4xl font-bold leading-[1.14] tracking-tight text-ink sm:text-6xl"
+          className="mt-6 whitespace-nowrap font-display text-[clamp(1.05rem,5.4vw,3.75rem)] font-bold leading-[1.14] tracking-tight text-ink"
           aria-label="Give a device to your coding agent."
         >
-          Give <RotatingLockup items={DEVICES} intervalMs={2600} /> to your{" "}
-          <RotatingLockup items={AGENTS} intervalMs={3000} startDelayMs={1300} />.
+          Give <RotatingLockup items={DEVICES} intervalMs={3000} /> to your{" "}
+          <RotatingLockup items={AGENTS} intervalMs={3000} startDelayMs={1500} />.
         </h1>
         <p className="mt-6 max-w-2xl text-base leading-7 text-ink-muted sm:text-lg">
           Connect a phone, laptop, or browser as a device — then point your coding agent at one
@@ -39,27 +39,12 @@ export function LandingPage() {
               <ArrowRight size={17} />
             </Link>
           ) : (
-            <>
-              <Link to="/login" className={cn(buttonVariants(), "px-5")}>
-                Get started
-                <ArrowRight size={17} />
-              </Link>
-              <Link to="/login" className={cn(buttonVariants({ variant: "outline" }), "px-5")}>
-                Sign in
-              </Link>
-            </>
+            <Link to="/login" className={cn(buttonVariants(), "px-5")}>
+              Get started
+              <ArrowRight size={17} />
+            </Link>
           )}
         </div>
-
-        {/* The clients live on their own public page — downloadable before you
-            ever make an account, so it is a plain link rather than a nav item. */}
-        <Link
-          to="/downloads"
-          className="mt-5 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium text-ink-muted transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-        >
-          <Download size={15} />
-          Download the client
-        </Link>
 
         {/* The core path: an agent reaches your devices through the relay. */}
         <div className="mt-12 flex items-center justify-center gap-2 font-mono text-[11px] uppercase tracking-[0.14em]">
