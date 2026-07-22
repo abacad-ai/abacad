@@ -31,4 +31,8 @@ export default defineConfig({
   // es2022 so noVNC's top-level await (in its RFB module) transpiles; the
   // dashboard targets current evergreen browsers.
   build: { outDir: "dist", emptyOutDir: true, target: "es2022" },
+  // The dev dependency pre-bundler is a separate esbuild pass that ignores
+  // build.target and defaults to Vite's older `modules` preset (chrome87, …),
+  // which rejects noVNC's top-level await. Match it to es2022 too.
+  optimizeDeps: { esbuildOptions: { target: "es2022" } },
 });
