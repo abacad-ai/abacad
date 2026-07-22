@@ -169,6 +169,15 @@ func main() {
 	vncMgr := vnc.NewManager(hub, "wss://"+cfg.BaseDomain, func(r *http.Request) (store.Account, error) {
 		return st.AccountBySession(auth.SessionID(r))
 	})
+	// Audit live-view session boundaries (start / viewer-connected / ended) to the
+	// activity trail — the browser side never touches the device command path, so
+	// this is where those events get recorded.
+	vncMgr.SetAudit(func(accountID, deviceID, event string) {
+		trail.Record(store.Activity{
+			AccountID: accountID, DeviceID: deviceID,
+			Kind: activity.KindCommand, Method: event, Source: "dashboard",
+		})
+	})
 
 	apiHandler := (&api.API{
 		Store: st, Hub: hub, Events: evlog, Activity: trail, Shots: shots, BaseDomain: cfg.BaseDomain,

@@ -12,6 +12,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"sync"
 	"time"
@@ -32,6 +33,9 @@ const (
 	// readLimit caps a single relayed WebSocket message. RFB framebuffer updates
 	// can be large; the device chunks them, but keep generous headroom.
 	readLimit = 16 << 20
+	// minStartInterval rate-limits session (re)starts per device, so a stuck or
+	// hostile caller can't spam the device with start/stop VNC commands.
+	minStartInterval = 2 * time.Second
 )
 
 // Account resolves the dashboard session on a /vnc/watch request to the viewing
@@ -47,10 +51,17 @@ type Manager struct {
 	ingressBase string  // e.g. "wss://abacad.ai" — device reverse-connects to ingressBase + "/vnc/ingress?token=…"
 	account     Account // dashboard-session auth for the browser watch side
 
+	// audit records a session-boundary event (opened / viewer-connected / closed)
+	// for the activity trail; set by the host. nil disables it. The device-side
+	// "vnc" command is already logged by the device handler's command observer;
+	// this covers the browser side, which never touches that path.
+	audit func(accountID, deviceID, event string)
+
 	mu        sync.Mutex
 	byDevice  map[string]*session
 	byIngress map[string]*session
 	byTicket  map[string]*session
+	lastStart map[string]time.Time // per-device cooldown to rate-limit start
 }
 
 // NewManager builds a Manager. ingressBase is the wss origin the device dials back
@@ -61,6 +72,16 @@ func NewManager(hub *relay.Hub, ingressBase string, account Account) *Manager {
 		byDevice:  map[string]*session{},
 		byIngress: map[string]*session{},
 		byTicket:  map[string]*session{},
+		lastStart: map[string]time.Time{},
+	}
+}
+
+// SetAudit installs the session-boundary audit hook.
+func (m *Manager) SetAudit(f func(accountID, deviceID, event string)) { m.audit = f }
+
+func (m *Manager) recordAudit(accountID, deviceID, event string) {
+	if m.audit != nil {
+		m.audit(accountID, deviceID, event)
 	}
 }
 
@@ -97,6 +118,16 @@ func (m *Manager) Start(ctx context.Context, deviceID, accountID string) (ticket
 	if !ok {
 		return "", time.Time{}, relay.ErrNoDevice
 	}
+
+	// Rate-limit (re)starts per device.
+	m.mu.Lock()
+	if last, ok := m.lastStart[deviceID]; ok && time.Since(last) < minStartInterval {
+		m.mu.Unlock()
+		return "", time.Time{}, errors.New("live view was just started for this device — wait a moment and retry")
+	}
+	m.lastStart[deviceID] = time.Now()
+	m.mu.Unlock()
+
 	m.Stop(deviceID) // one session per device: replace any existing
 
 	s := &session{
@@ -118,6 +149,7 @@ func (m *Manager) Start(ctx context.Context, deviceID, accountID string) (ticket
 		return "", time.Time{}, err
 	}
 
+	m.recordAudit(accountID, deviceID, "live_view_started")
 	time.AfterFunc(defaultTTL, s.close)
 	return s.ticket, s.expiresAt, nil
 }
@@ -171,11 +203,17 @@ func (m *Manager) ServeWatch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	// Single-use ticket: consume it on first use so a leaked ticket can't be
+	// replayed. The account cookie still gates every connection either way.
 	m.mu.Lock()
-	s := m.byTicket[r.URL.Query().Get("ticket")]
+	tkt := r.URL.Query().Get("ticket")
+	s := m.byTicket[tkt]
+	if s != nil {
+		delete(m.byTicket, tkt)
+	}
 	m.mu.Unlock()
 	if s == nil || s.accountID != acc.ID {
-		http.Error(w, "unknown vnc session", http.StatusNotFound)
+		http.Error(w, "unknown or already-used vnc ticket", http.StatusNotFound)
 		return
 	}
 	// noVNC historically offers the "binary" subprotocol; select it if offered.
@@ -187,6 +225,7 @@ func (m *Manager) ServeWatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c.SetReadLimit(readLimit)
+	m.recordAudit(s.accountID, s.deviceID, "live_view_viewer_connected")
 	s.attach(c, false)
 }
 
@@ -253,6 +292,7 @@ func (s *session) close() {
 		}
 		s.mgr.remove(s)
 		s.mgr.tellDeviceStop(s.deviceID)
+		s.mgr.recordAudit(s.accountID, s.deviceID, "live_view_ended")
 		close(s.done)
 	})
 }

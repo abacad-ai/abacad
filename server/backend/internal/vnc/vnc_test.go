@@ -76,4 +76,10 @@ func TestBridgePipesRFB(t *testing.T) {
 	if _, _, err := websocket.Dial(ctx, ws+"/vnc/watch?ticket=nope", nil); err == nil {
 		t.Fatal("expected watch with unknown ticket to fail")
 	}
+
+	// Single-use: the ticket was consumed when the viewer connected above, so
+	// reusing it is rejected (even though the account cookie still matches).
+	if _, _, err := websocket.Dial(ctx, ws+"/vnc/watch?ticket=tkt", nil); err == nil {
+		t.Fatal("expected reuse of a consumed ticket to fail")
+	}
 }
