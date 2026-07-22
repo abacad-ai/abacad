@@ -71,7 +71,7 @@ else
 CODESIGN_FLAGS := --options runtime --timestamp
 endif
 
-.PHONY: dev tokens bump-version android android-release \
+.PHONY: dev tokens bump-version release android android-release \
         linux linux-release linux-run linux-test \
         macos macos-icon macos-dmg macos-release macos-trust-reset macos-clean \
         publish publish-macos publish-android \
@@ -113,6 +113,28 @@ bump-version:
 	  awk -v v="$(V)" 'BEGIN{d=0} /"version":/ && d<2 {sub(/"version":[ \t]*"[^"]*"/, "\"version\": \"" v "\""); d++} {print}' "$$f" > "$$f.tmp" && mv "$$f.tmp" "$$f"; \
 	done
 	@echo "Bumped abacad to $(V) (VERSION + package.json + package-lock.json). Rebuild to stamp clients/server."
+
+# Cut a release. Prints the current version, proposes a patch bump x.y.(z+1),
+# and lets you accept it with Enter or type a different one. Then it bumps the
+# version (via bump-version), commits, tags v<version>, and pushes both — which
+# fires .github/workflows/release.yml to build, sign, notarize, and publish
+# every client to a GitHub Release. Run from an up-to-date main.
+release:
+	@cur=$$(cat VERSION); \
+	major=$${cur%%.*}; rest=$${cur#*.}; minor=$${rest%%.*}; patch=$${rest##*.}; \
+	def="$$major.$$minor.$$((patch + 1))"; \
+	printf 'Current version: %s\n' "$$cur"; \
+	printf 'New version [%s]: ' "$$def"; \
+	read v; v=$${v:-$$def}; \
+	case "$$v" in [0-9]*.[0-9]*.[0-9]*) ;; *) echo "error: not an x.y.z version: $$v" >&2; exit 1;; esac; \
+	if git rev-parse -q --verify "refs/tags/v$$v" >/dev/null 2>&1; then echo "error: tag v$$v already exists" >&2; exit 1; fi; \
+	"$${MAKE:-make}" --no-print-directory bump-version V="$$v" && \
+	{ git add VERSION; for f in server/package.json server/frontend/package.json server/package-lock.json server/frontend/package-lock.json; do [ -f "$$f" ] && git add "$$f"; done; true; } && \
+	git commit -m "release v$$v" && \
+	git tag "v$$v" && \
+	git push origin HEAD && \
+	git push origin "v$$v" && \
+	echo "Pushed v$$v — release workflow: https://github.com/abacad-ai/abacad/actions/workflows/release.yml"
 
 # ── Android ──────────────────────────────────────────────────────────────────
 
