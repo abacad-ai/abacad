@@ -23,11 +23,12 @@ type dispatcher struct {
 	cache *shotCache
 	blobs *blobClient // file transfer over the /blobs data plane; nil disables it
 	rec   *recorder   // screen_recording file channel (ffmpeg x11grab)
+	vnc   *vncHandler // screen_recording live channel (x11vnc reverse-connect)
 	mu    sync.Mutex
 }
 
 func newDispatcher(x *x11.Conn, blobs *blobClient) *dispatcher {
-	return &dispatcher{x: x, cache: newShotCache(x, emptyTree), blobs: blobs, rec: newRecorder(x, blobs)}
+	return &dispatcher{x: x, cache: newShotCache(x, emptyTree), blobs: blobs, rec: newRecorder(x, blobs), vnc: newVNCHandler()}
 }
 
 // displayVerbs are the methods that need a live X backend — every screen-capture
@@ -38,7 +39,7 @@ var displayVerbs = map[string]bool{
 	"screenshot": true, "tap": true, "long_press": true, "swipe": true,
 	"input_text": true, "click": true, "right_click": true, "drag": true,
 	"scroll": true, "press_keys": true, "composite": true,
-	"screen_recording": true,
+	"screen_recording": true, "vnc": true,
 }
 
 // execute runs a method and returns its result object, or an error.
@@ -123,6 +124,10 @@ func (d *dispatcher) execute(method string, params map[string]any) (map[string]a
 	// Screen recording (file channel): ffmpeg x11grab -> temp .mp4 -> /blobs.
 	case "screen_recording":
 		return d.rec.handle(params)
+
+	// Live view (screen_recording live channel): x11vnc + reverse-connect WS pipe.
+	case "vnc":
+		return d.vnc.handle(params)
 
 	// Mobile navigation keys have no desktop analogue.
 	case "back", "home", "recents":

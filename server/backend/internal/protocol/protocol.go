@@ -54,6 +54,15 @@ const (
 	// ride the /blobs data plane (the device uploads on stop), never this socket.
 	// The live (VNC) observation channel is a separate future addition.
 	MethodScreenRecording Method = "screen_recording"
+
+	// Live view (the screen_recording live channel). The server sends this to tell
+	// the device to start a local VNC server and reverse-connect it out to the
+	// server's VNC ingress WebSocket, or to stop it. Params: {action:"start", url,
+	// token} | {action:"stop"}. The RFB pixels ride that dedicated connection — NOT
+	// this command socket, which only carries the trigger. Server-initiated (from
+	// the dashboard or the screen_recording MCP tool), so it is not an
+	// independently agent-allowlistable method and stays out of Methods below.
+	MethodVNC Method = "vnc"
 )
 
 // Methods is the full set of device methods, in MCP-tool order. It is the source
@@ -209,4 +218,12 @@ type ScreenRecordingResult struct {
 	BlobID        string `json:"blob_id,omitempty"`        // set once uploaded; fetch GET /blobs/{id}
 	SHA256        string `json:"sha256,omitempty"`         // hex, of the uploaded bytes
 	Error         string `json:"error,omitempty"`          // failure detail when State/TransferState = failed
+}
+
+// VNCResult is reported by the vnc method: the device started or stopped its local
+// VNC server + reverse connection to the ingress. Errors come back as a failed
+// Reply (ok:false) instead, so the server can surface them.
+type VNCResult struct {
+	Started bool `json:"started,omitempty"`
+	Stopped bool `json:"stopped,omitempty"`
 }

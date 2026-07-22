@@ -35,6 +35,7 @@ import (
 	"abacad/internal/screenshot"
 	"abacad/internal/sshjump"
 	"abacad/internal/store"
+	"abacad/internal/vnc"
 	"abacad/internal/web"
 )
 
@@ -160,8 +161,18 @@ func main() {
 		Activity: trail,
 	}
 
+	// VNC live channel: the device reverse-connects a dedicated WebSocket to
+	// /vnc/ingress; a browser runs noVNC against /vnc/watch. The manager bridges
+	// them. ingressBase is the wss origin the device dials back to (prod: Caddy
+	// terminates TLS in front of this server). The browser watch side is gated by
+	// the dashboard session cookie — a human on the owning account.
+	vncMgr := vnc.NewManager(hub, "wss://"+cfg.BaseDomain, func(r *http.Request) (store.Account, error) {
+		return st.AccountBySession(auth.SessionID(r))
+	})
+
 	apiHandler := (&api.API{
 		Store: st, Hub: hub, Events: evlog, Activity: trail, Shots: shots, BaseDomain: cfg.BaseDomain,
+		VNC:            vncMgr,
 		DownloadsDir:   cfg.DownloadsDir,
 		GoogleClientID: cfg.GoogleClientID, GoogleClientSecret: cfg.GoogleClientSecret, GoogleRedirectURL: cfg.GoogleRedirectURL,
 	}).Handler()
@@ -203,6 +214,10 @@ func main() {
 	mux.HandleFunc("DELETE /mcp", methodNotAllowedMCP)
 	mux.Handle("GET /device", deviceHandler)
 	mux.Handle("GET /connect", connectHandler)
+	// VNC live channel (dedicated connections, isolated from /device and /connect):
+	// the device reverse-connects here; the browser's noVNC connects to /vnc/watch.
+	mux.Handle("GET /vnc/ingress", http.HandlerFunc(vncMgr.ServeIngress))
+	mux.Handle("GET /vnc/watch", http.HandlerFunc(vncMgr.ServeWatch))
 	mux.Handle("POST /blobs", http.HandlerFunc(blobHandler.Upload))
 	mux.Handle("GET /blobs/{id}", http.HandlerFunc(blobHandler.Download))
 	mux.Handle("/api/", apiHandler)

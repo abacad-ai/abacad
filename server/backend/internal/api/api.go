@@ -25,6 +25,7 @@ import (
 	"abacad/internal/sshjump"
 	"abacad/internal/store"
 	"abacad/internal/version"
+	"abacad/internal/vnc"
 )
 
 const sessionTTL = 30 * 24 * time.Hour
@@ -37,6 +38,7 @@ type API struct {
 	Activity   *activity.Recorder // persistent account trail (Activities page)
 	Shots      *screenshot.Store  // per-device last-screenshot cache
 	BaseDomain string             // domain devices are addressed under, for the ssh_host hint
+	VNC        *vnc.Manager       // live VNC session manager (screen_recording live channel)
 
 	// DownloadsDir is the directory of published client builds served at
 	// /downloads/; GET /api/downloads lists what it holds. See downloads.go.
@@ -96,6 +98,9 @@ func (a *API) Handler() http.Handler {
 	mux.Handle("POST /api/devices/{id}/rotate-token", a.auth(a.rotateDeviceToken))
 	mux.Handle("GET /api/devices/{id}/screenshot", a.auth(a.deviceScreenshot))
 	mux.Handle("GET /api/devices/{id}/events", a.auth(a.deviceEvents))
+	mux.Handle("POST /api/devices/{id}/vnc/start", a.auth(a.vncStart))
+	mux.Handle("POST /api/devices/{id}/vnc/stop", a.auth(a.vncStop))
+	mux.Handle("GET /api/devices/{id}/vnc/status", a.auth(a.vncStatus))
 	mux.Handle("GET /api/activities", a.auth(a.listActivities))
 
 	// Scoped API keys authenticate the agent (POST /mcp) and the tunnel (/connect).
