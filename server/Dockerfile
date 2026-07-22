@@ -26,8 +26,13 @@ COPY backend/ ./
 # embed can't reach outside the module; drop the fresh dist where //go:embed expects it.
 COPY --from=frontend /app/frontend/dist ./internal/web/dist
 ARG TARGETOS TARGETARCH
+# Stamp the monorepo version (repo-root VERSION) into the binary. The build
+# context is server/, so VERSION isn't reachable here — the deploy passes it in:
+#   docker build --build-arg ABACAD_VERSION="$(cat VERSION)" -f server/Dockerfile server
+# Left as "dev" when unset, matching a bare `go build`.
+ARG ABACAD_VERSION=dev
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -trimpath -ldflags="-s -w" -o /abacad ./cmd/abacad
+    go build -trimpath -ldflags="-s -w -X abacad/internal/version.Version=${ABACAD_VERSION}" -o /abacad ./cmd/abacad
 
 # --- runtime: minimal, non-root, data on a volume ---
 FROM alpine:3.20

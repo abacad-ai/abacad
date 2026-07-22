@@ -7,6 +7,7 @@ export interface DeviceView {
   online: boolean;
   activity?: "active" | "asleep"; // present only when online; "asleep" = screen off but reachable
   platform?: string; // e.g. "android", "macos"; blank if unset
+  version?: string; // client version reported on connect; blank if unknown
   last_seen?: string;
   created_at: string;
   ssh_host?: string; // ssh <ssh_host> reaches this device via the jump host
@@ -172,6 +173,9 @@ export const api = {
 
   // Public (no session): the downloads page works signed out.
   downloads: () => req<ClientBuild[]>("/api/downloads"),
+
+  // Public: the running server version, for the footer's server/SPA skew check.
+  version: () => req<{ version: string }>("/api/version"),
 
   devices: () => req<DeviceView[]>("/api/devices"),
   device: (id: string) => req<DeviceView>(`/api/devices/${id}`),

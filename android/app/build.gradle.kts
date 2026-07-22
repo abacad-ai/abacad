@@ -17,6 +17,19 @@ plugins {
 // keeps auto-signing them with ~/.android/debug.keystore.
 fun releaseProp(name: String) = (findProperty(name) as String?)?.takeIf { it.isNotBlank() }
 
+// One monorepo version, from the repo-root VERSION file (one level above the
+// android/ gradle root). versionName is that string verbatim; versionCode is
+// derived from it as a monotonic integer (0.4.0 -> 400, 1.2.3 -> 10203) so it
+// climbs on its own as the version climbs — no hand-maintained counter. Any
+// pre-release suffix (0.4.0-rc1) is dropped for the numeric code.
+val monorepoVersion = rootProject.file("../VERSION").readText().trim()
+val monorepoVersionCode = monorepoVersion.substringBefore("-").substringBefore("+").split(".").let {
+    val major = it.getOrNull(0)?.toIntOrNull() ?: 0
+    val minor = it.getOrNull(1)?.toIntOrNull() ?: 0
+    val patch = it.getOrNull(2)?.toIntOrNull() ?: 0
+    major * 10000 + minor * 100 + patch
+}
+
 val releaseKeystore = releaseProp("abacadReleaseStoreFile")
     ?.replaceFirst(Regex("^~"), System.getProperty("user.home"))
     ?.let { path -> File(path) }
@@ -30,8 +43,8 @@ android {
         applicationId = "ai.abacad.android"
         minSdk = 30          // Android 11 — AccessibilityService.takeScreenshot() lives here
         targetSdk = 34
-        versionCode = 3
-        versionName = "0.3-swipe"
+        versionCode = monorepoVersionCode
+        versionName = monorepoVersion
     }
 
     signingConfigs {
@@ -62,6 +75,12 @@ android {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
+    }
+
+    // BuildConfig.VERSION_NAME is what the device client reports to the relay
+    // (?version= on the dial). AGP 8 no longer generates BuildConfig unless asked.
+    buildFeatures {
+        buildConfig = true
     }
 
     compileOptions {

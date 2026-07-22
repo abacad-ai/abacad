@@ -175,6 +175,7 @@ export function DeviceDetailPage() {
           <ConnectionUrl deviceId={device.id} />
           <dl className="mt-4">
             <MetaRow label="Platform">{platform?.label}</MetaRow>
+            <MetaRow label="Client version">{device.version ? `v${device.version}` : "—"}</MetaRow>
             <MetaRow label="Last seen">
               {device.last_seen ? relativeTime(device.last_seen) : device.online ? "now" : "—"}
             </MetaRow>

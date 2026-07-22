@@ -87,9 +87,10 @@ func main() {
 			}
 			return d.ID, d.AccountID, nil
 		},
-		OnSeen:   st.TouchDevice,
-		Events:   evlog,
-		Activity: trail,
+		OnSeen:    st.TouchDevice,
+		OnVersion: st.SetDeviceVersion,
+		Events:    evlog,
+		Activity:  trail,
 	}
 
 	// Browser devices dial the same /device WebSocket but from their own subdomain
@@ -108,9 +109,10 @@ func main() {
 			}
 			return d.ID, d.AccountID, nil
 		},
-		OnSeen:   st.TouchDevice,
-		Events:   evlog,
-		Activity: trail,
+		OnSeen:    st.TouchDevice,
+		OnVersion: st.SetDeviceVersion,
+		Events:    evlog,
+		Activity:  trail,
 	}
 
 	// blobSvc is the account-scoped data-plane store, shared by the /blobs HTTP

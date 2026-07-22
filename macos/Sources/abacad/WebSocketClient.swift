@@ -46,6 +46,14 @@ final class WebSocketClient: NSObject, URLSessionWebSocketDelegate, @unchecked S
         // URL and migrate it to the header.
         authToken = comps.queryItems?.first(where: { $0.name == "token" })?.value
         comps.queryItems = comps.queryItems?.filter { $0.name != "token" }
+        // Advertise our version so the relay can show it in the dashboard /
+        // list_devices. Unlike the token it stays in the URL — the server reads
+        // ?version= off the dial. CFBundleShortVersionString is stamped from the
+        // repo-root VERSION at package time (see the macos Makefile target).
+        if comps.queryItems?.contains(where: { $0.name == "version" }) != true {
+            let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+            comps.queryItems = (comps.queryItems ?? []) + [URLQueryItem(name: "version", value: version)]
+        }
         if comps.queryItems?.isEmpty == true { comps.queryItems = nil }
         guard let u = comps.url else { return }
         closedByUser = false

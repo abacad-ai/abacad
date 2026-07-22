@@ -28,7 +28,12 @@
 
     <Product>abacad</Product>
     <AssemblyTitle>abacad</AssemblyTitle>
-    <Version>0.1.0</Version>
+    <!-- One monorepo version, read from the repo-root VERSION file (one level up
+         from windows/) at build time. Flows into AssemblyInformationalVersion,
+         which the client reports to the relay (?version= on the dial). "dev" if
+         the file is somehow absent. -->
+    <Version Condition="Exists('$(MSBuildThisFileDirectory)..\VERSION')">$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)..\VERSION').Trim())</Version>
+    <Version Condition="!Exists('$(MSBuildThisFileDirectory)..\VERSION')">dev</Version>
   </PropertyGroup>
 
   <ItemGroup>

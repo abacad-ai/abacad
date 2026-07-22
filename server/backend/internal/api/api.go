@@ -24,6 +24,7 @@ import (
 	"abacad/internal/screenshot"
 	"abacad/internal/sshjump"
 	"abacad/internal/store"
+	"abacad/internal/version"
 )
 
 const sessionTTL = 30 * 24 * time.Hour
@@ -72,6 +73,10 @@ func (a *API) Handler() http.Handler {
 
 	// Public: the client downloads page is reachable without an account.
 	mux.HandleFunc("GET /api/downloads", a.listDownloads)
+
+	// Public: the running server version, for the dashboard footer. Unauthenticated
+	// on purpose — it's the same number stamped into the served SPA and clients.
+	mux.HandleFunc("GET /api/version", a.version)
 
 	// Public: device-authorization pairing (`abacad connect`). The CLI has no
 	// session yet, so start/poll are unauthenticated; the human-facing approve
@@ -123,6 +128,12 @@ func (a *API) auth(next http.HandlerFunc) http.Handler {
 func account(r *http.Request) store.Account {
 	acc, _ := r.Context().Value(accountKey).(store.Account)
 	return acc
+}
+
+// version reports the running server build. Same monorepo number as the SPA and
+// clients; the footer shows it so version skew is visible at a glance.
+func (a *API) version(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"version": version.Version})
 }
 
 // --- auth handlers ---
@@ -214,6 +225,7 @@ type deviceView struct {
 	Online       bool   `json:"online"`
 	Activity     string `json:"activity,omitempty"` // "active" | "asleep" when online; absent when offline
 	Platform     string `json:"platform,omitempty"` // e.g. "android", "macos"; blank if unset
+	Version      string `json:"version,omitempty"`  // client version reported on connect; blank if unknown
 	LastSeen     string `json:"last_seen,omitempty"`
 	CreatedAt    string `json:"created_at"`
 	SSHHost      string `json:"ssh_host,omitempty"`      // ssh <ssh_host> reaches this device via the jump
@@ -747,6 +759,7 @@ func (a *API) viewDevice(d store.Device) deviceView {
 		Name:      d.Name,
 		Online:    a.Hub.Online(d.ID),
 		Platform:  d.Platform,
+		Version:   d.Version,
 		CreatedAt: time.Unix(d.CreatedAt, 0).UTC().Format(time.RFC3339),
 	}
 	if act, ok := a.Hub.Activity(d.ID); ok {

@@ -1,6 +1,6 @@
 {
   "name": "abacad-test-harness",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "Node test harness for the abacad Go server: a mock device + MCP-client smoke tests.",

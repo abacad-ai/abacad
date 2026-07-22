@@ -43,6 +43,7 @@ type DeviceSummary struct {
 	Name     string `json:"name"`
 	Online   bool   `json:"online"`
 	Platform string `json:"platform,omitempty"` // e.g. "android", "macos"; blank if unset
+	Version  string `json:"version,omitempty"`  // client version reported on connect; blank if unknown
 	LastSeen string `json:"last_seen,omitempty"`
 }
 

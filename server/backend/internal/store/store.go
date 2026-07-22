@@ -52,6 +52,7 @@ type Device struct {
 	Platform  string
 	CreatedAt int64
 	LastSeen  int64
+	Version   string // last version the client reported on connect; "" if never
 }
 
 // Open opens (creating if needed) the SQLite database at path and runs
@@ -81,6 +82,12 @@ func (s *Store) Close() error { return s.db.Close() }
 // idempotent (CREATE TABLE IF NOT EXISTS ...), so re-running the whole set on
 // each boot is safe — this doubles as the "apply new migrations" path without a
 // version table.
+//
+// The one shape pure SQL can't make idempotent is `ALTER TABLE ... ADD COLUMN`:
+// SQLite has no `IF NOT EXISTS` for it, so the second boot re-runs it and errors
+// "duplicate column name". That error is benign and can only mean the column is
+// already there, so we treat it as a no-op — keeping the re-run-every-boot model
+// intact while still allowing additive column migrations.
 func (s *Store) migrate() error {
 	entries, err := fs.ReadDir(migrationsFS, "migrations")
 	if err != nil {
@@ -99,6 +106,9 @@ func (s *Store) migrate() error {
 			return err
 		}
 		if _, err := s.db.Exec(string(sqlBytes)); err != nil {
+			if strings.Contains(err.Error(), "duplicate column name") {
+				continue // ADD COLUMN already applied on an earlier boot
+			}
 			return fmt.Errorf("migration %s: %w", name, err)
 		}
 	}
@@ -257,7 +267,7 @@ func (s *Store) CreateDevice(accountID, name, platform string) (Device, string, 
 // DeviceByTokenHash resolves a device token (already hashed) to its device.
 func (s *Store) DeviceByTokenHash(tokenHash string) (Device, error) {
 	return s.scanDevice(s.db.QueryRow(
-		`SELECT id,account_id,name,platform,created_at,last_seen FROM devices WHERE token_hash=?`, tokenHash))
+		`SELECT id,account_id,name,platform,created_at,last_seen,version FROM devices WHERE token_hash=?`, tokenHash))
 }
 
 // DeviceByID resolves a device by its (non-secret) id alone. Used by the browser
@@ -266,20 +276,20 @@ func (s *Store) DeviceByTokenHash(tokenHash string) (Device, error) {
 // that rely on it (only the Host router) must intend exactly that.
 func (s *Store) DeviceByID(deviceID string) (Device, error) {
 	return s.scanDevice(s.db.QueryRow(
-		`SELECT id,account_id,name,platform,created_at,last_seen FROM devices WHERE id=?`, deviceID))
+		`SELECT id,account_id,name,platform,created_at,last_seen,version FROM devices WHERE id=?`, deviceID))
 }
 
 // DeviceOwnedBy returns a device only if it belongs to accountID.
 func (s *Store) DeviceOwnedBy(deviceID, accountID string) (Device, error) {
 	return s.scanDevice(s.db.QueryRow(
-		`SELECT id,account_id,name,platform,created_at,last_seen FROM devices WHERE id=? AND account_id=?`,
+		`SELECT id,account_id,name,platform,created_at,last_seen,version FROM devices WHERE id=? AND account_id=?`,
 		deviceID, accountID))
 }
 
 // DevicesByAccount lists an account's devices, most-recently-active first.
 func (s *Store) DevicesByAccount(accountID string) ([]Device, error) {
 	rows, err := s.db.Query(
-		`SELECT id,account_id,name,platform,created_at,last_seen FROM devices
+		`SELECT id,account_id,name,platform,created_at,last_seen,version FROM devices
 		  WHERE account_id=? ORDER BY last_seen DESC, created_at DESC`, accountID)
 	if err != nil {
 		return nil, err
@@ -288,7 +298,7 @@ func (s *Store) DevicesByAccount(accountID string) ([]Device, error) {
 	var out []Device
 	for rows.Next() {
 		var d Device
-		if err := rows.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen); err != nil {
+		if err := rows.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen, &d.Version); err != nil {
 			return nil, err
 		}
 		out = append(out, d)
@@ -319,9 +329,19 @@ func (s *Store) TouchDevice(deviceID string) {
 	_, _ = s.db.Exec(`UPDATE devices SET last_seen=? WHERE id=?`, now(), deviceID)
 }
 
+// SetDeviceVersion records the version a client reported on connect. A blank
+// version (older client that doesn't report one) is ignored so it doesn't erase
+// a version an earlier connect captured. Best-effort, like TouchDevice.
+func (s *Store) SetDeviceVersion(deviceID, version string) {
+	if version == "" {
+		return
+	}
+	_, _ = s.db.Exec(`UPDATE devices SET version=? WHERE id=?`, version, deviceID)
+}
+
 func (s *Store) scanDevice(row *sql.Row) (Device, error) {
 	var d Device
-	err := row.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen)
+	err := row.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen, &d.Version)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Device{}, ErrNotFound
 	}

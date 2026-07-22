@@ -1,4 +1,5 @@
 using System.Net.WebSockets;
+using System.Reflection;
 using System.Text;
 
 namespace Abacad;
@@ -173,7 +174,24 @@ sealed class WebSocketClient
             if (key == "token") token = Uri.UnescapeDataString(eq >= 0 ? pair[(eq + 1)..] : "");
             else kept.Add(pair);
         }
+        // Advertise our version so the relay can show it in the dashboard /
+        // list_devices. Unlike the token it rides in the URL — the server reads
+        // ?version= off the dial.
+        if (!kept.Any(p => p.StartsWith("version=", StringComparison.Ordinal)))
+            kept.Add("version=" + Uri.EscapeDataString(AppVersion.Current));
         var b = new UriBuilder(u) { Query = string.Join('&', kept) };
         return (b.Uri, token);
     }
+}
+
+// AppVersion is the one monorepo version, taken from the assembly's informational
+// version — which the .csproj sets from the repo-root VERSION file at build time.
+// Any build-metadata suffix the SDK appends (e.g. "0.4.0+<gitsha>") is trimmed.
+static class AppVersion
+{
+    public static string Current { get; } =
+        (Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion ?? "dev")
+        .Split('+')[0];
 }

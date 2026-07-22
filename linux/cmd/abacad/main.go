@@ -21,6 +21,7 @@ import (
 	"syscall"
 
 	"abacad-linux/internal/agent"
+	"abacad-linux/internal/version"
 	"abacad-linux/internal/x11"
 )
 
@@ -49,6 +50,12 @@ func main() {
 	}
 	if token != "" && !strings.Contains(serverURL, "token=") {
 		serverURL = appendToken(serverURL, token)
+	}
+	// Advertise our version so the relay can show it in the dashboard / list_devices.
+	// The agent lifts ?token= into a header but leaves other query params, so this
+	// rides through to the server as ?version=.
+	if !strings.Contains(serverURL, "version=") {
+		serverURL = appendParam(serverURL, "version", version.Version)
 	}
 
 	// A display is optional. On a box with no X server (a rack server, a
@@ -107,11 +114,17 @@ func loadConfigFile() map[string]string {
 }
 
 func appendToken(rawURL, token string) string {
+	return appendParam(rawURL, "token", token)
+}
+
+// appendParam adds key=value to a URL's query, choosing ? or & as needed. Values
+// here are our own version/token strings (no reserved chars), so no escaping.
+func appendParam(rawURL, key, value string) string {
 	sep := "?"
 	if strings.Contains(rawURL, "?") {
 		sep = "&"
 	}
-	return rawURL + sep + "token=" + token
+	return rawURL + sep + key + "=" + value
 }
 
 func firstNonEmpty(vals ...string) string {

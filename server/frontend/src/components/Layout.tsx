@@ -1,7 +1,7 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { LogOut } from "lucide-react";
 import { RelayMark } from "@/components/RelayMark";
-import { type ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/auth";
 import { cn } from "@/lib/utils";
@@ -89,7 +89,36 @@ export function Layout({ children }: { children: ReactNode }) {
       <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-6xl px-4 pb-16 pt-8 outline-none sm:px-6 sm:pt-10">
         {children}
       </main>
+
+      <VersionFooter />
     </div>
+  );
+}
+
+// VersionFooter shows the one monorepo version the server is running. The Go
+// binary embeds this SPA build, so the served dashboard and the server are always
+// the same build — one fetched number is the whole story. Silent until it loads
+// (and if the fetch fails), so a blip never shows a wrong version.
+function VersionFooter() {
+  const [version, setVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .version()
+      .then((v) => alive && setVersion(v.version))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (!version) return null;
+
+  return (
+    <footer className="mx-auto w-full max-w-6xl px-4 pb-8 sm:px-6">
+      <p className="text-center font-mono text-[11px] tracking-wide text-ink-subtle">abacad v{version}</p>
+    </footer>
   );
 }
 

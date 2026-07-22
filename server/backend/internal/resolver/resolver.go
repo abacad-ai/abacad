@@ -94,7 +94,7 @@ func (a *accountResolver) List(_ context.Context) ([]mcp.DeviceSummary, error) {
 		if !a.scope.AllowsDevice(d.ID) {
 			continue // don't reveal devices this key can't reach
 		}
-		s := mcp.DeviceSummary{DeviceID: d.ID, Name: d.Name, Online: a.hub.Online(d.ID), Platform: d.Platform}
+		s := mcp.DeviceSummary{DeviceID: d.ID, Name: d.Name, Online: a.hub.Online(d.ID), Platform: d.Platform, Version: d.Version}
 		if d.LastSeen > 0 {
 			s.LastSeen = time.Unix(d.LastSeen, 0).UTC().Format(time.RFC3339)
 		}

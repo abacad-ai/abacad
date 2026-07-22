@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
+	"abacad/internal/version"
 )
 
 const (
-	serverName    = "abacad"
-	serverVersion = "0.2.0"
+	serverName = "abacad"
 	// Protocol version we advertise if the client doesn't request one.
 	defaultProtocolVersion = "2025-06-18"
 )
@@ -38,19 +39,19 @@ func dispatch(ctx context.Context, req request, resolver DeviceResolver, scope S
 }
 
 func initializeResult(params json.RawMessage) map[string]any {
-	version := defaultProtocolVersion
+	protoVer := defaultProtocolVersion
 	if len(params) > 0 {
 		var p struct {
 			ProtocolVersion string `json:"protocolVersion"`
 		}
 		if err := json.Unmarshal(params, &p); err == nil && p.ProtocolVersion != "" {
-			version = p.ProtocolVersion // echo what the client asked for
+			protoVer = p.ProtocolVersion // echo what the client asked for
 		}
 	}
 	return map[string]any{
-		"protocolVersion": version,
+		"protocolVersion": protoVer,
 		"capabilities":    map[string]any{"tools": map[string]any{}},
-		"serverInfo":      map[string]any{"name": serverName, "version": serverVersion},
+		"serverInfo":      map[string]any{"name": serverName, "version": version.Version},
 	}
 }
 

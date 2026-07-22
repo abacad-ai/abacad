@@ -38,13 +38,19 @@ type Resolver func(r *http.Request) (deviceID, accountID string, err error)
 // can update last_seen. nil is fine.
 type Seen func(deviceID string)
 
+// Reported is an optional hook fired once on connect with the version the client
+// advertised in the dial (?version=<v>), so the store can record it. Blank when
+// the client doesn't report one; a nil hook is fine.
+type Reported func(deviceID, version string)
+
 // Handler builds the /device HTTP handler.
 type Handler struct {
-	Hub      *relay.Hub
-	Resolve  Resolver
-	OnSeen   Seen
-	Events   *events.Log        // per-device live ring; may be nil
-	Activity *activity.Recorder // persistent account trail; may be nil
+	Hub       *relay.Hub
+	Resolve   Resolver
+	OnSeen    Seen
+	OnVersion Reported           // records the client-reported version; may be nil
+	Events    *events.Log        // per-device live ring; may be nil
+	Activity  *activity.Recorder // persistent account trail; may be nil
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -72,7 +78,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.OnSeen != nil {
 		h.OnSeen(deviceID)
 	}
-	log.Printf("[device] connected: %s from %s", deviceID, r.RemoteAddr)
+	reportedVersion := r.URL.Query().Get("version")
+	if h.OnVersion != nil {
+		h.OnVersion(deviceID, reportedVersion)
+	}
+	log.Printf("[device] connected: %s from %s (client %s)", deviceID, r.RemoteAddr, versionLabel(reportedVersion))
 
 	dc := relay.NewDeviceConn(deviceID, c)
 	dc.SetCommandObserver(func(rec relay.CommandRecord) {
@@ -113,4 +123,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		AccountID: accountID, DeviceID: deviceID,
 		Kind: activity.KindDisconnected, DurationMs: uptime.Milliseconds(), Detail: reason,
 	})
+}
+
+// versionLabel renders a reported client version for the connect log, naming the
+// absence explicitly so an old (non-reporting) client is distinguishable from a
+// gap in the logs.
+func versionLabel(v string) string {
+	if v == "" {
+		return "version unknown"
+	}
+	return "v" + v
 }

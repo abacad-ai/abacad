@@ -59,6 +59,13 @@ class DeviceClient(
             if (name == "token") continue
             for (v in uri.getQueryParameters(name)) b.appendQueryParameter(name, v)
         }
+        // Advertise our version so the relay can show it in the dashboard /
+        // list_devices. Unlike the token it rides in the URL — the server reads
+        // ?version= off the dial. VERSION_NAME comes from the repo-root VERSION
+        // file (see android/app/build.gradle.kts).
+        if (uri.getQueryParameter("version") == null) {
+            b.appendQueryParameter("version", BuildConfig.VERSION_NAME)
+        }
         b.build().toString()
     }
 

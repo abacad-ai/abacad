@@ -9,6 +9,10 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 
+# Monorepo version (repo-root VERSION), stamped into the binary via ldflags so
+# the MCP serverInfo / GET /api/version report the real build. "dev" if absent.
+version="$(cat "$here/../VERSION" 2>/dev/null || echo dev)"
+
 echo "== building frontend =="
 cd "$here/frontend"
 npm install
@@ -18,8 +22,8 @@ echo "== embedding dist into backend =="
 rm -rf "$here/backend/internal/web/dist"
 cp -r "$here/frontend/dist" "$here/backend/internal/web/dist"
 
-echo "== building backend =="
+echo "== building backend (v$version) =="
 cd "$here/backend"
-go build -o abacad ./cmd/abacad
+go build -ldflags "-X abacad/internal/version.Version=$version" -o abacad ./cmd/abacad
 
-echo "built: $here/backend/abacad"
+echo "built: $here/backend/abacad (v$version)"

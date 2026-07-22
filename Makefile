@@ -1,5 +1,15 @@
 # abacad dev tasks. Every target lives here — there is no per-platform Makefile.
 
+# ── Version ───────────────────────────────────────────────────────────────────
+# One number for the whole monorepo (server + every client). The VERSION file at
+# the repo root is the single source of truth; builds stamp it in (Go via ldflags,
+# macOS via an Info.plist substitution, Android/Windows/frontend read the file
+# directly). `make bump-version V=x.y.z` moves everything at once — even components
+# with no code change, on purpose (a release bumps the whole repo together).
+VERSION            := $(shell cat VERSION)
+GO_SERVER_LDFLAGS  := -X abacad/internal/version.Version=$(VERSION)
+GO_LINUX_LDFLAGS   := -X abacad-linux/internal/version.Version=$(VERSION)
+
 # Port the dashboard (Vite dev server) is served on — the URL you open in a browser.
 PORT ?= 1419
 
@@ -61,7 +71,7 @@ else
 CODESIGN_FLAGS := --options runtime --timestamp
 endif
 
-.PHONY: dev tokens android android-release \
+.PHONY: dev tokens bump-version android android-release \
         linux linux-release linux-run linux-test \
         macos macos-icon macos-dmg macos-release macos-trust-reset macos-clean \
         publish publish-macos publish-android \
@@ -72,7 +82,7 @@ endif
 dev:
 	@cd server/frontend && npm install
 	@trap 'kill 0' INT TERM EXIT; \
-	  ( cd server/backend && ABACAD_ADDR=$(BACKEND_ADDR) go run ./cmd/abacad -dev-cors ) & \
+	  ( cd server/backend && ABACAD_ADDR=$(BACKEND_ADDR) go run -ldflags "$(GO_SERVER_LDFLAGS)" ./cmd/abacad -dev-cors ) & \
 	  ( cd server/frontend && npm run dev -- --port $(PORT) ) & \
 	  wait
 
@@ -80,6 +90,29 @@ dev:
 # from design/tokens.json. Commit the outputs together with the JSON change.
 tokens:
 	node design/generate.mjs
+
+# Move the whole monorepo to a new version. Writes the VERSION file (the single
+# source Go/macOS/Android/Windows/frontend builds all read at build time) and syncs
+# the spots that can't read it then — the npm package.json + package-lock.json
+# versions. Everything else picks the number up on its next build. Only the root
+# "version" is touched (first line in each package.json; first two in each lock —
+# the package + packages[""] entries), so dependency versions are left alone; a
+# lock left stale would make `npm ci` reject the tree.
+#
+#   make bump-version V=0.5.0
+#
+# Then rebuild the clients/server to stamp it in, and commit VERSION + the json/lock.
+bump-version:
+	@test -n "$(V)" || { echo "usage: make bump-version V=x.y.z" >&2; exit 1; }
+	@printf '%s\n' "$(V)" > VERSION
+	@for f in server/package.json server/frontend/package.json; do \
+	  awk -v v="$(V)" 'BEGIN{d=0} /"version":/ && !d {sub(/"version":[ \t]*"[^"]*"/, "\"version\": \"" v "\""); d=1} {print}' "$$f" > "$$f.tmp" && mv "$$f.tmp" "$$f"; \
+	done
+	@for f in server/package-lock.json server/frontend/package-lock.json; do \
+	  [ -f "$$f" ] || continue; \
+	  awk -v v="$(V)" 'BEGIN{d=0} /"version":/ && d<2 {sub(/"version":[ \t]*"[^"]*"/, "\"version\": \"" v "\""); d++} {print}' "$$f" > "$$f.tmp" && mv "$$f.tmp" "$$f"; \
+	done
+	@echo "Bumped abacad to $(V) (VERSION + package.json + package-lock.json). Rebuild to stamp clients/server."
 
 # ── Android ──────────────────────────────────────────────────────────────────
 
@@ -101,15 +134,15 @@ android-release:
 
 # Build the daemon.
 linux:
-	cd linux && go build -o build/abacad ./cmd/abacad
+	cd linux && go build -ldflags "$(GO_LINUX_LDFLAGS)" -o build/abacad ./cmd/abacad
 
 # Cross-compile the release binaries install.sh serves (pure-Go → CGO off, any
 # host cross-compiles). Copy the outputs into the server's downloads dir to
 # publish. Output: linux/build/abacad-linux-{amd64,arm64}
 linux-release:
-	cd linux && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/abacad-linux-amd64 ./cmd/abacad
-	cd linux && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o build/abacad-linux-arm64 ./cmd/abacad
-	@echo "Built linux/build/abacad-linux-amd64 and -arm64"
+	cd linux && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$(GO_LINUX_LDFLAGS)" -o build/abacad-linux-amd64 ./cmd/abacad
+	cd linux && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$(GO_LINUX_LDFLAGS)" -o build/abacad-linux-arm64 ./cmd/abacad
+	@echo "Built linux/build/abacad-linux-amd64 and -arm64 (v$(VERSION))"
 
 # Build + run against a relay: make linux-run URL=wss://host/device?token=…
 linux-run: linux
@@ -131,6 +164,7 @@ macos:
 	mkdir -p "$(MAC_APP)/Contents/MacOS" "$(MAC_APP)/Contents/Resources"
 	cp "$(MAC_BINARY)" "$(MAC_APP)/Contents/MacOS/abacad"
 	cp macos/Info.plist "$(MAC_APP)/Contents/Info.plist"
+	plutil -replace CFBundleShortVersionString -string "$(VERSION)" "$(MAC_APP)/Contents/Info.plist"
 	@if [ -f "$(MAC_ICNS)" ]; then cp "$(MAC_ICNS)" "$(MAC_APP)/Contents/Resources/AppIcon.icns"; echo "  + bundled AppIcon.icns"; \
 	 else echo "  (no AppIcon.icns — run 'make macos-icon' to generate it)"; fi
 	codesign --force $(CODESIGN_FLAGS) --sign "$(SIGN_IDENTITY)" --identifier "$(BUNDLE_ID)" "$(MAC_APP)"
