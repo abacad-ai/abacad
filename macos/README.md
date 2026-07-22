@@ -86,13 +86,31 @@ green checkmarks confirm the grants (hit **Refresh** after toggling).
 
 ## Connect
 
+The easy path — **`abacad connect`** (device-authorization grant, no copy-paste):
+
+```
+/Applications/abacad.app/Contents/MacOS/abacad connect
+#   or, against a self-hosted server:
+#   …/abacad connect --server https://my.host
+```
+
+It prints a URL and a short code; open the URL while signed in, approve, and the
+issued credential is stored in your login Keychain. Launch the menu-bar app (or, if
+it's already running, reopen the panel) and the dot turns green — it auto-connects
+on every launch after that. This is the CLI peer of the Linux/Windows `abacad
+connect`. (The `connect` binary is the same executable inside the app bundle;
+running it needs no Screen Recording / Accessibility grant — those apply only when
+the menu-bar app actually drives the Mac.)
+
+Or provision manually:
+
 1. Provision a macOS device on the server and copy its `wss://…/device?token=…`
-   URL. (The server now stores a `platform` tag; provision with
-   `POST /api/devices {"name":"My Mac","platform":"macos"}` so `list_devices`
-   shows it as a desktop.)
+   URL (`POST /api/devices {"name":"My Mac","platform":"macos"}`, or the
+   dashboard's **macOS** add-device tile).
 2. Paste the URL into the panel and click **Connect**. The dot turns green.
-3. From your MCP client, target this device — desktop verbs (`click`, `scroll`,
-   `press_keys`, `composite`) now drive the Mac.
+
+Either way, from your MCP client, target this device — desktop verbs (`click`,
+`scroll`, `press_keys`, `composite`) now drive the Mac.
 
 ## Known limits (v0)
 

@@ -1,9 +1,22 @@
 import SwiftUI
 import AppKit
 
-// Menu-bar entry point. LSUIElement (set in Info.plist) keeps it out of the Dock;
-// the only UI is the menu-bar item and its panel.
+// Process entry point. `abacad connect` runs the device-authorization pairing
+// flow as a plain CLI and exits, before any menu-bar/SwiftUI init; a bare launch
+// runs the menu-bar app. Mirrors the Windows client's Program.Main branch.
 @main
+enum Entry {
+    static func main() {
+        let args = Array(CommandLine.arguments.dropFirst())
+        if args.first == "connect" {
+            exit(ConnectFlow.run(args))
+        }
+        AbacadApp.main()
+    }
+}
+
+// Menu-bar app. LSUIElement (set in Info.plist) keeps it out of the Dock; the
+// only UI is the menu-bar item and its panel.
 struct AbacadApp: App {
     @StateObject private var agent = Agent()
 
