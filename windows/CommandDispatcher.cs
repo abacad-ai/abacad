@@ -90,6 +90,13 @@ sealed class CommandDispatcher
                 return new Dictionary<string, object?> { ["blob_id"] = id, ["size"] = size, ["sha256"] = sha };
             }
 
+            // Screen recording (file channel): ffmpeg gdigrab -> temp .mp4 -> /blobs.
+            case "screen_recording":
+            {
+                var blobs = Blobs ?? throw new CmdException("screen recording needs the /blobs data plane, which is not configured on this device");
+                return ScreenRecorder.Shared.Handle(p, blobs);
+            }
+
             // Mobile navigation keys have no desktop analogue.
             case "back":
             case "home":

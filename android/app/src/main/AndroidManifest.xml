@@ -22,6 +22,10 @@
          the ongoing notification actually show on Android 13+. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- FOREGROUND_SERVICE_MEDIA_PROJECTION: screen_recording captures the display via
+         MediaProjection, which (Android 14+) requires a running mediaProjection
+         foreground service. The service carries the type only while recording. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Ask to be exempted from Doze/battery optimization so the held socket
          survives screen-off idle off-charger (the setup flow always promised this). -->
@@ -61,7 +65,7 @@
         <service
             android:name=".AbacadAccessibilityService"
             android:exported="false"
-            android:foregroundServiceType="dataSync"
+            android:foregroundServiceType="dataSync|mediaProjection"
             android:label="abacad"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
@@ -71,6 +75,14 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
+
+        <!-- Invisible screen-recording consent shim: fires the system MediaProjection
+             "Start recording?" dialog, then finishes. Launched only by our own service. -->
+        <activity
+            android:name=".ScreenRecordConsentActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <!-- Invisible waker: turns the screen on + dismisses a non-secure keyguard when a
              command arrives on a dark device. Launched only by our own service. -->

@@ -22,11 +22,12 @@ type dispatcher struct {
 	x     *x11.Conn
 	cache *shotCache
 	blobs *blobClient // file transfer over the /blobs data plane; nil disables it
+	rec   *recorder   // screen_recording file channel (ffmpeg x11grab)
 	mu    sync.Mutex
 }
 
 func newDispatcher(x *x11.Conn, blobs *blobClient) *dispatcher {
-	return &dispatcher{x: x, cache: newShotCache(x, emptyTree), blobs: blobs}
+	return &dispatcher{x: x, cache: newShotCache(x, emptyTree), blobs: blobs, rec: newRecorder(x, blobs)}
 }
 
 // displayVerbs are the methods that need a live X backend — every screen-capture
@@ -37,6 +38,7 @@ var displayVerbs = map[string]bool{
 	"screenshot": true, "tap": true, "long_press": true, "swipe": true,
 	"input_text": true, "click": true, "right_click": true, "drag": true,
 	"scroll": true, "press_keys": true, "composite": true,
+	"screen_recording": true,
 }
 
 // execute runs a method and returns its result object, or an error.
@@ -117,6 +119,10 @@ func (d *dispatcher) execute(method string, params map[string]any) (map[string]a
 		return d.pushFile(params)
 	case "pull_file":
 		return d.pullFile(params)
+
+	// Screen recording (file channel): ffmpeg x11grab -> temp .mp4 -> /blobs.
+	case "screen_recording":
+		return d.rec.handle(params)
 
 	// Mobile navigation keys have no desktop analogue.
 	case "back", "home", "recents":

@@ -105,7 +105,6 @@ struct CommandDispatcher {
                 return try await ScreenRecorder.shared.start(
                     blobs: blobs,
                     fps: file.int("fps", 0),
-                    audio: file.bool("audio", false),
                     maxDurationSeconds: file.int("max_duration_seconds", 0))
             case "stop":
                 return await ScreenRecorder.shared.stop()

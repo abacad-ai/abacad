@@ -390,15 +390,14 @@ var actionTools = []actionTool{
 	// clip from GET /blobs/{id}. The live (VNC) channel is a later addition. ---
 	{
 		name:        "screen_recording",
-		description: "Record the connected device's screen to a high-quality video file — the moving-picture counterpart of screenshot, for capturing a whole flow (an app test, a demo you'll edit into a promo). Drive it with action: \"start\" begins an on-device recording at full resolution and frame rate — pass file={enabled:true} and optionally audio/fps/max_duration_seconds — then keep issuing your normal verbs (tap/click/…) while it records in the background. \"stop\" finalizes the clip and begins transferring it; because a full-quality clip can be large, the upload runs in the background. \"status\" reports progress — poll it after stop until a download link appears, then fetch the bytes from GET /blobs/{id}. One recording per device at a time.",
-		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"action":{"type":"string","enum":["start","stop","status"],"description":"start a recording, stop and transfer it, or report status"},"file":{"type":"object","description":"the file channel: record to a high-quality on-device video file, transferred afterward","properties":{"enabled":{"type":"boolean","description":"turn the file channel on (required for start)"},"fps":{"type":"integer","description":"frames per second (default = native/max)"},"audio":{"type":"boolean","description":"include system audio (default false)"},"format":{"type":"string","description":"container/codec (default \"mp4\", H.264)"},"max_duration_seconds":{"type":"integer","description":"safety cap on recording length"}},"additionalProperties":false}},"required":["action"],"additionalProperties":false}`,
+		description: "Record the connected device's screen to a high-quality video file — the moving-picture counterpart of screenshot, for capturing a whole flow (an app test, a demo you'll edit into a promo). Drive it with action: \"start\" begins an on-device recording at full resolution and frame rate — pass file={enabled:true} and optionally fps/max_duration_seconds — then keep issuing your normal verbs (tap/click/…) while it records in the background. \"stop\" finalizes the clip and begins transferring it; because a full-quality clip can be large, the upload runs in the background. \"status\" reports progress — poll it after stop until a download link appears, then fetch the bytes from GET /blobs/{id}. One recording per device at a time; video only (no audio).",
+		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"action":{"type":"string","enum":["start","stop","status"],"description":"start a recording, stop and transfer it, or report status"},"file":{"type":"object","description":"the file channel: record to a high-quality on-device video file, transferred afterward","properties":{"enabled":{"type":"boolean","description":"turn the file channel on (required for start)"},"fps":{"type":"integer","description":"frames per second (default = native/max)"},"format":{"type":"string","description":"container/codec (default \"mp4\", H.264)"},"max_duration_seconds":{"type":"integer","description":"safety cap on recording length"}},"additionalProperties":false}},"required":["action"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
 			var a struct {
 				Action string `json:"action"`
 				File   *struct {
 					Enabled            *bool   `json:"enabled"`
 					FPS                *int    `json:"fps"`
-					Audio              *bool   `json:"audio"`
 					Format             *string `json:"format"`
 					MaxDurationSeconds *int    `json:"max_duration_seconds"`
 				} `json:"file"`
@@ -416,9 +415,6 @@ var actionTools = []actionTool{
 				file := map[string]any{}
 				if a.File.FPS != nil {
 					file["fps"] = *a.File.FPS
-				}
-				if a.File.Audio != nil {
-					file["audio"] = *a.File.Audio
 				}
 				if a.File.Format != nil {
 					file["format"] = *a.File.Format

@@ -7,7 +7,7 @@ import Foundation
 // The macOS file channel of screen_recording: a continuous capture of the main
 // display, recorded to a local H.264 .mp4 at native pixel resolution (best
 // quality — this is an artifact, not a coordinate-mapped frame like screenshot),
-// then uploaded to /blobs on stop. Video-only for now; audio is a follow-up.
+// then uploaded to /blobs on stop. Video only (audio is out of scope).
 //
 // Capture uses ScreenCaptureKit's SCStream (the streaming counterpart of the
 // SCScreenshotManager used by ScreenCapture) feeding CMSampleBuffers into an
@@ -41,16 +41,13 @@ actor ScreenRecorder {
 
     // MARK: Lifecycle
 
-    /// Begin recording. Requires the /blobs client (the point is to transfer the
-    /// file afterward). Rejects a second concurrent recording and audio (not yet
-    /// implemented). fps == 0 means "native/max".
-    func start(blobs: BlobClient, fps requestedFPS: Int, audio: Bool,
+    /// Begin recording (video only). Requires the /blobs client (the point is to
+    /// transfer the file afterward). Rejects a second concurrent recording.
+    /// fps == 0 means "native/max".
+    func start(blobs: BlobClient, fps requestedFPS: Int,
                maxDurationSeconds: Int) async throws -> [String: Any] {
         if phase == .recording {
             throw CmdError.message("a recording is already in progress; stop it first")
-        }
-        if audio {
-            throw CmdError.message("audio capture is not yet implemented — record video-only for now")
         }
 
         // Resolve the main display and capture at its full reported size (best

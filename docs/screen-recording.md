@@ -46,10 +46,9 @@ screen_recording(
   file: {                            # save the recording as a high-quality artifact
     enabled:              bool,
     fps:                  int,         # default = native/max
-    audio:                bool,        # default false
     format:               string,      # default "mp4" (H.264)
     max_duration_seconds: int          # safety cap
-  }
+  }                                    # video only — no audio
 )
 ```
 
@@ -145,8 +144,8 @@ If explicit enumeration/deletion is ever wanted, a recording is addressed by its
 ## Agent ergonomics
 
 ```
-# Record a test run to a file, with audio, while driving the app:
-screen_recording(action="start", file={enabled:true, audio:true})
+# Record a test run to a file while driving the app:
+screen_recording(action="start", file={enabled:true})
 … agent taps/clicks through the flow …
 screen_recording(action="status")            # poll → file.download_url when ready
 screen_recording(action="stop")
@@ -203,18 +202,26 @@ integrity + audit + kill posture ([trust.md](trust.md)):
 
 ## Platform capture backends
 
-The live and file channels share each platform's capture source; only the encoding/target
-differs. All are still-frame-capable today (that's `screenshot`); continuous capture is
-the net-new work per client.
+Each `file`-channel implementation records the display to a temp `.mp4` (H.264), then
+uploads it to `/blobs` on stop via the client's existing blob path; the temp is deleted
+after a successful transfer. The `live` column is the planned RFB approach (not yet built).
 
-| Platform | Capture source | Live (RFB) | File (encode) | Notes |
-|----------|----------------|-----------|---------------|-------|
-| macOS    | ScreenCaptureKit `SCStream` | LibVNCServer | VideoToolbox H.264/HEVC | Reuses the Screen Recording permission already requested |
-| Windows  | Windows.Graphics.Capture / DXGI | LibVNCServer or managed RFB | Media Foundation H.264 | |
-| Linux    | X11 (XShm / x11grab) | x11vnc / LibVNCServer | x264 / VAAPI | Wayland path needs PipeWire + portal (consent prompt) |
-| Android  | MediaProjection → VirtualDisplay | droidVNC-NG pattern | MediaCodec H.264 | MediaProjection shows a per-session consent dialog — the one break from silent operation |
+| Platform | `file` capture/encode (shipped) | Build status | `live` (planned) |
+|----------|----------------------------------|--------------|------------------|
+| macOS    | ScreenCaptureKit `SCStream` → `AVAssetWriter` H.264 | compiles + links (Mac mini) | LibVNCServer |
+| Linux    | `ffmpeg` x11grab → libx264 (shells out) | builds + vets | x11vnc / LibVNCServer |
+| Windows  | `ffmpeg` gdigrab → libx264 (shells out) | code-complete (no .NET to compile) | LibVNCServer or managed RFB |
+| Android  | MediaProjection → `MediaRecorder` H.264 | compiles (Gradle, Mac mini) | droidVNC-NG pattern |
 
-`live` unifies on **LibVNCServer** (portable C) on the desktops, fed by the existing
+Notes:
+- **macOS** reuses the Screen Recording permission `screenshot` already requests.
+- **Linux / Windows** shell out to **ffmpeg** (x11grab / gdigrab) — the encoder no pure-Go /
+  managed path provides — and report a clear error if ffmpeg isn't on `PATH`.
+- **Android** needs a per-session MediaProjection consent dialog (the one break from silent
+  operation) and a `mediaProjection` foreground-service type while recording; `start` is
+  async (returns `requesting_permission`, then `recording` once the user consents).
+
+`live` will unify on **LibVNCServer** (portable C) on the desktops, fed by the existing
 capture + input code; Android follows the droidVNC-NG approach (MediaProjection for the
 framebuffer + AccessibilityService for input).
 
@@ -230,3 +237,6 @@ framebuffer + AccessibilityService for input).
   session key.
 - **Streaming the file to the agent live.** The file is an after-the-fact artifact by
   design; the live channel is the only real-time path.
+- **Audio.** Recordings are video only. The `file` channel could mux audio later, but
+  the `live` channel can't — RFB/VNC carries no audio — so audio would be asymmetric
+  across channels; skipped for now.

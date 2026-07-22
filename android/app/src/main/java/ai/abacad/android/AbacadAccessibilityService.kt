@@ -93,6 +93,9 @@ class AbacadAccessibilityService : AccessibilityService() {
      *  single background thread keeps transfers serialized and off the UI looper. */
     private val fileIoExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
 
+    /** screen_recording file channel (MediaProjection -> MediaRecorder -> /blobs). */
+    private val screenRecorder by lazy { ScreenRecorder(this) }
+
     /** Held for the life of the connection but only while unplugged, so pings keep firing and the
      *  socket survives Doze off-charger. On a charger there's no Doze, so we skip it (see
      *  [updateSessionWakeLock]). Distinct from [wakeLock], the transient wake-from-dark hold. */
@@ -242,6 +245,34 @@ class AbacadAccessibilityService : AccessibilityService() {
         try { stopForeground(Service.STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}
     }
 
+    /**
+     * Promote the (already-foreground) service to also carry the mediaProjection type
+     * while recording. Android 14+ requires a running mediaProjection foreground
+     * service before MediaProjection.getMediaProjection — see [ScreenRecorder].
+     */
+    internal fun promoteForegroundForRecording() {
+        ensureNotificationChannel()
+        try {
+            startForeground(
+                NOTIF_ID, buildNotification(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION,
+            )
+            isForeground = true
+        } catch (e: Exception) {
+            Log.w(TAG, "promote foreground (mediaProjection) failed: ${e.message}")
+        }
+    }
+
+    /** Revert to the plain data-sync foreground type once a recording ends. */
+    internal fun demoteForegroundAfterRecording() {
+        try {
+            startForeground(NOTIF_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } catch (e: Exception) {
+            Log.w(TAG, "demote foreground failed: ${e.message}")
+        }
+    }
+
     private fun ensureNotificationChannel() {
         val nm = getSystemService(NotificationManager::class.java)
         if (nm.getNotificationChannel(CHANNEL_ID) == null) {
@@ -368,6 +399,7 @@ class AbacadAccessibilityService : AccessibilityService() {
                             "back" -> globalAction(GLOBAL_ACTION_BACK, done)
                             "home" -> globalAction(GLOBAL_ACTION_HOME, done)
                             "recents" -> globalAction(GLOBAL_ACTION_RECENTS, done)
+                            "screen_recording" -> screenRecorder.handle(params, blobClient, done)
                             else -> done(CmdResult.Err("unknown method: $method"))
                         }
                     } catch (e: Exception) {
