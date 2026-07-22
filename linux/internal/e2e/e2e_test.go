@@ -273,6 +273,48 @@ func TestXvfbE2E(t *testing.T) {
 	badPush := send("pb", "push_file", map[string]any{"blob_id": "blob_nope", "dest_path": filepath.Join(ftDir, "x.txt")})
 	ok("push_file unknown blob rejected", badPush["ok"] == false, jsonStr(badPush))
 
+	// --- screen recording (file channel): real ffmpeg x11grab -> mp4 -> /blobs ---
+	if _, ffErr := exec.LookPath("ffmpeg"); ffErr != nil {
+		t.Log("SKIP screen_recording: ffmpeg not on PATH")
+	} else {
+		start := send("sr1", "screen_recording", map[string]any{
+			"action": "start", "file": map[string]any{"enabled": true, "fps": 10},
+		})
+		sr := result(start)
+		ok("screen_recording start", start["ok"] == true && sr["state"] == "recording", jsonStr(start))
+		ok("screen_recording dims", intOf(sr["width"]) == wantW && intOf(sr["height"]) == wantH, jsonStr(sr))
+
+		time.Sleep(2 * time.Second) // capture a couple seconds of frames
+
+		stop := send("sr2", "screen_recording", map[string]any{"action": "stop"})
+		ok("screen_recording stop accepted", stop["ok"] == true, jsonStr(stop))
+
+		// The transfer is async: poll status until it settles ready/failed.
+		var blobID, state string
+		for i := 0; i < 60; i++ {
+			st := result(send(fmt.Sprintf("srs%d", i), "screen_recording", map[string]any{"action": "status"}))
+			state = str(st["state"])
+			if state == "ready" {
+				blobID = str(st["blob_id"])
+				break
+			}
+			if state == "failed" {
+				t.Logf("screen_recording failed: %s", jsonStr(st))
+				break
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		ok("screen_recording ready", state == "ready" && blobID != "", "final state="+state)
+
+		if data, has := blobs.get(blobID); has {
+			ok("recording non-trivial size", len(data) > 1000, fmt.Sprintf("%d bytes", len(data)))
+			head := data[:min(64, len(data))]
+			ok("recording is mp4", bytes.Contains(head, []byte("ftyp")), fmt.Sprintf("head=%x", head))
+		} else {
+			ok("recording blob stored", false, "blob not in store: "+blobID)
+		}
+	}
+
 	// --- tunnel lane against a loopback echo server ---
 	ok("tunnel round-trip", tunnelRoundTrip(t, ctx, device, binCh), "see logs")
 
