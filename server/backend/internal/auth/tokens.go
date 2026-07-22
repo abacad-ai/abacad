@@ -62,6 +62,42 @@ func NewDeviceID() string {
 	return randLetters(16)
 }
 
+// userCodeAlphabet is 30 characters with the visually ambiguous ones removed
+// (no 0/O, 1/I/L) so a human can read a pairing code off a terminal and type it
+// into the browser without confusion.
+const userCodeAlphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+// NewUserCode returns a short, human-typable device-pairing code like
+// "WXYZ-2K7M": two dash-separated groups of four from an ambiguity-free 30-char
+// alphabet (~39 bits). It is not a secret on its own — approval also requires an
+// authenticated browser session — but is high-entropy enough that a pending code
+// can't be guessed within its short lifetime. Rejection sampling (drop bytes
+// >= 240, the largest multiple of 30 below 256) keeps every character equally
+// likely, matching randLetters' approach.
+func NewUserCode() string {
+	const groups, per = 2, 4
+	out := make([]byte, 0, groups*per+1)
+	buf := make([]byte, groups*per)
+	for len(out) < groups*per+1 {
+		if _, err := rand.Read(buf); err != nil {
+			panic("auth: crypto/rand failed: " + err.Error())
+		}
+		for _, x := range buf {
+			if x >= 240 {
+				continue
+			}
+			if len(out) == per {
+				out = append(out, '-') // group separator after the first four
+			}
+			out = append(out, userCodeAlphabet[x%30])
+			if len(out) == groups*per+1 {
+				break
+			}
+		}
+	}
+	return string(out)
+}
+
 // NewSecret makes a longer, high-entropy secret token with the given prefix,
 // e.g. NewSecret("abd_mcp") -> "abd_mcp_<32 base32 chars>". Returned to the user
 // once; only its hash is stored.

@@ -8,6 +8,7 @@ import { DevicesPage } from "@/pages/DevicesPage";
 import { DownloadsPage } from "@/pages/DownloadsPage";
 import { LandingPage } from "@/pages/LandingPage";
 import { AccessPage } from "@/pages/AccessPage";
+import { PairPage } from "@/pages/PairPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 
 function Protected({ children }: { children: React.ReactNode }) {
@@ -87,6 +88,16 @@ export function App() {
             element={
               <Protected>
                 <SettingsPage />
+              </Protected>
+            }
+          />
+          {/* `abacad connect` approval page. Protected: the signed-in account
+              becomes the owner of the device it approves. */}
+          <Route
+            path="/pair"
+            element={
+              <Protected>
+                <PairPage />
               </Protected>
             }
           />

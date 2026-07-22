@@ -73,10 +73,18 @@ func (a *API) Handler() http.Handler {
 	// Public: the client downloads page is reachable without an account.
 	mux.HandleFunc("GET /api/downloads", a.listDownloads)
 
+	// Public: device-authorization pairing (`abacad connect`). The CLI has no
+	// session yet, so start/poll are unauthenticated; the human-facing approve
+	// step (POST /api/devices/pair, below) is session-gated.
+	mux.HandleFunc("POST /api/devices/pair/start", a.pairStart)
+	mux.HandleFunc("POST /api/devices/pair/poll", a.pairPoll)
+
 	// Authenticated endpoints.
 	mux.Handle("GET /api/auth/me", a.auth(a.me))
 	mux.Handle("GET /api/devices", a.auth(a.listDevices))
 	mux.Handle("POST /api/devices", a.auth(a.createDevice))
+	mux.Handle("GET /api/devices/pair", a.auth(a.pairLookup))   // approval page: what am I authorizing?
+	mux.Handle("POST /api/devices/pair", a.auth(a.pairApprove)) // human approves a CLI pairing
 	mux.Handle("GET /api/devices/{id}", a.auth(a.getDevice))
 	mux.Handle("PATCH /api/devices/{id}", a.auth(a.renameDevice))
 	mux.Handle("DELETE /api/devices/{id}", a.auth(a.deleteDevice))

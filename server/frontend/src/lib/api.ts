@@ -154,6 +154,13 @@ export class ApiError extends Error {
   }
 }
 
+// A pending `abacad connect` pairing, as shown on the /pair approval page.
+export interface PairInfo {
+  user_code: string;
+  platform: string; // CLI-reported OS, may be ""
+  status: string; // "pending" | "approved" | "denied"
+}
+
 export const api = {
   me: () => req<Me>("/api/auth/me"),
   authConfig: () => req<AuthConfig>("/api/auth/config"),
@@ -177,6 +184,15 @@ export const api = {
     req<{ device_token: string; wss_url: string }>(`/api/devices/${id}/rotate-token`, { method: "POST" }),
   deviceScreenshotUrl: (id: string) => `/api/devices/${id}/screenshot`,
   deviceEvents: (id: string) => req<DeviceEvents>(`/api/devices/${id}/events`),
+
+  // Device-authorization pairing (`abacad connect`). Look up a pending code to
+  // show what it authorizes, then approve it into the signed-in account.
+  pairLookup: (code: string) => req<PairInfo>(`/api/devices/pair?code=${encodeURIComponent(code)}`),
+  pairApprove: (user_code: string, name: string, platform?: string) =>
+    req<{ status: string }>("/api/devices/pair", {
+      method: "POST",
+      body: JSON.stringify({ user_code, name, platform }),
+    }),
 
   activities: (q: ActivityQuery = {}) => {
     const params = new URLSearchParams();

@@ -328,6 +328,113 @@ func (s *Store) scanDevice(row *sql.Row) (Device, error) {
 	return d, err
 }
 
+// --- Device pairing (RFC 8628 device-authorization grant) ---
+
+// Pairing status values.
+const (
+	PairingPending  = "pending"
+	PairingApproved = "approved"
+	PairingDenied   = "denied"
+)
+
+const pairingTokenPrefix = "abd_pair"
+
+// Pairing is one in-flight `abacad connect` handshake: a secret device_code held
+// by the CLI, a short user_code typed by the human, and (once approved) the
+// account + device details to mint. Never holds a device token.
+type Pairing struct {
+	DeviceCode string
+	UserCode   string
+	Status     string
+	AccountID  string // "" until approved
+	Name       string
+	Platform   string
+	CreatedAt  int64
+	ExpiresAt  int64
+	Consumed   bool
+}
+
+// CreatePairing opens a pending pairing valid for ttl and returns the secret
+// device_code (CLI-held) and the short human-typed user_code. platform is the
+// CLI's self-reported OS (may be ""), stored so the approval page can show what
+// it's about to authorize. The user_code is UNIQUE; on the astronomically rare
+// clash it regenerates and retries.
+func (s *Store) CreatePairing(platform string, ttl time.Duration) (deviceCode, userCode string, err error) {
+	deviceCode = auth.NewSecret(pairingTokenPrefix)
+	created := now()
+	expires := time.Now().Add(ttl).Unix()
+	for attempt := 0; attempt < 5; attempt++ {
+		userCode = auth.NewUserCode()
+		_, err = s.db.Exec(
+			`INSERT INTO device_pairings(device_code,user_code,status,platform,created_at,expires_at)
+			 VALUES(?,?,?,?,?,?)`, deviceCode, userCode, PairingPending, platform, created, expires)
+		if err == nil {
+			return deviceCode, userCode, nil
+		}
+	}
+	return "", "", err
+}
+
+// PairingByDeviceCode returns a pairing by its secret device_code, with no expiry
+// filter — the poller must distinguish "expired" from "unknown" itself.
+func (s *Store) PairingByDeviceCode(deviceCode string) (Pairing, error) {
+	return s.scanPairing(s.db.QueryRow(
+		`SELECT device_code,user_code,status,COALESCE(account_id,''),name,platform,created_at,expires_at,consumed
+		   FROM device_pairings WHERE device_code=?`, deviceCode))
+}
+
+// PairingByUserCode returns a non-expired pairing by its user_code — used by the
+// approval page to show what's being authorized before the human commits.
+func (s *Store) PairingByUserCode(userCode string) (Pairing, error) {
+	return s.scanPairing(s.db.QueryRow(
+		`SELECT device_code,user_code,status,COALESCE(account_id,''),name,platform,created_at,expires_at,consumed
+		   FROM device_pairings WHERE user_code=? AND expires_at > ?`, userCode, now()))
+}
+
+// ApprovePairing binds a still-pending, unexpired pairing to the approving
+// account with the chosen name. platform is an optional override: an empty value
+// preserves the platform the CLI reported at start (the common case — the box
+// knows its own OS), while a non-empty value lets the approver correct it.
+// Returns ErrNotFound if the code is unknown, expired, or already resolved.
+func (s *Store) ApprovePairing(userCode, accountID, name, platform string) error {
+	return s.affect(s.db.Exec(
+		`UPDATE device_pairings
+		    SET status=?, account_id=?, name=?,
+		        platform = CASE WHEN ? <> '' THEN ? ELSE platform END
+		  WHERE user_code=? AND status=? AND expires_at > ?`,
+		PairingApproved, accountID, name, platform, platform, userCode, PairingPending, now()))
+}
+
+// ConsumePairing completes an approved pairing: it atomically claims the row
+// (approved -> consumed) so a double-poll can't mint two devices, then mints the
+// device via the normal CreateDevice path and returns its one-time token. Any
+// non-approved / already-consumed / expired state yields ErrNotFound.
+func (s *Store) ConsumePairing(deviceCode string) (Device, string, error) {
+	if err := s.affect(s.db.Exec(
+		`UPDATE device_pairings SET consumed=1
+		   WHERE device_code=? AND status=? AND consumed=0 AND expires_at > ?`,
+		deviceCode, PairingApproved, now())); err != nil {
+		return Device{}, "", err // ErrNotFound: not approved, already consumed, or expired
+	}
+	p, err := s.PairingByDeviceCode(deviceCode)
+	if err != nil {
+		return Device{}, "", err
+	}
+	return s.CreateDevice(p.AccountID, p.Name, p.Platform)
+}
+
+func (s *Store) scanPairing(row *sql.Row) (Pairing, error) {
+	var p Pairing
+	var consumed int
+	err := row.Scan(&p.DeviceCode, &p.UserCode, &p.Status, &p.AccountID,
+		&p.Name, &p.Platform, &p.CreatedAt, &p.ExpiresAt, &consumed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Pairing{}, ErrNotFound
+	}
+	p.Consumed = consumed == 1
+	return p, err
+}
+
 // --- API keys (scoped bearer credentials for /mcp and /connect) ---
 
 // KeyScope is an API key's capability envelope: which devices it may reach, which
