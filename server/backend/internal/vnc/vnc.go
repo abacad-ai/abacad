@@ -142,7 +142,13 @@ func (m *Manager) Start(ctx context.Context, deviceID, accountID string) (ticket
 	m.byTicket[s.ticket] = s
 	m.mu.Unlock()
 
-	url := m.ingressBase + "/vnc/ingress?token=" + s.ingressTok
+	// Reverse-connect the device to the SAME origin it dialed (dev or prod),
+	// falling back to the configured base only if the origin is unknown.
+	base := dc.Origin()
+	if base == "" {
+		base = m.ingressBase
+	}
+	url := base + "/vnc/ingress?token=" + s.ingressTok
 	if _, err := dc.Send(ctx, protocol.MethodVNC,
 		map[string]any{"action": "start", "url": url, "token": s.ingressTok}, startTimeout); err != nil {
 		m.remove(s)

@@ -85,6 +85,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[device] connected: %s from %s (client %s)", deviceID, r.RemoteAddr, versionLabel(reportedVersion))
 
 	dc := relay.NewDeviceConn(deviceID, c)
+	// Record the origin the device dialed, so the VNC live channel can tell it to
+	// reverse-connect to the SAME server + scheme (dev or prod) instead of a
+	// hardcoded domain. Behind a TLS-terminating proxy (Caddy) the request reaches
+	// us as plain ws with X-Forwarded-Proto=https; direct local dev is plain ws.
+	{
+		scheme := "ws"
+		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+			scheme = "wss"
+		}
+		host := r.Host
+		if xf := r.Header.Get("X-Forwarded-Host"); xf != "" {
+			host = xf
+		}
+		if host != "" {
+			dc.SetOrigin(scheme + "://" + host)
+		}
+	}
 	dc.SetCommandObserver(func(rec relay.CommandRecord) {
 		if h.Events != nil {
 			h.Events.Append(rec.DeviceID, events.Event{

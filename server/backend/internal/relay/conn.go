@@ -86,6 +86,13 @@ const (
 type DeviceConn struct {
 	DeviceID string
 
+	// origin is the ws(s) origin the device dialed to reach /device, e.g.
+	// "wss://abacad.ai" or "ws://localhost:1213" — derived from its connect
+	// request. The VNC live channel uses it so the device reverse-connects to the
+	// SAME server (and scheme) it's already on, in dev and prod alike, instead of a
+	// hardcoded domain. Set once before Register, read later; safe without a lock.
+	origin string
+
 	ws      *websocket.Conn
 	writeMu sync.Mutex // coder/websocket requires serialized writes
 	seq     atomic.Uint64
@@ -121,6 +128,13 @@ type DeviceConn struct {
 	closeOnce sync.Once
 	closed    chan struct{}
 }
+
+// SetOrigin records the ws(s) origin the device dialed (see the origin field).
+// Call before Register.
+func (c *DeviceConn) SetOrigin(o string) { c.origin = o }
+
+// Origin returns the ws(s) origin the device dialed, or "" if unset.
+func (c *DeviceConn) Origin() string { return c.origin }
 
 // NewDeviceConn wraps an accepted WebSocket. The caller must run ReadPump.
 func NewDeviceConn(deviceID string, ws *websocket.Conn) *DeviceConn {
