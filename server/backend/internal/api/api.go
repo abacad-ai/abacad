@@ -91,7 +91,7 @@ func (a *API) Handler() http.Handler {
 	mux.Handle("GET /api/devices/pair", a.auth(a.pairLookup))   // approval page: what am I authorizing?
 	mux.Handle("POST /api/devices/pair", a.auth(a.pairApprove)) // human approves a CLI pairing
 	mux.Handle("GET /api/devices/{id}", a.auth(a.getDevice))
-	mux.Handle("PATCH /api/devices/{id}", a.auth(a.renameDevice))
+	mux.Handle("PATCH /api/devices/{id}", a.auth(a.updateDevice))
 	mux.Handle("DELETE /api/devices/{id}", a.auth(a.deleteDevice))
 	mux.Handle("POST /api/devices/{id}/rotate-token", a.auth(a.rotateDeviceToken))
 	mux.Handle("GET /api/devices/{id}/screenshot", a.auth(a.deviceScreenshot))
@@ -230,6 +230,7 @@ type deviceView struct {
 	CreatedAt    string `json:"created_at"`
 	SSHHost      string `json:"ssh_host,omitempty"`      // ssh <ssh_host> reaches this device via the jump
 	ScreenshotAt int64  `json:"screenshot_at,omitempty"` // unix seconds of the last stored screenshot; 0/absent if none
+	Humanize     bool   `json:"humanize"`                // inject human-like pointer motion (default on)
 }
 
 func (a *API) listDevices(w http.ResponseWriter, r *http.Request) {
@@ -291,23 +292,43 @@ func (a *API) createDevice(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, resp)
 }
 
-func (a *API) renameDevice(w http.ResponseWriter, r *http.Request) {
+// updateDevice applies a partial update to a device the caller owns. Fields are
+// pointers so an absent key leaves that setting untouched — the page sends only
+// what changed (a rename, or a humanize toggle).
+func (a *API) updateDevice(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Name string `json:"name"`
+		Name     *string `json:"name"`
+		Humanize *bool   `json:"humanize"`
 	}
 	if !decode(w, r, &body) {
 		return
 	}
-	err := a.Store.RenameDevice(r.PathValue("id"), account(r).ID, strings.TrimSpace(body.Name))
-	if errors.Is(err, store.ErrNotFound) {
-		writeErr(w, http.StatusNotFound, "device not found")
-		return
+	id, accID := r.PathValue("id"), account(r).ID
+
+	if body.Name != nil {
+		name := strings.TrimSpace(*body.Name)
+		if err := a.Store.RenameDevice(id, accID, name); err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				writeErr(w, http.StatusNotFound, "device not found")
+			} else {
+				writeErr(w, http.StatusInternalServerError, "could not rename device")
+			}
+			return
+		}
+		a.record(accID, store.Activity{Kind: activity.KindDeviceRename, DeviceID: id, Detail: name})
 	}
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "could not rename device")
-		return
+
+	if body.Humanize != nil {
+		if err := a.Store.SetDeviceHumanize(id, accID, *body.Humanize); err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				writeErr(w, http.StatusNotFound, "device not found")
+			} else {
+				writeErr(w, http.StatusInternalServerError, "could not update device")
+			}
+			return
+		}
 	}
-	a.record(account(r).ID, store.Activity{Kind: activity.KindDeviceRename, DeviceID: r.PathValue("id"), Detail: strings.TrimSpace(body.Name)})
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -760,6 +781,7 @@ func (a *API) viewDevice(d store.Device) deviceView {
 		Online:    a.Hub.Online(d.ID),
 		Platform:  d.Platform,
 		Version:   d.Version,
+		Humanize:  d.Humanize,
 		CreatedAt: time.Unix(d.CreatedAt, 0).UTC().Format(time.RFC3339),
 	}
 	if act, ok := a.Hub.Activity(d.ID); ok {

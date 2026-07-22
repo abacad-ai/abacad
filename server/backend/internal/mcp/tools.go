@@ -112,7 +112,7 @@ var actionTools = []actionTool{
 			if err := json.Unmarshal(args, &a); err != nil {
 				return errorResult("invalid args: " + err.Error())
 			}
-			raw, err := dc.Send(ctx, protocol.MethodTap, map[string]any{"x": a.X, "y": a.Y}, commandTimeout)
+			raw, err := dc.Send(ctx, protocol.MethodTap, map[string]any{"x": a.X, "y": a.Y, "humanize": dc.Humanize()}, commandTimeout)
 			if err != nil {
 				return errorResult(err.Error())
 			}
@@ -137,7 +137,7 @@ var actionTools = []actionTool{
 			if a.DurationMs != nil {
 				dur = *a.DurationMs
 			}
-			raw, err := dc.Send(ctx, protocol.MethodLongPress, map[string]any{"x": a.X, "y": a.Y, "duration_ms": dur}, commandTimeout)
+			raw, err := dc.Send(ctx, protocol.MethodLongPress, map[string]any{"x": a.X, "y": a.Y, "duration_ms": dur, "humanize": dc.Humanize()}, commandTimeout)
 			if err != nil {
 				return errorResult(err.Error())
 			}
@@ -162,7 +162,7 @@ var actionTools = []actionTool{
 			if a.DurationMs != nil {
 				dur = *a.DurationMs
 			}
-			raw, err := dc.Send(ctx, protocol.MethodSwipe, map[string]any{"x1": a.X1, "y1": a.Y1, "x2": a.X2, "y2": a.Y2, "duration_ms": dur}, commandTimeout)
+			raw, err := dc.Send(ctx, protocol.MethodSwipe, map[string]any{"x1": a.X1, "y1": a.Y1, "x2": a.X2, "y2": a.Y2, "duration_ms": dur, "humanize": dc.Humanize()}, commandTimeout)
 			if err != nil {
 				return errorResult(err.Error())
 			}
@@ -213,7 +213,7 @@ var actionTools = []actionTool{
 			if a.Count != nil {
 				count = *a.Count
 			}
-			raw, err := dc.Send(ctx, protocol.MethodClick, map[string]any{"x": a.X, "y": a.Y, "modifiers": a.Modifiers, "count": count}, commandTimeout)
+			raw, err := dc.Send(ctx, protocol.MethodClick, map[string]any{"x": a.X, "y": a.Y, "modifiers": a.Modifiers, "count": count, "humanize": dc.Humanize()}, commandTimeout)
 			if err != nil {
 				return errorResult(err.Error())
 			}
@@ -231,7 +231,7 @@ var actionTools = []actionTool{
 			if err := json.Unmarshal(args, &a); err != nil {
 				return errorResult("invalid args: " + err.Error())
 			}
-			raw, err := dc.Send(ctx, protocol.MethodRightClick, map[string]any{"x": a.X, "y": a.Y}, commandTimeout)
+			raw, err := dc.Send(ctx, protocol.MethodRightClick, map[string]any{"x": a.X, "y": a.Y, "humanize": dc.Humanize()}, commandTimeout)
 			if err != nil {
 				return errorResult(err.Error())
 			}
@@ -257,7 +257,7 @@ var actionTools = []actionTool{
 			if a.DurationMs != nil {
 				dur = *a.DurationMs
 			}
-			raw, err := dc.Send(ctx, protocol.MethodDrag, map[string]any{"x1": a.X1, "y1": a.Y1, "x2": a.X2, "y2": a.Y2, "duration_ms": dur, "modifiers": a.Modifiers}, commandTimeout)
+			raw, err := dc.Send(ctx, protocol.MethodDrag, map[string]any{"x1": a.X1, "y1": a.Y1, "x2": a.X2, "y2": a.Y2, "duration_ms": dur, "modifiers": a.Modifiers, "humanize": dc.Humanize()}, commandTimeout)
 			if err != nil {
 				return errorResult(err.Error())
 			}
@@ -277,7 +277,7 @@ var actionTools = []actionTool{
 			if err := json.Unmarshal(args, &a); err != nil {
 				return errorResult("invalid args: " + err.Error())
 			}
-			raw, err := dc.Send(ctx, protocol.MethodScroll, map[string]any{"x": a.X, "y": a.Y, "dx": a.Dx, "dy": a.Dy}, commandTimeout)
+			raw, err := dc.Send(ctx, protocol.MethodScroll, map[string]any{"x": a.X, "y": a.Y, "dx": a.Dx, "dy": a.Dy, "humanize": dc.Humanize()}, commandTimeout)
 			if err != nil {
 				return errorResult(err.Error())
 			}

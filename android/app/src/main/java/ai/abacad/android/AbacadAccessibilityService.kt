@@ -78,6 +78,9 @@ class AbacadAccessibilityService : AccessibilityService() {
          *  dashboard's poll and the agent's captures coalesce instead of each paying a fresh (main-
          *  thread) encode. Any drive command invalidates it — see [invalidateShotCache]. */
         const val SCREENSHOT_CACHE_MS = 1000L
+
+        /** Fixed finger-down hold for an un-humanized tap (matches the old constant). */
+        private const val FIXED_TAP_HOLD_MS = 60L
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -385,15 +388,20 @@ class AbacadAccessibilityService : AccessibilityService() {
                     try {
                         when (method) {
                             "screenshot" -> captureScreenshot(params.optBoolean("include_ui_tree", true), done)
-                            "tap" -> tapAt(params.optInt("x", -1), params.optInt("y", -1), done)
+                            "tap" -> tapAt(
+                                params.optInt("x", -1), params.optInt("y", -1),
+                                params.optBoolean("humanize", true), done,
+                            )
                             "long_press" -> longPressAt(
                                 params.optInt("x", -1), params.optInt("y", -1),
-                                params.optLong("duration_ms", 600L), done,
+                                params.optLong("duration_ms", 600L),
+                                params.optBoolean("humanize", true), done,
                             )
                             "swipe" -> swipeAt(
                                 params.optInt("x1", -1), params.optInt("y1", -1),
                                 params.optInt("x2", -1), params.optInt("y2", -1),
-                                params.optLong("duration_ms", 300L), done,
+                                params.optLong("duration_ms", 300L),
+                                params.optBoolean("humanize", true), done,
                             )
                             "input_text" -> inputText(params.optString("text", ""), done)
                             "back" -> globalAction(GLOBAL_ACTION_BACK, done)
@@ -547,27 +555,42 @@ class AbacadAccessibilityService : AccessibilityService() {
 
     // ---- touch -----------------------------------------------------------------
 
-    private fun tapAt(x: Int, y: Int, done: (CmdResult) -> Unit) {
+    private fun tapAt(x: Int, y: Int, humanize: Boolean, done: (CmdResult) -> Unit) {
         if (x < 0 || y < 0) {
             done(CmdResult.Err("tap requires non-negative x,y"))
+            return
+        }
+        if (!humanize) {
+            // Exact pixel, fixed short hold, no dwell — the un-humanized path.
+            dispatchStroke(exactPointPath(x, y), FIXED_TAP_HOLD_MS, done)
             return
         }
         // Jittered pixel + log-normal hold, after a short "think-time" dwell (see Humanize).
         afterDwell { dispatchStroke(Humanize.pointPath(x, y), Humanize.tapHoldMs(), done) }
     }
 
-    private fun longPressAt(x: Int, y: Int, durationMs: Long, done: (CmdResult) -> Unit) {
+    private fun longPressAt(x: Int, y: Int, durationMs: Long, humanize: Boolean, done: (CmdResult) -> Unit) {
         if (x < 0 || y < 0) {
             done(CmdResult.Err("long_press requires non-negative x,y"))
+            return
+        }
+        if (!humanize) {
+            dispatchStroke(exactPointPath(x, y), durationMs.coerceIn(100L, 5000L), done)
             return
         }
         val hold = Humanize.jitterDuration(durationMs).coerceIn(100L, 5000L)
         afterDwell { dispatchStroke(Humanize.pointPath(x, y), hold, done) }
     }
 
-    private fun swipeAt(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long, done: (CmdResult) -> Unit) {
+    private fun swipeAt(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long, humanize: Boolean, done: (CmdResult) -> Unit) {
         if (x1 < 0 || y1 < 0 || x2 < 0 || y2 < 0) {
             done(CmdResult.Err("swipe requires non-negative coords"))
+            return
+        }
+        if (!humanize) {
+            // Straight line, exact endpoints, requested duration — un-humanized.
+            val line = Path().apply { moveTo(x1.toFloat(), y1.toFloat()); lineTo(x2.toFloat(), y2.toFloat()) }
+            dispatchStroke(line, durationMs.coerceIn(50L, 3000L), done)
             return
         }
         // Bowed, tremored trajectory with jittered endpoints and a jittered duration.
@@ -575,6 +598,10 @@ class AbacadAccessibilityService : AccessibilityService() {
         val dur = Humanize.jitterDuration(durationMs).coerceIn(50L, 3000L)
         afterDwell { dispatchStroke(path, dur, done) }
     }
+
+    /** Exact single-point path (no jitter) for the un-humanized tap/long_press path. */
+    private fun exactPointPath(x: Int, y: Int): Path =
+        Path().apply { moveTo(x.toFloat(), y.toFloat()) }
 
     /** Run [action] after a short log-normal pre-action dwell, so touches aren't back-to-back. */
     private fun afterDwell(action: () -> Unit) {

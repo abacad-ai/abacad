@@ -63,15 +63,15 @@ func (d *dispatcher) execute(method string, params map[string]any) (map[string]a
 
 	// Mobile verbs, mapped onto desktop input for cross-platform compatibility.
 	case "tap":
-		d.x.Click(paramInt(params, "x", 0), paramInt(params, "y", 0), 1, 1, nil)
+		d.x.Click(paramInt(params, "x", 0), paramInt(params, "y", 0), 1, 1, nil, paramBool(params, "humanize", true))
 		return dispatched(), nil
 	case "long_press":
-		d.x.LongPress(paramInt(params, "x", 0), paramInt(params, "y", 0), paramInt(params, "duration_ms", 600))
+		d.x.LongPress(paramInt(params, "x", 0), paramInt(params, "y", 0), paramInt(params, "duration_ms", 600), paramBool(params, "humanize", true))
 		return dispatched(), nil
 	case "swipe":
 		d.x.Drag(paramInt(params, "x1", 0), paramInt(params, "y1", 0),
 			paramInt(params, "x2", 0), paramInt(params, "y2", 0),
-			paramInt(params, "duration_ms", 300), nil)
+			paramInt(params, "duration_ms", 300), nil, paramBool(params, "humanize", true))
 		return dispatched(), nil
 	case "input_text":
 		// No reliable focused-field API without AT-SPI, so we type the text into
@@ -83,19 +83,19 @@ func (d *dispatcher) execute(method string, params map[string]any) (map[string]a
 	// Desktop-native verbs.
 	case "click":
 		d.x.Click(paramInt(params, "x", 0), paramInt(params, "y", 0), 1,
-			paramInt(params, "count", 1), paramStrs(params, "modifiers"))
+			paramInt(params, "count", 1), paramStrs(params, "modifiers"), paramBool(params, "humanize", true))
 		return dispatched(), nil
 	case "right_click":
-		d.x.RightClick(paramInt(params, "x", 0), paramInt(params, "y", 0))
+		d.x.RightClick(paramInt(params, "x", 0), paramInt(params, "y", 0), paramBool(params, "humanize", true))
 		return dispatched(), nil
 	case "drag":
 		d.x.Drag(paramInt(params, "x1", 0), paramInt(params, "y1", 0),
 			paramInt(params, "x2", 0), paramInt(params, "y2", 0),
-			paramInt(params, "duration_ms", 300), paramStrs(params, "modifiers"))
+			paramInt(params, "duration_ms", 300), paramStrs(params, "modifiers"), paramBool(params, "humanize", true))
 		return dispatched(), nil
 	case "scroll":
 		d.x.Scroll(paramInt(params, "x", 0), paramInt(params, "y", 0),
-			paramInt(params, "dx", 0), paramInt(params, "dy", 0))
+			paramInt(params, "dx", 0), paramInt(params, "dy", 0), paramBool(params, "humanize", true))
 		return dispatched(), nil
 	case "press_keys":
 		keys := paramStrs(params, "keys")

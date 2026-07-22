@@ -41,9 +41,11 @@ func runComposite(x *x11.Conn, steps []map[string]any) (map[string]any, error) {
 		case "type":
 			x.TypeText(paramStr(step, "text", ""))
 		case "click":
+			// Composite is an explicit, agent-authored step sequence — keep it
+			// mechanical (no humanized motion) so waypoints land exactly.
 			x.Click(paramInt(step, "x", 0), paramInt(step, "y", 0),
 				x11.ButtonForName(paramStr(step, "button", "left")),
-				paramInt(step, "count", 1), paramStrs(step, "modifiers"))
+				paramInt(step, "count", 1), paramStrs(step, "modifiers"), false)
 		case "wait":
 			if ms := paramInt(step, "ms", 0); ms > 0 {
 				time.Sleep(time.Duration(ms) * time.Millisecond)

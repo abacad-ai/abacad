@@ -7,6 +7,7 @@ import {
   Globe,
   KeyRound,
   LoaderCircle,
+  MousePointer2,
   Plug,
   RefreshCw,
   Smartphone,
@@ -181,6 +182,7 @@ export function DeviceDetailPage() {
             </MetaRow>
             <MetaRow label="Added">{relativeTime(device.created_at)}</MetaRow>
           </dl>
+          <HumanizeToggle device={device} />
           <DeleteDevice device={device} />
         </Column>
 
@@ -323,6 +325,61 @@ function ConnectionUrl({ deviceId }: { deviceId: string }) {
 // Removing a device revokes its token and drops whatever client is connected —
 // unrecoverable, so it sits last in the Setup card behind an inline confirm that
 // spells out the consequence. On success the device no longer exists, so there's
+// Human-like input toggle. On by default; off makes the device inject exact,
+// instant pointer motion (faster, but reads as a bot to behavioral detectors).
+// Persists immediately and optimistically; the 5s device poll re-syncs the
+// canonical value, and a failed write reverts the checkbox.
+function HumanizeToggle({ device }: { device: DeviceView }) {
+  const [on, setOn] = useState(device.humanize);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  // Re-sync when a different device loads or the poll brings a new value.
+  useEffect(() => {
+    setOn(device.humanize);
+    setFailed(null);
+  }, [device.id, device.humanize]);
+
+  const toggle = async () => {
+    const next = !on;
+    setOn(next);
+    setBusy(true);
+    setFailed(null);
+    try {
+      await api.setDeviceHumanize(device.id, next);
+    } catch (err) {
+      setOn(!next); // revert on failure
+      setFailed((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-5 border-t border-border pt-4">
+      <label className="flex cursor-pointer items-start gap-3">
+        <input
+          type="checkbox"
+          checked={on}
+          disabled={busy}
+          onChange={() => void toggle()}
+          className="mt-1 h-4 w-4 shrink-0 accent-brand"
+        />
+        <span className="text-sm leading-6">
+          <span className="flex items-center gap-1.5 font-medium text-ink">
+            <MousePointer2 size={14} /> Human-like input
+          </span>
+          <span className="text-ink-muted">
+            Move the cursor along a curved path with jittered timing so agent input isn’t flagged as a
+            bot. On by default; turn off for exact, instant motion.
+          </span>
+        </span>
+      </label>
+      {failed && <p className="mt-2 text-xs leading-5 text-danger">{failed}</p>}
+    </div>
+  );
+}
+
 // nothing left to show: go back to the list.
 function DeleteDevice({ device }: { device: DeviceView }) {
   const navigate = useNavigate();

@@ -63,6 +63,7 @@ func (a *accountResolver) Resolve(_ context.Context, deviceID string) (*relay.De
 		if !ok {
 			return nil, fmt.Errorf("device %q (%s) is not connected — open the abacad app on it", d.Name, d.ID)
 		}
+		dc.SetHumanize(d.Humanize)
 		return dc, nil
 	}
 
@@ -76,6 +77,7 @@ func (a *accountResolver) Resolve(_ context.Context, deviceID string) (*relay.De
 			continue
 		}
 		if dc, ok := a.hub.Get(d.ID); ok {
+			dc.SetHumanize(d.Humanize)
 			return dc, nil
 		}
 	}

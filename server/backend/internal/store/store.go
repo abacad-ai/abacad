@@ -53,6 +53,7 @@ type Device struct {
 	CreatedAt int64
 	LastSeen  int64
 	Version   string // last version the client reported on connect; "" if never
+	Humanize  bool   // inject human-like pointer motion on this device (default on)
 }
 
 // Open opens (creating if needed) the SQLite database at path and runs
@@ -255,7 +256,7 @@ func (s *Store) DeleteSession(sessionID string) error {
 // free-form tag (e.g. "android", "macos"); "" leaves it unset.
 func (s *Store) CreateDevice(accountID, name, platform string) (Device, string, error) {
 	token := auth.NewSecret(deviceTokenPrefix)
-	d := Device{ID: auth.NewDeviceID(), AccountID: accountID, Name: name, Platform: platform, CreatedAt: now()}
+	d := Device{ID: auth.NewDeviceID(), AccountID: accountID, Name: name, Platform: platform, CreatedAt: now(), Humanize: true}
 	_, err := s.db.Exec(`INSERT INTO devices(id,account_id,name,token_hash,platform,created_at,last_seen)
 		VALUES(?,?,?,?,?,?,0)`, d.ID, d.AccountID, d.Name, auth.HashToken(token), d.Platform, d.CreatedAt)
 	if err != nil {
@@ -267,7 +268,7 @@ func (s *Store) CreateDevice(accountID, name, platform string) (Device, string, 
 // DeviceByTokenHash resolves a device token (already hashed) to its device.
 func (s *Store) DeviceByTokenHash(tokenHash string) (Device, error) {
 	return s.scanDevice(s.db.QueryRow(
-		`SELECT id,account_id,name,platform,created_at,last_seen,version FROM devices WHERE token_hash=?`, tokenHash))
+		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize FROM devices WHERE token_hash=?`, tokenHash))
 }
 
 // DeviceByID resolves a device by its (non-secret) id alone. Used by the browser
@@ -276,20 +277,20 @@ func (s *Store) DeviceByTokenHash(tokenHash string) (Device, error) {
 // that rely on it (only the Host router) must intend exactly that.
 func (s *Store) DeviceByID(deviceID string) (Device, error) {
 	return s.scanDevice(s.db.QueryRow(
-		`SELECT id,account_id,name,platform,created_at,last_seen,version FROM devices WHERE id=?`, deviceID))
+		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize FROM devices WHERE id=?`, deviceID))
 }
 
 // DeviceOwnedBy returns a device only if it belongs to accountID.
 func (s *Store) DeviceOwnedBy(deviceID, accountID string) (Device, error) {
 	return s.scanDevice(s.db.QueryRow(
-		`SELECT id,account_id,name,platform,created_at,last_seen,version FROM devices WHERE id=? AND account_id=?`,
+		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize FROM devices WHERE id=? AND account_id=?`,
 		deviceID, accountID))
 }
 
 // DevicesByAccount lists an account's devices, most-recently-active first.
 func (s *Store) DevicesByAccount(accountID string) ([]Device, error) {
 	rows, err := s.db.Query(
-		`SELECT id,account_id,name,platform,created_at,last_seen,version FROM devices
+		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize FROM devices
 		  WHERE account_id=? ORDER BY last_seen DESC, created_at DESC`, accountID)
 	if err != nil {
 		return nil, err
@@ -298,7 +299,7 @@ func (s *Store) DevicesByAccount(accountID string) ([]Device, error) {
 	var out []Device
 	for rows.Next() {
 		var d Device
-		if err := rows.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen, &d.Version); err != nil {
+		if err := rows.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen, &d.Version, &d.Humanize); err != nil {
 			return nil, err
 		}
 		out = append(out, d)
@@ -308,6 +309,11 @@ func (s *Store) DevicesByAccount(accountID string) ([]Device, error) {
 
 func (s *Store) RenameDevice(deviceID, accountID, name string) error {
 	return s.affect(s.db.Exec(`UPDATE devices SET name=? WHERE id=? AND account_id=?`, name, deviceID, accountID))
+}
+
+// SetDeviceHumanize toggles human-like pointer motion for a device.
+func (s *Store) SetDeviceHumanize(deviceID, accountID string, v bool) error {
+	return s.affect(s.db.Exec(`UPDATE devices SET humanize=? WHERE id=? AND account_id=?`, v, deviceID, accountID))
 }
 
 func (s *Store) DeleteDevice(deviceID, accountID string) error {
@@ -341,7 +347,7 @@ func (s *Store) SetDeviceVersion(deviceID, version string) {
 
 func (s *Store) scanDevice(row *sql.Row) (Device, error) {
 	var d Device
-	err := row.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen, &d.Version)
+	err := row.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen, &d.Version, &d.Humanize)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Device{}, ErrNotFound
 	}

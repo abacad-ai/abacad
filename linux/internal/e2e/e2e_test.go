@@ -186,13 +186,39 @@ func TestXvfbE2E(t *testing.T) {
 	}
 	dispatched("tap", "tap", map[string]any{"x": 100, "y": 100})
 	dispatched("click", "click", map[string]any{"x": 200, "y": 150})
-	// Positive proof injected motion reached the server: the pointer warped to
-	// the last click point (not just "the reply came back ok").
+
+	// Positive proof injected motion reached the server: with humanize OFF the
+	// pointer warps to the exact click point (the humanized path deliberately
+	// jitters the landing, so the precise-coordinate check uses humanize:false).
+	send("clickexact", "click", map[string]any{"x": 200, "y": 150, "humanize": false})
 	if px, py, perr := xc.PointerPos(); perr == nil {
-		ok("click warped pointer", px == 200 && py == 150, jsonStr(map[string]any{"x": px, "y": py}))
+		ok("click(exact) warped pointer", px == 200 && py == 150, jsonStr(map[string]any{"x": px, "y": py}))
 	} else {
-		ok("click warped pointer", false, perr.Error())
+		ok("click(exact) warped pointer", false, perr.Error())
 	}
+
+	// Humanized proof: from a parked cursor, a humanized click lands NEAR the
+	// target (jittered, not exact) and takes human time — pre-action dwell +
+	// per-step curved approach + press hold — whereas the teleport is instant.
+	// That wall-clock gap is the behavioral signal the humanize path adds.
+	send("park", "click", map[string]any{"x": 10, "y": 10, "humanize": false})
+	tTele := time.Now()
+	send("tele", "click", map[string]any{"x": 640, "y": 400, "humanize": false})
+	teleDur := time.Since(tTele)
+	send("park2", "click", map[string]any{"x": 10, "y": 10, "humanize": false})
+	tHum := time.Now()
+	send("hum", "click", map[string]any{"x": 640, "y": 400, "humanize": true})
+	humDur := time.Since(tHum)
+	if hx, hy, perr := xc.PointerPos(); perr == nil {
+		ok("humanized click lands near target", absInt(hx-640) <= 30 && absInt(hy-400) <= 30,
+			jsonStr(map[string]any{"x": hx, "y": hy}))
+	} else {
+		ok("humanized click lands near target", false, perr.Error())
+	}
+	ok("humanized click takes human time",
+		humDur > 60*time.Millisecond && humDur > teleDur+40*time.Millisecond,
+		fmt.Sprintf("humanized=%v teleport=%v", humDur, teleDur))
+
 	dispatched("right_click", "right_click", map[string]any{"x": 200, "y": 150})
 	dispatched("drag", "drag", map[string]any{"x1": 10, "y1": 10, "x2": 300, "y2": 200, "duration_ms": 40})
 	dispatched("scroll", "scroll", map[string]any{"x": 400, "y": 400, "dy": 3})
@@ -436,6 +462,12 @@ func intOf(v any) int {
 	return -1
 }
 func str(v any) string { s, _ := v.(string); return s }
+func absInt(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
 func jsonStr(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)

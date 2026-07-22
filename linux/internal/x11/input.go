@@ -1,6 +1,7 @@
 package x11
 
 import (
+	"math"
 	"time"
 
 	"github.com/jezek/xgb/xproto"
@@ -11,7 +12,10 @@ import (
 // returns — so a node's bounds map straight to a click point.
 
 // Click posts count clicks of button at (x,y), optionally with modifiers held.
-func (c *Conn) Click(x, y int, button byte, count int, modifiers []string) {
+// When humanize is set it dwells, walks the cursor to a jittered target along a
+// curved path, and holds each press for a log-normal time (see humanize.go);
+// otherwise it teleports and clicks instantly (the exact prior behavior).
+func (c *Conn) Click(x, y int, button byte, count int, modifiers []string, humanize bool) {
 	if button == 0 {
 		button = 1
 	}
@@ -19,34 +23,77 @@ func (c *Conn) Click(x, y int, button byte, count int, modifiers []string) {
 		count = 1
 	}
 	held := c.pressModifiers(modifiers)
-	c.fake(evMotion, 0, x, y)
+	px, py := x, y
+	if humanize {
+		sleepMs(hpDwellMs())
+		px, py = c.humanMoveTo(x, y)
+	} else {
+		c.fake(evMotion, 0, x, y)
+	}
 	for i := 0; i < count; i++ {
-		c.fake(evButtonPress, button, x, y)
-		c.fake(evButtonRel, button, x, y)
+		c.fake(evButtonPress, button, px, py)
+		if humanize {
+			c.sync()
+			sleepMs(hpTapHoldMs())
+		}
+		c.fake(evButtonRel, button, px, py)
+		if humanize && i < count-1 {
+			c.sync()
+			sleepMs(hpDwellMs())
+		}
 	}
 	c.releaseModifiers(held)
 	c.sync()
 }
 
 // RightClick opens a context menu at (x,y).
-func (c *Conn) RightClick(x, y int) { c.Click(x, y, 3, 1, nil) }
+func (c *Conn) RightClick(x, y int, humanize bool) { c.Click(x, y, 3, 1, nil, humanize) }
 
 // LongPress presses the left button at (x,y), holds for holdMs, and releases.
-func (c *Conn) LongPress(x, y, holdMs int) {
-	c.fake(evMotion, 0, x, y)
-	c.fake(evButtonPress, 1, x, y)
+// When humanize is set it dwells, approaches the target on a curved path, and
+// jitters the hold duration.
+func (c *Conn) LongPress(x, y, holdMs int, humanize bool) {
+	px, py := x, y
+	if humanize {
+		sleepMs(hpDwellMs())
+		px, py = c.humanMoveTo(x, y)
+		holdMs = hpJitterDuration(holdMs, 0.12)
+	} else {
+		c.fake(evMotion, 0, x, y)
+	}
+	c.fake(evButtonPress, 1, px, py)
 	c.sync()
 	if holdMs > 0 {
 		time.Sleep(time.Duration(holdMs) * time.Millisecond)
 	}
-	c.fake(evButtonRel, 1, x, y)
+	c.fake(evButtonRel, 1, px, py)
 	c.sync()
 }
 
 // Drag presses at (x1,y1), interpolates to (x2,y2) over durationMs, and releases
-// — matching the macOS drag stepping (≤60 steps, ~8ms each).
-func (c *Conn) Drag(x1, y1, x2, y2, durationMs int, modifiers []string) {
+// — matching the macOS drag stepping (≤60 steps, ~8ms each). When humanize is
+// set it first approaches the grab point, then follows a bowed Bézier (with
+// tremor) to a jittered target over a jittered duration.
+func (c *Conn) Drag(x1, y1, x2, y2, durationMs int, modifiers []string, humanize bool) {
 	held := c.pressModifiers(modifiers)
+	if humanize {
+		sleepMs(hpDwellMs())
+		sx, sy := c.humanMoveTo(x1, y1)
+		c.fake(evButtonPress, 1, sx, sy)
+		c.sync()
+		ex, ey := hpJitter(x2, 4.0), hpJitter(y2, 4.0)
+		pts := bowedPolyline(float64(sx), float64(sy), float64(ex), float64(ey), false)
+		per := hpJitterDuration(durationMs, 0.12) / len(pts)
+		for _, p := range pts {
+			c.fake(evMotion, 0, p.x, p.y)
+			c.sync()
+			sleepMs(int(math.Max(1, float64(per)*(1+gaussian()*0.25))))
+		}
+		c.fake(evButtonRel, 1, ex, ey)
+		c.releaseModifiers(held)
+		c.sync()
+		return
+	}
 	c.fake(evMotion, 0, x1, y1)
 	c.fake(evButtonPress, 1, x1, y1)
 	c.sync()
@@ -76,8 +123,13 @@ func (c *Conn) Drag(x1, y1, x2, y2, durationMs int, modifiers []string) {
 // Scroll emits wheel-button clicks at (x,y). X wheels are discrete buttons:
 // 4=up, 5=down, 6=left, 7=right. dy/dx are treated as notch counts (capped) so a
 // positive dy scrolls up, matching the macOS convention.
-func (c *Conn) Scroll(x, y, dx, dy int) {
-	c.fake(evMotion, 0, x, y)
+func (c *Conn) Scroll(x, y, dx, dy int, humanize bool) {
+	if humanize {
+		sleepMs(hpDwellMs())
+		x, y = c.humanMoveTo(x, y)
+	} else {
+		c.fake(evMotion, 0, x, y)
+	}
 	c.wheel(x, y, dy, 4, 5)
 	c.wheel(x, y, dx, 7, 6)
 	c.sync()

@@ -99,6 +99,11 @@ type DeviceConn struct {
 
 	onCmd CommandObserver // may be nil; notified on every Send completion
 
+	// humanize mirrors the device record's humanize setting, refreshed on each
+	// Resolve. Read when building pointer commands so the client knows whether to
+	// synthesize human-like motion. Defaults on.
+	humanize atomic.Bool
+
 	// activity holds the device's last-reported power state (protocol.Activity).
 	// Defaults to active; updated by presence frames in ReadPump. It's a display
 	// signal only — the device stays reachable while asleep, so it doesn't gate
@@ -127,6 +132,7 @@ func NewDeviceConn(deviceID string, ws *websocket.Conn) *DeviceConn {
 		closed:   make(chan struct{}),
 	}
 	c.activity.Store(protocol.ActivityActive) // assume awake until told otherwise
+	c.humanize.Store(true)                    // on unless the device record says otherwise
 	c.pingInterval = pingInterval
 	c.pongTimeout = pongTimeout
 	return c
@@ -135,6 +141,13 @@ func NewDeviceConn(deviceID string, ws *websocket.Conn) *DeviceConn {
 // SetCommandObserver installs (or clears) the per-command observer. Call before
 // ReadPump starts.
 func (c *DeviceConn) SetCommandObserver(obs CommandObserver) { c.onCmd = obs }
+
+// SetHumanize records whether this device wants human-like pointer motion,
+// mirroring the store record. Refreshed on every Resolve.
+func (c *DeviceConn) SetHumanize(v bool) { c.humanize.Store(v) }
+
+// Humanize reports the device's current humanize setting.
+func (c *DeviceConn) Humanize() bool { return c.humanize.Load() }
 
 // Activity returns the device's last-reported power state. A fresh connection is
 // active until a presence frame says otherwise.

@@ -12,6 +12,7 @@ export interface DeviceView {
   created_at: string;
   ssh_host?: string; // ssh <ssh_host> reaches this device via the jump host
   screenshot_at?: number; // unix seconds of the last stored screenshot; absent if none
+  humanize: boolean; // inject human-like pointer motion on this device (default on)
 }
 
 export interface SshKey {
@@ -183,6 +184,8 @@ export const api = {
     req<NewDevice>("/api/devices", { method: "POST", body: JSON.stringify({ name, platform }) }),
   renameDevice: (id: string, name: string) =>
     req<void>(`/api/devices/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
+  setDeviceHumanize: (id: string, humanize: boolean) =>
+    req<void>(`/api/devices/${id}`, { method: "PATCH", body: JSON.stringify({ humanize }) }),
   deleteDevice: (id: string) => req<void>(`/api/devices/${id}`, { method: "DELETE" }),
   rotateDeviceToken: (id: string) =>
     req<{ device_token: string; wss_url: string }>(`/api/devices/${id}/rotate-token`, { method: "POST" }),
