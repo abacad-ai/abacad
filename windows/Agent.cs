@@ -17,6 +17,7 @@ sealed class Agent
 
     public Agent()
     {
+        _dispatcher.Blobs = BlobClient.FromServerUrl(ServerUrl);
         _tunnel.SendFrame = data => _ws.Send(data);
         _ws.OnStateChange = up => { Connected = up; ConnectedChanged?.Invoke(up); };
         _ws.OnText = HandleText;
@@ -34,6 +35,9 @@ sealed class Agent
         url = url.Trim();
         Prefs.ServerUrl = url;
         ServerUrl = url;
+        // Rebuild the blob endpoint whenever the server URL changes, so file
+        // transfer follows the socket to a new host/token.
+        _dispatcher.Blobs = BlobClient.FromServerUrl(url);
         _ws.Connect(url);
     }
 

@@ -12,6 +12,10 @@ import ApplicationServices
 // unrecognized returns "unknown method: X" — which is how the server keeps one
 // global tool list without per-platform filtering.
 struct CommandDispatcher {
+    /// Backs push_file / pull_file over the /blobs data plane. Set by Agent from
+    /// the server URL; nil disables file transfer (the verbs then say so).
+    var blobClient: BlobClient?
+
     /// Execute a method and return the `result` object, or throw CmdError.
     func execute(method: String, params: [String: Any]) async throws -> [String: Any] {
         // Any non-screenshot command may change the screen, so invalidate the
@@ -73,6 +77,21 @@ struct CommandDispatcher {
             let steps = params.objects("steps")
             guard !steps.isEmpty else { throw CmdError.message("composite requires a non-empty steps array") }
             return try await Composite.run(steps)
+
+        // File transfer over the /blobs data plane. Filesystem I/O, no display or
+        // input needed — works the same whether or not anyone is at the screen.
+        case "push_file":
+            guard let blobs = blobClient else { throw CmdError.message("file transfer is not configured on this device") }
+            let blobID = params.string("blob_id"), dest = params.string("dest_path")
+            guard !blobID.isEmpty, !dest.isEmpty else { throw CmdError.message("push_file requires blob_id and dest_path") }
+            let (size, sha) = try await blobs.download(blobID: blobID, destPath: dest, mode: params.int("mode", 0o644))
+            return ["written": true, "size": size, "sha256": sha]
+        case "pull_file":
+            guard let blobs = blobClient else { throw CmdError.message("file transfer is not configured on this device") }
+            let src = params.string("src_path")
+            guard !src.isEmpty else { throw CmdError.message("pull_file requires src_path") }
+            let (id, size, sha) = try await blobs.upload(srcPath: src)
+            return ["blob_id": id, "size": size, "sha256": sha]
 
         // Mobile navigation keys have no desktop analogue.
         case "back", "home", "recents":

@@ -39,6 +39,13 @@ const (
 	// `execute` — the escape hatch that evaluates JavaScript in that page.
 	// Non-browser devices reject it as an unknown method.
 	MethodExecute Method = "execute"
+
+	// File-transfer methods bridge the device's filesystem to the /blobs data
+	// plane. The bytes ride HTTP (the device fetches/posts /blobs with its own
+	// token), never this WebSocket — the frame only carries the blob id and the
+	// on-device path. A device without a filesystem verb rejects them as unknown.
+	MethodPushFile Method = "push_file" // server-staged blob -> device file
+	MethodPullFile Method = "pull_file" // device file -> blob the agent can read
 )
 
 // Methods is the full set of device methods, in MCP-tool order. It is the source
@@ -49,6 +56,7 @@ var Methods = []Method{
 	MethodBack, MethodHome, MethodRecents,
 	MethodClick, MethodRightClick, MethodDrag, MethodScroll, MethodPressKeys, MethodComposite,
 	MethodExecute,
+	MethodPushFile, MethodPullFile,
 }
 
 // Command is server -> device. id correlates the reply.
@@ -144,4 +152,23 @@ type CompositeResult struct {
 // the agent sees it as a tool error rather than a value.
 type ExecuteResult struct {
 	Value json.RawMessage `json:"value,omitempty"`
+}
+
+// PushFileResult is reported by push_file: the device downloaded the staged blob
+// and wrote it to the target path. Size and SHA256 are what the device actually
+// wrote, so the server can compare them against the staged blob to confirm the
+// bytes arrived intact.
+type PushFileResult struct {
+	Written bool   `json:"written"`
+	Size    int64  `json:"size"`
+	SHA256  string `json:"sha256"` // hex
+}
+
+// PullFileResult is reported by pull_file: the device read the source file and
+// uploaded it to /blobs (under the same account), returning the blob id the
+// agent can then read. Size/SHA256 describe the uploaded bytes.
+type PullFileResult struct {
+	BlobID string `json:"blob_id"`
+	Size   int64  `json:"size"`
+	SHA256 string `json:"sha256"` // hex
 }

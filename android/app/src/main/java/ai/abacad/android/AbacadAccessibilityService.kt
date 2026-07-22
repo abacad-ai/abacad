@@ -84,6 +84,15 @@ class AbacadAccessibilityService : AccessibilityService() {
     private var device: DeviceClient? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
+    /** Backs push_file / pull_file over the /blobs data plane; rebuilt with the
+     *  server URL in [connectFromPrefs]. Null until a URL is set. */
+    private var blobClient: BlobClient? = null
+
+    /** File transfer is filesystem + network I/O — it must run off the main thread
+     *  (network on main throws) and needs no screen, unlike the display verbs. A
+     *  single background thread keeps transfers serialized and off the UI looper. */
+    private val fileIoExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+
     /** Held for the life of the connection but only while unplugged, so pings keep firing and the
      *  socket survives Doze off-charger. On a charger there's no Doze, so we skip it (see
      *  [updateSessionWakeLock]). Distinct from [wakeLock], the transient wake-from-dark hold. */
@@ -189,6 +198,7 @@ class AbacadAccessibilityService : AccessibilityService() {
             .getString(KEY_SERVER_URL, "")?.trim().orEmpty()
         device?.close()
         device = null
+        blobClient = null
         if (url.isEmpty()) {
             Log.w(TAG, "no server URL set — open the app and enter ws://<host>:8848/device")
             AbacadStatus.setState(AbacadStatus.State.DISCONNECTED, "no server URL set — open the app to connect")
@@ -196,6 +206,7 @@ class AbacadAccessibilityService : AccessibilityService() {
             releaseSessionWakeLock()
             return
         }
+        blobClient = BlobClient.fromServerUrl(url)
         device = DeviceClient(url, ::execute) { currentActivityState() }.also { it.connect() }
         // Run at foreground-service priority + hold the socket alive through screen-off so the
         // device stays reachable while it "sleeps" (see docs/power-lockscreen.md).
@@ -317,6 +328,20 @@ class AbacadAccessibilityService : AccessibilityService() {
      * off without ever having to think about power.
      */
     fun execute(method: String, params: JSONObject, done: (CmdResult) -> Unit) {
+        // File transfer is filesystem + HTTP I/O: it needs no screen and must not
+        // run on the main thread, so it bypasses the awake gate and runs on the
+        // background file-IO thread. (Matches the Linux client keeping these out of
+        // its display-verb set.)
+        if (method == "push_file" || method == "pull_file") {
+            fileIoExecutor.execute {
+                try {
+                    done(CmdResult.Ok(if (method == "push_file") pushFile(params) else pullFile(params)))
+                } catch (e: Exception) {
+                    done(CmdResult.Err(e.message ?: e.toString()))
+                }
+            }
+            return
+        }
         handler.post {
             ensureAwake(
                 onReady = {
@@ -552,6 +577,29 @@ class AbacadAccessibilityService : AccessibilityService() {
         }
         val ok = focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
         done(CmdResult.Ok(JSONObject().put("set", ok)))
+    }
+
+    // ---- file transfer (runs on fileIoExecutor; throws on failure) --------------
+
+    /** Download a server-staged blob and write it to dest_path. Bytes travel over
+     *  the /blobs data plane, not the command socket. */
+    private fun pushFile(params: JSONObject): JSONObject {
+        val blobs = blobClient ?: throw IllegalStateException("file transfer is not configured on this device")
+        val blobId = params.optString("blob_id")
+        val dest = params.optString("dest_path")
+        if (blobId.isEmpty() || dest.isEmpty()) throw IllegalArgumentException("push_file requires blob_id and dest_path")
+        val mode = params.optInt("mode", "644".toInt(8)) // 0644
+        val (size, sha) = blobs.download(blobId, dest, mode)
+        return JSONObject().put("written", true).put("size", size).put("sha256", sha)
+    }
+
+    /** Upload the file at src_path to /blobs and return its blob id. */
+    private fun pullFile(params: JSONObject): JSONObject {
+        val blobs = blobClient ?: throw IllegalStateException("file transfer is not configured on this device")
+        val src = params.optString("src_path")
+        if (src.isEmpty()) throw IllegalArgumentException("pull_file requires src_path")
+        val (id, size, sha) = blobs.upload(src)
+        return JSONObject().put("blob_id", id).put("size", size).put("sha256", sha)
     }
 
     // ---- nav keys --------------------------------------------------------------

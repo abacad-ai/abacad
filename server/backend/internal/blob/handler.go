@@ -7,21 +7,16 @@
 //
 // This is deliberately dumb: it never branches on what a blob "is". A screenshot
 // and a 1 GB file take the same path. Meaning lives in the control frames that
-// reference the id, not here.
+// reference the id, not here. The storage discipline lives in Service; this file
+// is only the HTTP skin over it.
 package blob
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"time"
 
-	"abacad/internal/auth"
 	"abacad/internal/store"
 )
 
@@ -31,12 +26,10 @@ import (
 // with 401. Built in main so this package stays unaware of how auth is wired.
 type AccountResolver func(r *http.Request) (store.Account, error)
 
-// Handler serves POST /blobs and GET /blobs/{id}.
+// Handler serves POST /blobs and GET /blobs/{id} over a Service.
 type Handler struct {
-	Store    *store.Store
-	Dir      string // where blob bytes live on disk; must exist
-	MaxBytes int64  // reject a single upload larger than this
-	Account  AccountResolver
+	Svc     *Service
+	Account AccountResolver
 }
 
 type uploadResponse struct {
@@ -53,62 +46,20 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		unauthorized(w, err)
 		return
 	}
-	// Cap the body: reads past MaxBytes fail with *http.MaxBytesError instead of
-	// letting a client fill the disk.
-	r.Body = http.MaxBytesReader(w, r.Body, h.MaxBytes)
+	// Cap the body at the network edge too: reads past MaxBytes fail with
+	// *http.MaxBytesError instead of letting a client fill the disk. Service.Put
+	// enforces the same cap for in-process callers that have no such reader.
+	r.Body = http.MaxBytesReader(w, r.Body, h.Svc.MaxBytes)
 
-	contentType := r.Header.Get("Content-Type")
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-
-	tmp, err := os.CreateTemp(h.Dir, "upload-*")
+	b, err := h.Svc.Put(acc.ID, r.Header.Get("Content-Type"), r.Body)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "could not stage upload")
-		return
-	}
-	tmpName := tmp.Name()
-
-	// Stream to disk and hash in one pass — the bytes never accumulate in memory.
-	hasher := sha256.New()
-	size, copyErr := io.Copy(io.MultiWriter(tmp, hasher), r.Body)
-	closeErr := tmp.Close()
-
-	if copyErr != nil {
-		os.Remove(tmpName)
 		var mbe *http.MaxBytesError
-		if errors.As(copyErr, &mbe) {
+		switch {
+		case errors.As(err, &mbe), errors.Is(err, ErrTooLarge):
 			writeErr(w, http.StatusRequestEntityTooLarge, "blob exceeds the maximum upload size")
-			return
+		default:
+			writeErr(w, http.StatusInternalServerError, "could not store blob")
 		}
-		writeErr(w, http.StatusBadRequest, "upload read failed")
-		return
-	}
-	if closeErr != nil {
-		os.Remove(tmpName)
-		writeErr(w, http.StatusInternalServerError, "could not finalize upload")
-		return
-	}
-
-	id := auth.NewID("blob")
-	final := filepath.Join(h.Dir, id)
-	if err := os.Rename(tmpName, final); err != nil {
-		os.Remove(tmpName)
-		writeErr(w, http.StatusInternalServerError, "could not store blob")
-		return
-	}
-
-	b := store.Blob{
-		ID:          id,
-		AccountID:   acc.ID,
-		ContentType: contentType,
-		Size:        size,
-		SHA256:      hex.EncodeToString(hasher.Sum(nil)),
-		CreatedAt:   time.Now().Unix(),
-	}
-	if err := h.Store.CreateBlob(b); err != nil {
-		os.Remove(final)
-		writeErr(w, http.StatusInternalServerError, "could not record blob")
 		return
 	}
 
@@ -123,21 +74,15 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 		unauthorized(w, err)
 		return
 	}
-	b, err := h.Store.BlobByID(r.PathValue("id"))
+	f, b, err := h.Svc.Open(acc.ID, r.PathValue("id"))
 	// 404 whether it doesn't exist or isn't yours — never leak another account's
 	// blob ids by distinguishing "not found" from "forbidden".
-	if errors.Is(err, store.ErrNotFound) || (err == nil && b.AccountID != acc.ID) {
+	if errors.Is(err, store.ErrNotFound) {
 		writeErr(w, http.StatusNotFound, "blob not found")
 		return
 	}
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "could not load blob")
-		return
-	}
-
-	f, err := os.Open(filepath.Join(h.Dir, b.ID)) // b.ID is from the DB, not user input
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "blob bytes missing")
 		return
 	}
 	defer f.Close()

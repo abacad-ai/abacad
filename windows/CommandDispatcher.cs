@@ -13,6 +13,10 @@ namespace Abacad;
 // global tool list without per-platform filtering.
 sealed class CommandDispatcher
 {
+    /// Backs push_file / pull_file over the /blobs data plane. Set by Agent from
+    /// the server URL; null disables file transfer (the verbs then say so).
+    public BlobClient? Blobs { get; set; }
+
     /// Execute a method and return the `result` object, or throw CmdException.
     public async Task<Dictionary<string, object?>> Execute(string method, Dictionary<string, object?> p)
     {
@@ -65,6 +69,26 @@ sealed class CommandDispatcher
                 var steps = p.Objects("steps");
                 if (steps.Count == 0) throw new CmdException("composite requires a non-empty steps array");
                 return await Composite.Run(steps);
+
+            // File transfer over the /blobs data plane. Filesystem I/O — no display
+            // or input needed, so it runs the same whether or not anyone's at the PC.
+            case "push_file":
+            {
+                var blobs = Blobs ?? throw new CmdException("file transfer is not configured on this device");
+                string blobId = p.Str("blob_id"), dest = p.Str("dest_path");
+                if (blobId.Length == 0 || dest.Length == 0)
+                    throw new CmdException("push_file requires blob_id and dest_path");
+                var (size, sha) = await blobs.Download(blobId, dest, p.Int("mode", 0x1A4)); // 0644
+                return new Dictionary<string, object?> { ["written"] = true, ["size"] = size, ["sha256"] = sha };
+            }
+            case "pull_file":
+            {
+                var blobs = Blobs ?? throw new CmdException("file transfer is not configured on this device");
+                string src = p.Str("src_path");
+                if (src.Length == 0) throw new CmdException("pull_file requires src_path");
+                var (id, size, sha) = await blobs.Upload(src);
+                return new Dictionary<string, object?> { ["blob_id"] = id, ["size"] = size, ["sha256"] = sha };
+            }
 
             // Mobile navigation keys have no desktop analogue.
             case "back":

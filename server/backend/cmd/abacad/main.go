@@ -113,9 +113,16 @@ func main() {
 		Activity: trail,
 	}
 
+	// blobSvc is the account-scoped data-plane store, shared by the /blobs HTTP
+	// handler and the MCP file-transfer tools (push_file / pull_file), which stage
+	// and read blob bytes on the agent's behalf so the agent never leaves the MCP
+	// surface to move a file.
+	blobSvc := &blob.Service{Store: st, Dir: cfg.BlobDir, MaxBytes: cfg.MaxBlobBytes}
+
 	// /mcp: authenticate the agent by its bearer API key -> account + scope ->
 	// scoped resolver. The scope also gates which methods the key may call.
 	mcpHandler := &mcp.Handler{
+		Blobs: mcpBlobs{svc: blobSvc},
 		ResolverFor: func(r *http.Request) (mcp.DeviceResolver, mcp.Scope, error) {
 			token := auth.BearerToken(r)
 			if token == "" {
@@ -153,7 +160,7 @@ func main() {
 
 	apiHandler := (&api.API{
 		Store: st, Hub: hub, Events: evlog, Activity: trail, Shots: shots, BaseDomain: cfg.BaseDomain,
-		DownloadsDir: cfg.DownloadsDir,
+		DownloadsDir:   cfg.DownloadsDir,
 		GoogleClientID: cfg.GoogleClientID, GoogleClientSecret: cfg.GoogleClientSecret, GoogleRedirectURL: cfg.GoogleRedirectURL,
 	}).Handler()
 
@@ -181,7 +188,7 @@ func main() {
 		}
 		return store.Account{}, errors.New("missing or invalid credentials (session, MCP token, or device token)")
 	}
-	blobHandler := &blob.Handler{Store: st, Dir: cfg.BlobDir, MaxBytes: cfg.MaxBlobBytes, Account: accountForBlob}
+	blobHandler := &blob.Handler{Svc: blobSvc, Account: accountForBlob}
 
 	spa, err := web.New()
 	if err != nil {
@@ -415,4 +422,25 @@ func methodNotAllowedMCP(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusMethodNotAllowed)
 	_, _ = w.Write([]byte(`{"error":"method not allowed (stateless MCP: POST only)"}`))
+}
+
+// mcpBlobs adapts *blob.Service to mcp.BlobStore: the file-transfer tools want
+// plain (id, size, sha256) tuples and a reader, not the store.Blob record, so
+// the coupling between the two packages stays at this thin boundary.
+type mcpBlobs struct{ svc *blob.Service }
+
+func (b mcpBlobs) Put(accountID, contentType string, r io.Reader) (id string, size int64, sha256 string, err error) {
+	bl, err := b.svc.Put(accountID, contentType, r)
+	if err != nil {
+		return "", 0, "", err
+	}
+	return bl.ID, bl.Size, bl.SHA256, nil
+}
+
+func (b mcpBlobs) Open(accountID, id string) (rc io.ReadCloser, size int64, sha256 string, err error) {
+	f, bl, err := b.svc.Open(accountID, id)
+	if err != nil {
+		return nil, 0, "", err
+	}
+	return f, bl.Size, bl.SHA256, nil
 }

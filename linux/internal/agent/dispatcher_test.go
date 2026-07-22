@@ -9,7 +9,7 @@ import (
 // verb with a clear capability error rather than nil-dereferencing the absent
 // backend — while non-display concerns are unaffected.
 func TestDispatcherShellOnly(t *testing.T) {
-	d := newDispatcher(nil) // headless: no display
+	d := newDispatcher(nil, nil) // headless: no display, no blob client
 
 	for _, m := range []string{
 		"screenshot", "tap", "long_press", "swipe", "input_text",
@@ -28,5 +28,16 @@ func TestDispatcherShellOnly(t *testing.T) {
 	}
 	if _, err := d.execute("bogus", nil); err == nil || strings.Contains(err.Error(), "shell-only") {
 		t.Errorf("unknown verb: want 'unknown method', got %v", err)
+	}
+
+	// File transfer is filesystem I/O, not a display verb: it must NOT be rejected
+	// as shell-only. With no blob client wired it reports "not configured" instead.
+	for _, m := range []string{"push_file", "pull_file"} {
+		_, err := d.execute(m, map[string]any{"blob_id": "x", "dest_path": "/tmp/x", "src_path": "/tmp/x"})
+		if err == nil {
+			t.Errorf("%s: expected 'not configured' error, got nil", m)
+		} else if got := err.Error(); strings.Contains(got, "shell-only") || !strings.Contains(got, "not configured") {
+			t.Errorf("%s: want 'not configured', got %q", m, got)
+		}
 	}
 }

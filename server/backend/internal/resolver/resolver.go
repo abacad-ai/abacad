@@ -42,6 +42,10 @@ type accountResolver struct {
 	scope     store.KeyScope
 }
 
+// AccountID is the account this resolver is scoped to. The MCP file-transfer
+// tools use it to stage and read blobs on the caller's behalf.
+func (a *accountResolver) AccountID() string { return a.accountID }
+
 // Resolve maps an optional device_id to a live connection the account owns.
 func (a *accountResolver) Resolve(_ context.Context, deviceID string) (*relay.DeviceConn, error) {
 	if deviceID != "" {

@@ -36,9 +36,7 @@ func newFixture(t *testing.T) (*http.ServeMux, store.Account, store.Account) {
 	}
 
 	h := &Handler{
-		Store:    st,
-		Dir:      t.TempDir(),
-		MaxBytes: 1 << 20,
+		Svc: &Service{Store: st, Dir: t.TempDir(), MaxBytes: 1 << 20},
 		Account: func(r *http.Request) (store.Account, error) {
 			switch r.Header.Get("X-Test-Account") {
 			case "A":

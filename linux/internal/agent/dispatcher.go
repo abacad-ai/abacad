@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"os"
 	"sync"
 
 	"abacad-linux/internal/x11"
@@ -20,11 +21,12 @@ import (
 type dispatcher struct {
 	x     *x11.Conn
 	cache *shotCache
+	blobs *blobClient // file transfer over the /blobs data plane; nil disables it
 	mu    sync.Mutex
 }
 
-func newDispatcher(x *x11.Conn) *dispatcher {
-	return &dispatcher{x: x, cache: newShotCache(x, emptyTree)}
+func newDispatcher(x *x11.Conn, blobs *blobClient) *dispatcher {
+	return &dispatcher{x: x, cache: newShotCache(x, emptyTree), blobs: blobs}
 }
 
 // displayVerbs are the methods that need a live X backend — every screen-capture
@@ -109,6 +111,13 @@ func (d *dispatcher) execute(method string, params map[string]any) (map[string]a
 		}
 		return runComposite(d.x, steps)
 
+	// File transfer. These are filesystem I/O, not display verbs, so they work on
+	// a headless (shell-only) device too — hence they're absent from displayVerbs.
+	case "push_file":
+		return d.pushFile(params)
+	case "pull_file":
+		return d.pullFile(params)
+
 	// Mobile navigation keys have no desktop analogue.
 	case "back", "home", "recents":
 		return nil, fmt.Errorf("%s has no desktop analogue — use click / press_keys", method)
@@ -119,3 +128,39 @@ func (d *dispatcher) execute(method string, params map[string]any) (map[string]a
 }
 
 func dispatched() map[string]any { return map[string]any{"dispatched": true} }
+
+// pushFile downloads a server-staged blob and writes it to dest_path. The bytes
+// travel over HTTP (the /blobs data plane), not the command socket.
+func (d *dispatcher) pushFile(params map[string]any) (map[string]any, error) {
+	if d.blobs == nil {
+		return nil, fmt.Errorf("file transfer is not configured on this device")
+	}
+	blobID := paramStr(params, "blob_id", "")
+	dest := paramStr(params, "dest_path", "")
+	if blobID == "" || dest == "" {
+		return nil, fmt.Errorf("push_file requires blob_id and dest_path")
+	}
+	mode := os.FileMode(paramInt(params, "mode", 0o644))
+	n, sha, err := d.blobs.download(blobID, dest, mode)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"written": true, "size": n, "sha256": sha}, nil
+}
+
+// pullFile uploads the file at src_path to /blobs and returns its blob id, so
+// the agent can read the bytes back over HTTP.
+func (d *dispatcher) pullFile(params map[string]any) (map[string]any, error) {
+	if d.blobs == nil {
+		return nil, fmt.Errorf("file transfer is not configured on this device")
+	}
+	src := paramStr(params, "src_path", "")
+	if src == "" {
+		return nil, fmt.Errorf("pull_file requires src_path")
+	}
+	id, n, sha, err := d.blobs.upload(src)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"blob_id": id, "size": n, "sha256": sha}, nil
+}

@@ -56,6 +56,27 @@ func newWSClient(rawURL string) (*wsClient, error) {
 	return &wsClient{rawURL: u.String(), token: token}, nil
 }
 
+// blobBaseURL derives the /blobs data-plane endpoint from the relay URL: the
+// same host, over http(s) instead of ws(s). Returns "" if the stored URL can't
+// be parsed, which disables file transfer rather than pointing it somewhere
+// wrong.
+func (w *wsClient) blobBaseURL() string {
+	u, err := url.Parse(w.rawURL)
+	if err != nil {
+		return ""
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "wss":
+		u.Scheme = "https"
+	case "ws":
+		u.Scheme = "http"
+	}
+	u.Path = "/blobs"
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String()
+}
+
 // run dials and services the socket until ctx is cancelled, reconnecting with
 // exponential backoff (capped at 15s, matching the other clients).
 func (w *wsClient) run(ctx context.Context) {

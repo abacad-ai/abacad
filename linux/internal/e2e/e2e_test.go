@@ -9,9 +9,12 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"image/jpeg"
 	"io"
 	"net"
@@ -19,7 +22,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -57,11 +62,18 @@ func TestXvfbE2E(t *testing.T) {
 		t.Fatalf("unexpected geometry %dx%d", wantW, wantH)
 	}
 
-	// --- mock relay: accept the device socket, pump frames to channels ---
+	// --- mock relay: /device is the command+tunnel socket; /blobs is the data
+	// plane the file-transfer verbs move bytes over. The client derives the
+	// /blobs base from the ws URL's host, so both must live on this one server. ---
 	connCh := make(chan *websocket.Conn, 1)
 	textCh := make(chan string, 64)
 	binCh := make(chan []byte, 64)
+	blobs := newMockBlobs()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/blobs") {
+			blobs.serveHTTP(w, r)
+			return
+		}
 		c, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
@@ -210,6 +222,57 @@ func TestXvfbE2E(t *testing.T) {
 	unk := send("uk", "frobnicate", nil)
 	ok("unknown method", unk["ok"] == false && strings.Contains(str(unk["error"]), "unknown method"), jsonStr(unk))
 
+	// --- file transfer over the /blobs data plane (real HTTP round-trips) ---
+	ftDir := t.TempDir()
+
+	// pull_file: a file on disk -> a blob the agent can read. The device uploads
+	// the bytes over HTTP; we assert the mock store received them intact.
+	srcContent := bytes.Repeat([]byte("pull-me: the quick brown fox\n"), 500) // ~14 KB
+	srcPath := filepath.Join(ftDir, "src.txt")
+	if err := os.WriteFile(srcPath, srcContent, 0o644); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	pull := send("pf", "pull_file", map[string]any{"src_path": srcPath})
+	pr := result(pull)
+	pulledID := str(pr["blob_id"])
+	ok("pull_file ok", pull["ok"] == true && pulledID != "" && intOf(pr["size"]) == len(srcContent), jsonStr(pull))
+	if got, has := blobs.get(pulledID); has {
+		ok("pull_file bytes match", bytes.Equal(got, srcContent), "uploaded blob differs from source file")
+	} else {
+		ok("pull_file bytes match", false, "blob not in store")
+	}
+	pullSum := sha256.Sum256(srcContent)
+	ok("pull_file sha256", str(pr["sha256"]) == hex.EncodeToString(pullSum[:]), jsonStr(pr))
+
+	// push_file: a server-staged blob -> a file on the device disk. The device
+	// downloads it over HTTP and writes it, applying the requested mode.
+	pushContent := bytes.Repeat([]byte("push-me: lorem ipsum dolor\n"), 500)
+	stagedID := blobs.put(pushContent)
+	destPath := filepath.Join(ftDir, "sub", "dest.txt")
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		t.Fatalf("mkdir dest: %v", err)
+	}
+	push := send("ps", "push_file", map[string]any{"blob_id": stagedID, "dest_path": destPath, "mode": 0o600})
+	pu := result(push)
+	ok("push_file ok", push["ok"] == true && pu["written"] == true && intOf(pu["size"]) == len(pushContent), jsonStr(push))
+	if got, err := os.ReadFile(destPath); err == nil {
+		ok("push_file bytes match", bytes.Equal(got, pushContent), "written file differs from staged blob")
+	} else {
+		ok("push_file bytes match", false, err.Error())
+	}
+	if fi, err := os.Stat(destPath); err == nil {
+		ok("push_file mode applied", fi.Mode().Perm() == 0o600, fi.Mode().String())
+	} else {
+		ok("push_file mode applied", false, err.Error())
+	}
+
+	// error path: pulling a file that isn't there fails cleanly (no panic, ok:false).
+	miss := send("pm", "pull_file", map[string]any{"src_path": filepath.Join(ftDir, "nope.txt")})
+	ok("pull_file missing rejected", miss["ok"] == false, jsonStr(miss))
+	// error path: pushing an unknown blob id surfaces the 404 as an error.
+	badPush := send("pb", "push_file", map[string]any{"blob_id": "blob_nope", "dest_path": filepath.Join(ftDir, "x.txt")})
+	ok("push_file unknown blob rejected", badPush["ok"] == false, jsonStr(badPush))
+
 	// --- tunnel lane against a loopback echo server ---
 	ok("tunnel round-trip", tunnelRoundTrip(t, ctx, device, binCh), "see logs")
 
@@ -264,6 +327,63 @@ func tunnelRoundTrip(t *testing.T, ctx context.Context, device *websocket.Conn, 
 	case <-time.After(5 * time.Second):
 		t.Log("tunnel: no echo frame")
 		return false
+	}
+}
+
+// mockBlobs is a tiny in-memory stand-in for the server's /blobs data plane:
+// POST stores bytes under a fresh id and returns {id,size,sha256}; GET streams
+// them back. It lets the E2E exercise the device's real HTTP transfer path
+// without standing up the whole backend.
+type mockBlobs struct {
+	mu sync.Mutex
+	m  map[string][]byte
+	n  int
+}
+
+func newMockBlobs() *mockBlobs { return &mockBlobs{m: map[string][]byte{}} }
+
+func (b *mockBlobs) put(data []byte) string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.n++
+	id := fmt.Sprintf("blob_%d", b.n)
+	b.m[id] = append([]byte(nil), data...)
+	return id
+}
+
+func (b *mockBlobs) get(id string) ([]byte, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	d, ok := b.m[id]
+	return d, ok
+}
+
+func (b *mockBlobs) serveHTTP(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "read failed", http.StatusBadRequest)
+			return
+		}
+		id := b.put(body)
+		sum := sha256.Sum256(body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id": id, "size": len(body), "sha256": hex.EncodeToString(sum[:]),
+		})
+	case http.MethodGet:
+		id := strings.TrimPrefix(r.URL.Path, "/blobs/")
+		d, ok := b.get(id)
+		if !ok {
+			http.Error(w, "blob not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write(d)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 

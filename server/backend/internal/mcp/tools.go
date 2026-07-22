@@ -1,10 +1,14 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"time"
+	"unicode/utf8"
 
 	"abacad/internal/protocol"
 	"abacad/internal/relay"
@@ -27,6 +31,9 @@ type DeviceResolver interface {
 	Resolve(ctx context.Context, deviceID string) (*relay.DeviceConn, error)
 	// List returns a summary of the account's devices for the list_devices tool.
 	List(ctx context.Context) ([]DeviceSummary, error)
+	// AccountID is the account this request is scoped to. The file-transfer tools
+	// use it to stage and read blobs on the caller's behalf.
+	AccountID() string
 }
 
 // DeviceSummary is one row of list_devices output.
@@ -46,12 +53,16 @@ type deviceIDArg struct {
 const deviceIDSchema = `"device_id":{"type":"string","description":"which device to target (from list_devices); omit to use your only / most-recently-active device"}`
 
 // actionTool is a device-driving tool. call receives the already-resolved
-// connection for the target device.
+// connection for the target device. A file-transfer tool sets fileCall instead
+// of call: it also needs the caller's account and the blob store to move bytes
+// through the /blobs data plane on the agent's behalf. Exactly one of call /
+// fileCall is set.
 type actionTool struct {
 	name        string
 	description string
 	schema      string // JSON Schema object
 	call        func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult
+	fileCall    func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage, accountID string, blobs BlobStore) toolResult
 }
 
 // actionTools are the device operations exposed to an agent: the original mobile
@@ -355,6 +366,127 @@ var actionTools = []actionTool{
 			return textResult(string(pretty))
 		},
 	},
+
+	// --- File-transfer tools (any device with a filesystem; a browser/mobile
+	// device without the verb rejects them as unknown). The bytes ride the
+	// /blobs data plane over HTTP, never the device socket — see docs. ---
+	{
+		name:        "push_file",
+		description: "Write a file onto the connected device's filesystem at an absolute path. Provide the bytes inline as text (for a text file) or content_base64 (for binary); exactly one. The device fetches the bytes over HTTP and writes them, so large files are fine. Returns the bytes written and their sha256. Parent directories must already exist. This is a real filesystem write — the path is whatever you pass, subject to the device user's permissions.",
+		schema:      `{"type":"object","properties":{"path":{"type":"string","description":"absolute destination path on the device"},"content":{"type":"string","description":"file contents as UTF-8 text (use this for text files)"},"content_base64":{"type":"string","description":"file contents as base64 (use this for binary files); mutually exclusive with content"},"mode":{"type":"integer","description":"unix file mode, e.g. 493 for 0755 (default 420 = 0644)"},` + deviceIDSchema + `},"required":["path"],"additionalProperties":false}`,
+		fileCall:    pushFile,
+	},
+	{
+		name:        "pull_file",
+		description: "Read a file from the connected device's filesystem at an absolute path. The device uploads the bytes over HTTP; small text files (<= 64 KiB) are returned inline, otherwise you get the blob id, size, and sha256 and can fetch the raw bytes from GET /blobs/{id}. Use this to inspect configs, logs, or any file the device user can read.",
+		schema:      `{"type":"object","properties":{"path":{"type":"string","description":"absolute source path on the device"},"max_inline_bytes":{"type":"integer","description":"cap on inlined text (default 65536); larger files return a blob id only"},` + deviceIDSchema + `},"required":["path"],"additionalProperties":false}`,
+		fileCall:    pullFile,
+	},
+}
+
+// maxInlineDefault bounds how much of a pulled file is returned inline in the
+// tool result, to keep a large pull from flooding the agent's context. Beyond
+// it (or for non-text bytes) the agent gets the blob id and fetches the rest.
+const maxInlineDefault = 64 << 10
+
+// pushFile stages the agent-provided bytes as a blob, then tells the device to
+// download that blob and write it to dest. The device verifies the bytes it
+// wrote by size + sha256, which we cross-check against what we staged.
+func pushFile(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage, accountID string, blobs BlobStore) toolResult {
+	var a struct {
+		Path          string  `json:"path"`
+		Content       *string `json:"content"`
+		ContentBase64 *string `json:"content_base64"`
+		Mode          *int    `json:"mode"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return errorResult("invalid args: " + err.Error())
+	}
+	if a.Path == "" {
+		return errorResult("push_file requires a path")
+	}
+	if (a.Content == nil) == (a.ContentBase64 == nil) {
+		return errorResult("push_file requires exactly one of content or content_base64")
+	}
+
+	var data []byte
+	if a.Content != nil {
+		data = []byte(*a.Content)
+	} else {
+		b, err := base64.StdEncoding.DecodeString(*a.ContentBase64)
+		if err != nil {
+			return errorResult("content_base64 is not valid base64: " + err.Error())
+		}
+		data = b
+	}
+
+	blobID, size, sum, err := blobs.Put(accountID, "application/octet-stream", bytes.NewReader(data))
+	if err != nil {
+		return errorResult("could not stage file: " + err.Error())
+	}
+
+	params := map[string]any{"blob_id": blobID, "dest_path": a.Path}
+	if a.Mode != nil {
+		params["mode"] = *a.Mode
+	}
+	raw, err := dc.Send(ctx, protocol.MethodPushFile, params, commandTimeout)
+	if err != nil {
+		return errorResult(err.Error())
+	}
+	var r protocol.PushFileResult
+	_ = json.Unmarshal(raw, &r)
+	if r.SHA256 != "" && r.SHA256 != sum {
+		return errorResult(fmt.Sprintf("integrity check failed: staged sha256 %s but device wrote %s", sum, r.SHA256))
+	}
+	return textResult(fmt.Sprintf("wrote %d bytes to %s (sha256 %s)", size, a.Path, sum))
+}
+
+// pullFile asks the device to upload the file at path as a blob, then reads that
+// blob back and inlines it if it is small UTF-8 text; otherwise it returns the
+// handle (blob id + size + sha256) for the agent to fetch on its own terms.
+func pullFile(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage, accountID string, blobs BlobStore) toolResult {
+	var a struct {
+		Path           string `json:"path"`
+		MaxInlineBytes *int64 `json:"max_inline_bytes"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return errorResult("invalid args: " + err.Error())
+	}
+	if a.Path == "" {
+		return errorResult("pull_file requires a path")
+	}
+	inlineCap := int64(maxInlineDefault)
+	if a.MaxInlineBytes != nil && *a.MaxInlineBytes >= 0 {
+		inlineCap = *a.MaxInlineBytes
+	}
+
+	raw, err := dc.Send(ctx, protocol.MethodPullFile, map[string]any{"src_path": a.Path}, commandTimeout)
+	if err != nil {
+		return errorResult(err.Error())
+	}
+	var r protocol.PullFileResult
+	if err := json.Unmarshal(raw, &r); err != nil || r.BlobID == "" {
+		return errorResult("device did not return a blob for the file")
+	}
+
+	handle := fmt.Sprintf("blob_id %s · %d bytes · sha256 %s", r.BlobID, r.Size, r.SHA256)
+	if r.Size > inlineCap {
+		return textResult(fmt.Sprintf("%s\n(too large to inline; fetch the bytes from GET /blobs/%s)", handle, r.BlobID))
+	}
+
+	rc, _, _, err := blobs.Open(accountID, r.BlobID)
+	if err != nil {
+		return errorResult("could not read the uploaded blob: " + err.Error())
+	}
+	defer rc.Close()
+	content, err := io.ReadAll(io.LimitReader(rc, inlineCap))
+	if err != nil {
+		return errorResult("could not read the uploaded blob: " + err.Error())
+	}
+	if !utf8.Valid(content) {
+		return textResult(fmt.Sprintf("%s\n(binary content; fetch the bytes from GET /blobs/%s)", handle, r.BlobID))
+	}
+	return textResult(fmt.Sprintf("%s\n\n%s", handle, content))
 }
 
 // globalAction builds a no-argument nav-key tool (back / home / recents).

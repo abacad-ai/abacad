@@ -27,7 +27,7 @@ func New(serverURL string, x *x11.Conn) (*Agent, error) {
 	}
 	a := &Agent{
 		ws:     ws,
-		disp:   newDispatcher(x),
+		disp:   newDispatcher(x, newBlobClient(ws.blobBaseURL(), ws.token)),
 		tunnel: newTunnel(ws.sendBinary),
 	}
 	ws.onText = a.handleText

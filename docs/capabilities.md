@@ -53,6 +53,7 @@ The tool surface an agent drives, split by form factor.
 | `composite` | accessibility / pixels | Run an ordered sequence of steps in one call — taps, `long_press`, `swipe`, text, key presses, `wait(ms)`, and `screenshot`s — executed on-device with real timing. Two wins: batch several actions plus a final screenshot into one round-trip, and express fine-grained input the flat verbs can't (multiple pointers run **concurrently** for multi-touch — pinch, rotate, path gestures). The primitive the named verbs are sugar over. | Android 🟡 · iOS 🔮 |
 | Clipboard get / set | API | Read and write the device clipboard, both directions. | Android 🔮 |
 | TCP tunnel (`/connect`) | API | Raw TCP stream to a `host:port` reachable from the device. | Android ✅ |
+| `push_file` / `pull_file` | API | Read / write files on the device by path, over the `/blobs` data plane. | Android 🟡 |
 | File transfer (`/blobs`) | API | Generic HTTP upload / download of binary payloads by blob id. | Android ✅ |
 
 ### Desktop
@@ -69,7 +70,8 @@ The tool surface an agent drives, split by form factor.
 | `composite` | accessibility / pixels | Run an ordered sequence of steps in one call — `click`/`right_click`, `drag`, `scroll`, text, key presses (incl. modifier-held clicks like ⌘-click), `wait(ms)`, and `screenshot`s — executed on-device with real timing. Two wins: batch several actions plus a final screenshot into one round-trip, and express fine-grained input the flat verbs can't (modifier-fused clicks, timing-sensitive sequences, multi-waypoint paths). The primitive the named verbs are sugar over. | macOS 🟡 · Windows 🔮 · Linux 🟡 |
 | Clipboard get / set | API | Read and write the device clipboard, both directions. | macOS 🟡 · Windows 🔮 · Linux 🔮 |
 | TCP tunnel (`/connect`) | API | Raw TCP stream to a `host:port` reachable from the device — ssh, rsync, a DB client. | macOS 🟡 · Windows 🔮 · Linux 🟡 |
-| File transfer (`/blobs`) | API | Generic HTTP upload / download of binary payloads by blob id. | Any ✅ |
+| `push_file` / `pull_file` | API | Read and write files on the device's filesystem by absolute path. The bytes ride the `/blobs` data plane over HTTP (the device fetches/posts with its own token), never the command socket, so multi-GB files are fine; the MCP layer stages the upload and inlines small text pulls so the agent never leaves the tool surface. Works headless (no display needed). | macOS 🟡 · Windows 🔮 · Linux ✅ |
+| File transfer (`/blobs`) | API | The generic data plane the file verbs (and screenshots) move bytes over: HTTP upload / download of binary payloads by blob id, account-scoped. | Any ✅ |
 
 On **Linux** the input + pixel rungs above are live (XGB capture, XTEST input), but
 `screenshot` returns an **empty** UI tree (`{pkg:"", nodes:[]}`) for now — the AT-SPI

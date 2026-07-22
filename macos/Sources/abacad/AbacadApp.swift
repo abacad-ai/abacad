@@ -31,10 +31,11 @@ final class Agent: ObservableObject {
     @Published var screenGranted = Permissions.screenRecordingGranted
 
     private let ws = WebSocketClient()
-    private let dispatcher = CommandDispatcher()
+    private var dispatcher = CommandDispatcher()
     private let tunnel = Tunnel()
 
     init() {
+        dispatcher.blobClient = BlobClient.fromServerURL(serverURL)
         tunnel.sendFrame = { [weak self] data in self?.ws.send(data: data) }
         ws.onStateChange = { [weak self] up in
             DispatchQueue.main.async { self?.connected = up }
@@ -48,6 +49,9 @@ final class Agent: ObservableObject {
         let url = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
         Prefs.serverURL = url
         serverURL = url
+        // Rebuild the blob endpoint whenever the server URL changes, so file
+        // transfer follows the socket to a new host/token.
+        dispatcher.blobClient = BlobClient.fromServerURL(url)
         ws.connect(urlString: url)
     }
 

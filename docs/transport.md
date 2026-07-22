@@ -73,6 +73,13 @@ GET /blobs/{id}
   **client-initiated**: upload = client `POST`, download = client `GET`. When the server
   wants to deliver a file *to* the phone, it sends a WS control frame and the phone does
   the `GET`.
+- **First file consumers — `push_file` / `pull_file`** (device verbs, Linux client today):
+  `push_file` is exactly the deliver-*to*-device path above — the MCP layer `POST`s the
+  agent's bytes as a blob, then a `push_file{blob_id, dest_path}` control frame tells the
+  device to `GET` it and write the file. `pull_file` is the reverse — the device `POST`s
+  the file, replies with the blob id, and the MCP layer `GET`s it to hand the agent the
+  contents. Screenshots still ride the WS inline (JPEG); files were the plane's first
+  non-screenshot payload.
 - **Lifecycle is policy, not endpoint shape:** screenshot blobs are throwaway (short TTL /
   delete-after-fetch); file blobs persist. Retention is decided by the control layer that
   created the blob, not by a second endpoint.
