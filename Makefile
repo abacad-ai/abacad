@@ -71,7 +71,7 @@ else
 CODESIGN_FLAGS := --options runtime --timestamp
 endif
 
-.PHONY: dev tokens bump-version release android android-release \
+.PHONY: dev tokens bump-version version android android-release \
         linux linux-release linux-run linux-test \
         macos macos-icon macos-dmg macos-release macos-trust-reset macos-clean \
         publish publish-macos publish-android \
@@ -119,7 +119,7 @@ bump-version:
 # version (via bump-version), commits, tags v<version>, and pushes both — which
 # fires .github/workflows/release.yml to build, sign, notarize, and publish
 # every client to a GitHub Release. Run from an up-to-date main.
-release:
+version:
 	@cur=$$(cat VERSION); \
 	major=$${cur%%.*}; rest=$${cur#*.}; minor=$${rest%%.*}; patch=$${rest##*.}; \
 	def="$$major.$$minor.$$((patch + 1))"; \
