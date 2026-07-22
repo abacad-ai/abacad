@@ -15,9 +15,11 @@ These have opposite priorities, so they are **two channels of one recording**, n
 knob. The screen is being recorded either way — the only question is *where it goes*:
 to a live viewer, to a file, or both.
 
-Read alongside [transport.md](transport.md) (the file lands on the data plane; the live
-stream rides the `/connect` tunnel) and [trust.md](trust.md) (a live session is a human
-input path that must fold into audit + kill).
+Read alongside [transport.md](transport.md) (the file lands on the data plane) and
+[trust.md](trust.md) (a live session is a human input path that must fold into audit +
+kill). The live channel is a **standard VNC path** — see
+[The live channel: a standard VNC path](#the-live-channel-a-standard-vnc-path) — with its
+media deliberately decoupled from the control plane and the `/connect` tunnel.
 
 ---
 
@@ -170,12 +172,51 @@ Each channel uses the sanctioned path for its payload — see [transport.md](tra
   the agent as a `download_url`. `stop`/`status` return a *reference*, never bytes — a
   full-res clip can be hundreds of MB and must not enter the agent's context or the
   control WebSocket.
-- **`live`** is a stream. RFB rides the existing `/connect` tunnel (a reliable, ordered,
-  back-pressured pipe — the right contract for RFB, which is TCP-native). The device's
-  VNC server binds `127.0.0.1` only and is reachable **solely** through the authorized
-  tunnel, so RFB's weak native auth is never exposed; the relay bearer token plus a
-  one-time viewer ticket are the real gates. A browser client (noVNC) embeds in the
-  existing web UI for zero-install viewing.
+- **`live`** is a stream, and it rides its **own dedicated connection** — never the
+  control WebSocket or the `/connect` tunnel. It's a standard VNC path: a normal VNC
+  server on the device *reverse-connects* out to a VNC repeater on abacad.ai, which
+  bridges to a stock noVNC viewer in the browser. See
+  [The live channel: a standard VNC path](#the-live-channel-a-standard-vnc-path).
+
+---
+
+## The live channel: a standard VNC path
+
+The `live` channel is deliberately an **off-the-shelf VNC deployment**, not anything muxed
+into abacad's existing channels. The control WebSocket is used *only* to turn it on and
+off; the pixels flow on their own connection through standard components.
+
+```
+[device: standard VNC server]                          [browser: noVNC]
+        │ reverse RFB dial-out (session token)                 │ RFB-over-WebSocket
+        ▼                                                       ▼
+[abacad.ai:   VNC repeater  ⇄  websockify  ⇄  ticketed noVNC page ]
+```
+
+- **Device** runs a normal VNC server (x11vnc on Linux, LibVNCServer on macOS/Windows,
+  droidVNC-NG on Android) bound to `127.0.0.1`, and makes a **reverse VNC connection**
+  outward to abacad.ai. Reverse-connect (`x11vnc -connect`, the UltraVNC-repeater model)
+  is a standard VNC feature built exactly for the NAT case — the server dials the viewer
+  instead of listening, so nothing ever has to reach the NAT'd device.
+- **abacad.ai** runs a standard **VNC repeater + websockify**: it matches the device's
+  reverse connection to a waiting browser by session token, and adapts RFB-over-TCP to
+  RFB-over-WebSocket (what noVNC speaks).
+- **Browser** loads stock **noVNC** at the ticketed `viewer_url`.
+
+NAT still forces a relay hop through abacad.ai (the device can't be reached directly), but
+that hop is a **standard VNC repeater**, not a custom tunnel — almost no bespoke code, and
+the media path is fully isolated from the command/control plane.
+
+**What the control channel does (only this).** On `start` with `live.enabled`, the server
+mints a session token + viewer ticket and, over the command WebSocket, tells the device:
+*start your VNC server and reverse-connect to the VNC ingress with token X*. It returns
+`viewer_url`. On `stop`/kill, the command channel tells the device to drop its VNC server
+and reverse connection, and the server tears down the repeater session. That start/stop
+trigger is the whole extent of the control channel's involvement — no media on it.
+
+**Auth.** The VNC server binds `127.0.0.1` and only ever speaks over the reverse connection
+it dials, carrying the session token, so RFB's own (weak) auth is never exposed to the
+network. The browser side is gated by the one-time viewer ticket.
 
 ---
 
@@ -188,8 +229,10 @@ integrity + audit + kill posture ([trust.md](trust.md)):
 1. **Scope-gated.** `screen_recording` is high-privilege (a live session can hand a human
    real-time control). It flows through the same per-key method allowlist as every other
    tool — a key without the scope never sees it.
-2. **Kill reaches it.** The live session rides a tunnel stream on the device connection;
-   killing the device (or `stop`, or the TTL) drops the stream and ends the session.
+2. **Kill reaches it.** The server owns the repeater session, so killing it (or `stop`, or
+   the TTL) tears down the browser↔repeater side at once; the command channel also tells
+   the device to drop its VNC server and reverse connection. Either half dying ends the
+   session.
 3. **Audited at the boundary.** Individual RFB keystrokes aren't logged, but the session
    *boundaries* are first-class audit events: who opened it, when, `reason`, `mode`, and
    when a viewer connected/left. The audit trail can always answer "was there a human
@@ -221,9 +264,11 @@ Notes:
   operation) and a `mediaProjection` foreground-service type while recording; `start` is
   async (returns `requesting_permission`, then `recording` once the user consents).
 
-`live` will unify on **LibVNCServer** (portable C) on the desktops, fed by the existing
-capture + input code; Android follows the droidVNC-NG approach (MediaProjection for the
-framebuffer + AccessibilityService for input).
+`live` uses each platform's VNC server in standard **reverse-connect** mode (dialing the
+abacad.ai repeater), so the server side is stock **repeater + websockify + noVNC** with
+almost no bespoke code. Desktops unify on **LibVNCServer** (portable C) / **x11vnc**, fed
+by the existing capture + input; Android follows the **droidVNC-NG** approach
+(MediaProjection for the framebuffer + AccessibilityService for input).
 
 ---
 
