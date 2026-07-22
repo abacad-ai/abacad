@@ -114,11 +114,11 @@ struct CommandDispatcher {
                 throw CmdError.message(#"screen_recording action must be "start", "stop", or "status""#)
             }
 
-        // Live view (screen_recording live channel): not yet available on macOS —
-        // pending a real VNC server (LibVNCServer / Screen Sharing), not the removed
-        // hand-rolled Raw server. Linux serves live view today (x11vnc).
+        // Live view (screen_recording live channel): pipe the reverse-connect WS to
+        // the system VNC server (built-in Screen Sharing). The client never speaks
+        // RFB itself.
         case "vnc":
-            throw CmdError.message("live view is not yet available on macOS")
+            return try await VncPipe.shared.handle(params: params)
 
         // Mobile navigation keys have no desktop analogue.
         case "back", "home", "recents":
