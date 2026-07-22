@@ -391,8 +391,8 @@ var actionTools = []actionTool{
 	// clip from GET /blobs/{id}. The live (VNC) channel is a later addition. ---
 	{
 		name:        "screen_recording",
-		description: "Record the connected device's screen to a high-quality video file — the moving-picture counterpart of screenshot, for capturing a whole flow (an app test, a demo you'll edit into a promo). Drive it with action: \"start\" begins an on-device recording at full resolution and frame rate — pass file={enabled:true} and optionally fps/max_duration_seconds — then keep issuing your normal verbs (tap/click/…) while it records in the background. \"stop\" finalizes the clip and begins transferring it; because a full-quality clip can be large, the upload runs in the background. \"status\" reports progress — poll it after stop until a download link appears, then fetch the bytes from GET /blobs/{id}. One recording per device at a time; video only (no audio).",
-		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"action":{"type":"string","enum":["start","stop","status"],"description":"start a recording, stop and transfer it, or report status"},"file":{"type":"object","description":"the file channel: record to a high-quality on-device video file, transferred afterward","properties":{"enabled":{"type":"boolean","description":"turn the file channel on (required for start)"},"fps":{"type":"integer","description":"frames per second (default = native/max)"},"format":{"type":"string","description":"container/codec (default \"mp4\", H.264)"},"max_duration_seconds":{"type":"integer","description":"safety cap on recording length"}},"additionalProperties":false}},"required":["action"],"additionalProperties":false}`,
+		description: "Record or live-view the connected device's screen — the moving-picture counterpart of screenshot. Two channels: file (an on-device high-quality recording you get as a downloadable clip) and live (a real-time view a human watches in the dashboard). Drive with action: \"start\" — pass file={enabled:true} (optionally fps/max_duration_seconds) to begin recording at full resolution while you keep driving with your normal verbs, and/or live={enabled:true} to open a live session and get a dashboard link to hand to your operator so they can watch (and, with a VNC client, take over). \"stop\" finalizes the file clip and begins transferring it (large clips upload in the background). \"status\" reports file progress — poll after stop until a download link appears, then fetch GET /blobs/{id}. One recording per device at a time; video only (no audio).",
+		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"action":{"type":"string","enum":["start","stop","status"],"description":"start a recording / live session, stop and transfer the file, or report status"},"file":{"type":"object","description":"the file channel: record to a high-quality on-device video file, transferred afterward","properties":{"enabled":{"type":"boolean","description":"turn the file channel on"},"fps":{"type":"integer","description":"frames per second (default = native/max)"},"format":{"type":"string","description":"container/codec (default \"mp4\", H.264)"},"max_duration_seconds":{"type":"integer","description":"safety cap on recording length"}},"additionalProperties":false},"live":{"type":"object","description":"the live channel: a real-time view a human opens in the dashboard (VNC under the hood)","properties":{"enabled":{"type":"boolean","description":"turn the live channel on; returns a dashboard link for your operator"},"reason":{"type":"string","description":"short note on why a human should look"}},"additionalProperties":false}},"required":["action"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
 			var a struct {
 				Action string `json:"action"`
@@ -402,16 +402,33 @@ var actionTools = []actionTool{
 					Format             *string `json:"format"`
 					MaxDurationSeconds *int    `json:"max_duration_seconds"`
 				} `json:"file"`
+				Live *struct {
+					Enabled *bool `json:"enabled"`
+				} `json:"live"`
 			}
 			if err := json.Unmarshal(args, &a); err != nil {
 				return errorResult("invalid args: " + err.Error())
 			}
+			hasFile := a.File != nil && a.File.Enabled != nil && *a.File.Enabled
+			hasLive := a.Live != nil && a.Live.Enabled != nil && *a.Live.Enabled
+
+			// The live channel is a human-in-the-dashboard affair: opening a live
+			// session is driven from the device's dashboard page (which mints the
+			// viewer ticket and tells the device to start its VNC server). The agent
+			// requests it by handing that page to its operator.
+			var liveMsg string
+			if hasLive && a.Action == "start" {
+				liveMsg = fmt.Sprintf("live view: ask your operator to open this device's dashboard page (/devices/%s) and click \"Start live view\" to watch the screen in real time (and, with a VNC client, take over).", dc.DeviceID)
+			}
+
 			params := map[string]any{"action": a.Action}
 			switch a.Action {
 			case "start":
-				// Only the file channel exists today; live is not yet implemented.
-				if a.File == nil || a.File.Enabled == nil || !*a.File.Enabled {
-					return errorResult("screen_recording start requires file={enabled:true} (the live channel is not implemented yet)")
+				if !hasFile && !hasLive {
+					return errorResult("screen_recording start requires file={enabled:true} and/or live={enabled:true}")
+				}
+				if !hasFile {
+					return textResult(liveMsg) // live-only: no on-device recording command
 				}
 				file := map[string]any{}
 				if a.File.FPS != nil {
@@ -425,7 +442,7 @@ var actionTools = []actionTool{
 				}
 				params["file"] = file
 			case "stop", "status":
-				// no extra params
+				// no extra params (file channel); live is stopped from the dashboard
 			default:
 				return errorResult(`screen_recording action must be "start", "stop", or "status"`)
 			}
@@ -437,7 +454,11 @@ var actionTools = []actionTool{
 			if err := json.Unmarshal(raw, &r); err != nil {
 				return errorResult("bad screen_recording result: " + err.Error())
 			}
-			return textResult(formatRecording(a.Action, r))
+			msg := formatRecording(a.Action, r)
+			if liveMsg != "" {
+				msg += "\n" + liveMsg
+			}
+			return textResult(msg)
 		},
 	},
 }
