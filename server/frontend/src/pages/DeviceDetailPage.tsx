@@ -19,6 +19,7 @@ import { ApiError, api, type ActivityItem, type DeviceView } from "@/lib/api";
 import { clockTime, cn, relativeTime } from "@/lib/utils";
 import { clientDownload, resolvePlatform, type PlatformInfo } from "@/lib/devices";
 import { DeviceFrame, DeviceScreen } from "@/components/DeviceScreen";
+import { LiveView } from "@/components/LiveView";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CopyField } from "@/components/CopyField";
@@ -159,6 +160,10 @@ export function DeviceDetailPage() {
           <DeviceScreen device={device} factor={factor} onAspect={setAspect} onShot={setHasShot} />
         </DeviceFrame>
       </div>
+
+      {/* Live view: a real-time VNC session, opened on demand over the decoupled
+          VNC path (separate from the 2s screenshot poll above). */}
+      <LiveView deviceId={device.id} online={device.online} />
 
       {/* Setup and Access share the first row; Activities gets the full width of
           the row below. Both collapse to a single column on narrow viewports. */}

@@ -23,7 +23,12 @@ export default defineConfig({
       // Release artifacts live on Go's disk. Regex again: only /downloads/<file>
       // proxies, so the bare /downloads SPA page still renders from dev.
       "^/downloads/.": { target: "http://localhost:1213", changeOrigin: false },
+      // noVNC live-view WebSocket: the browser connects to /vnc/watch; proxy it
+      // to Go so the dev SPA and backend share an origin (session cookie).
+      "^/vnc/watch": { target: "ws://localhost:1213", ws: true },
     },
   },
-  build: { outDir: "dist", emptyOutDir: true },
+  // es2022 so noVNC's top-level await (in its RFB module) transpiles; the
+  // dashboard targets current evergreen browsers.
+  build: { outDir: "dist", emptyOutDir: true, target: "es2022" },
 });

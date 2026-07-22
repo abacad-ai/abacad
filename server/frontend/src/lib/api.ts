@@ -192,6 +192,15 @@ export const api = {
   deviceScreenshotUrl: (id: string) => `/api/devices/${id}/screenshot`,
   deviceEvents: (id: string) => req<DeviceEvents>(`/api/devices/${id}/events`),
 
+  // Live view (VNC). Start mints a one-time viewer ticket and tells the device to
+  // start its VNC server + reverse-connect; the browser opens noVNC against
+  // watch_path. Stop tears the session down.
+  vncStart: (id: string) =>
+    req<{ ticket: string; watch_path: string; expires_at: string }>(`/api/devices/${id}/vnc/start`, {
+      method: "POST",
+    }),
+  vncStop: (id: string) => req<{ stopped: boolean }>(`/api/devices/${id}/vnc/stop`, { method: "POST" }),
+
   // Device-authorization pairing (`abacad connect`). Look up a pending code to
   // show what it authorizes, then approve it into the signed-in account.
   pairLookup: (code: string) => req<PairInfo>(`/api/devices/pair?code=${encodeURIComponent(code)}`),
