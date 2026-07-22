@@ -43,9 +43,17 @@ function usePrefersReducedMotion() {
   return reduced;
 }
 
-// Cycles through `items`, swapping the visible lockup with a fade + slide + blur.
-// Devices and agents rotate on their own timers (and a start offset) so the
-// pairings keep shuffling. Under prefers-reduced-motion it holds the first item.
+// Picks a random index other than `current` so the mark always visibly changes.
+function nextRandom(length: number, current: number) {
+  if (length < 2) return current;
+  const n = Math.floor(Math.random() * (length - 1));
+  // Map the (length-1) choices onto every index except `current`.
+  return n < current ? n : n + 1;
+}
+
+// Devices and agents rotate on their own timers (and a start offset), each
+// jumping to a random next item, so the pairings never settle into a fixed
+// cycle. Under prefers-reduced-motion it holds the first item.
 export function RotatingLockup({
   items,
   intervalMs,
@@ -67,7 +75,7 @@ export function RotatingLockup({
       intervalId = window.setInterval(() => {
         setPhase("leave");
         swapTimer.current = window.setTimeout(() => {
-          setIndex((i) => (i + 1) % items.length);
+          setIndex((i) => nextRandom(items.length, i));
           setPhase("enter");
           // Two frames so the browser paints the entering start state before we
           // transition it home — otherwise the "enter" step is skipped.
