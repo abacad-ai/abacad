@@ -272,6 +272,13 @@ func main() {
 	// Public legal pages (required by Google's OAuth consent screen).
 	mux.Handle("GET /privacy", web.PrivacyPolicy())
 	mux.Handle("GET /terms", web.TermsOfService())
+	// SEO surface. robots.txt is Host-aware: the apex/marketing origin allows
+	// crawling and advertises the sitemap; per-device subdomains (<id>.abacad.ai)
+	// disallow everything so device pages never get indexed.
+	mux.HandleFunc("GET /robots.txt", func(w http.ResponseWriter, r *http.Request) {
+		web.WriteRobots(w, deviceHostID(r.Host) == "", cfg.BaseDomain)
+	})
+	mux.Handle("GET /sitemap.xml", web.Sitemap(cfg.BaseDomain))
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"ok":true,"devices_online":%d}`, len(hub.OnlineIDs()))
