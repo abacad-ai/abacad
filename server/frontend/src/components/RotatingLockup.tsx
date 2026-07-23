@@ -16,12 +16,11 @@ function BrandMark({ brand }: { brand: Brand }) {
   );
 }
 
-// The icon + wordmark pair. Devices carry an indefinite article ("an Android")
-// that rides along in the same rotating slot so the whole phrase swaps together.
+// The icon + wordmark pair. Every brand reads as a bare platform name (no
+// indefinite article), so the whole phrase swaps together in one slot.
 function Lockup({ brand }: { brand: Brand }) {
   return (
     <span className="whitespace-nowrap">
-      {brand.art ? <span className="text-ink">{brand.art} </span> : null}
       <BrandMark brand={brand} />
       <span className="font-bold text-ink"> {brand.name}</span>
     </span>
