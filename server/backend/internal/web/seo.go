@@ -60,6 +60,38 @@ func WriteRobots(w http.ResponseWriter, allowIndex bool, baseDomain string) {
 	_, _ = io.WriteString(w, b.String())
 }
 
+// LLMsTxt serves /llms.txt — a curated, agent-facing index of the public docs
+// (the llmstxt.org convention). It gives an LLM a compact, high-signal map of
+// what abacad is and where to read more, in plain markdown, without crawling the
+// HTML. Templated with the base domain so links resolve on any deployment.
+func LLMsTxt(baseDomain string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+
+		base := "https://" + baseDomain
+		fmt.Fprintf(w, `# abacad
+
+> A device interface for agents. Connect a phone, laptop, or browser as a device and let a coding agent see the screen and act on it — one step at a time, with a human approving.
+
+abacad connects a real device (an Android phone, a Mac, a Linux box, or a browser tab) to an AI agent over one MCP endpoint. The device dials out and holds a relay connection, so it works through NAT with no inbound port. The agent drives it with a uniform tool contract — a screenshot plus the accessibility tree per step, tap/click/type/swipe, run_command, and push_file/pull_file — staying on the highest (most semantic) rung the task allows. A human supervises and approves sensitive actions. It is agent-native: one screenshot + tree per step, not a live video mirror.
+
+## Docs
+
+- [What abacad is](%s/docs/): the product, the control-surface ladder, and the honest platform matrix.
+- [Tool reference](%s/docs/reference/tools/): every agent-facing operation (screenshot, tap, swipe, type, run_command, execute, push_file/pull_file), with per-platform status.
+- [Reading status markers](%s/docs/reference/status-markers/): what the shipped / built / envisioned markers mean.
+- [SSH access](%s/docs/guides/ssh/): reach a device's own sshd behind NAT with stock ssh and nothing installed.
+- [Running a phone hands-off](%s/docs/guides/running-hands-off/): keep an Android device reachable long-term on a charger.
+
+## Notes
+
+- Capabilities are marked per platform: ✅ shipped, 🟡 client built but unproven, 🔮 envisioned. Read the marker for the platform you care about, not the row as a whole.
+- Android is the furthest along; macOS and Linux clients are built; Windows and iOS are planned; a browser tab can act as a device with no install.
+`, base, base, base, base, base)
+	})
+}
+
 // Sitemap returns the sitemap.xml handler for the apex origin.
 func Sitemap(baseDomain string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

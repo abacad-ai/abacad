@@ -280,6 +280,8 @@ func main() {
 	})
 	mux.Handle("GET /sitemap.xml", web.Sitemap(cfg.BaseDomain))
 	mux.Handle("GET /og-image.png", web.OGImage())
+	// Agent-facing docs index (llmstxt.org convention).
+	mux.Handle("GET /llms.txt", web.LLMsTxt(cfg.BaseDomain))
 	// Public docs site (static Astro build, embedded). The trailing-slash subtree
 	// pattern dominates the SPA catch-all under Go 1.22 precedence and auto-redirects
 	// /docs → /docs/.

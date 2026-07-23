@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="abacad — connect any device to your coding agent">
+  <!-- Social unfurl card (1200×630). Source of truth for /og-image.png; render to
+       PNG on build (rsvg-convert / resvg / headless Chrome). On-brand: charcoal
+       canvas (#0b0b0d), light-gray ink (#d8dade), single green "alive" accent
+       (#30d158). No claims beyond the honest tagline. -->
+  <rect width="1200" height="630" fill="#0b0b0d"/>
+
+  <!-- faint dot grid, matches the app's bg-grid -->
+  <defs>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="1" fill="#ffffff" fill-opacity="0.03"/>
+    </pattern>
+    <radialGradient id="glow" cx="26%" cy="52%" r="46%">
+      <stop offset="0%" stop-color="#30d158" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#30d158" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <rect x="0.5" y="0.5" width="1199" height="629" fill="none" stroke="#2a2a2e" stroke-width="1"/>
+
+  <!-- relay mark (tristar): one green hub → three ink dots, reads as an "A" -->
+  <g transform="translate(150 232) scale(0.7)">
+    <g fill="none" stroke="#d8dade" stroke-width="10" stroke-linecap="round" stroke-opacity=".5">
+      <line x1="128" y1="151" x2="128" y2="57"/>
+      <line x1="128" y1="151" x2="46" y2="199"/>
+      <line x1="128" y1="151" x2="210" y2="199"/>
+    </g>
+    <circle cx="128" cy="57" r="14" fill="#d8dade"/>
+    <circle cx="46" cy="199" r="14" fill="#d8dade"/>
+    <circle cx="210" cy="199" r="14" fill="#d8dade"/>
+    <circle cx="128" cy="151" r="28" fill="#30d158" fill-opacity=".16"/>
+    <circle cx="128" cy="151" r="17" fill="#30d158"/>
+  </g>
+
+  <!-- wordmark + tagline -->
+  <text x="150" y="360" font-family="'DejaVu Sans','Helvetica Neue',Arial,sans-serif"
+        font-size="112" font-weight="700" letter-spacing="14" fill="#f2f2f4">abacad</text>
+  <text x="154" y="428" font-family="'DejaVu Sans','Helvetica Neue',Arial,sans-serif"
+        font-size="34" font-weight="400" fill="#9a9aa0">Connect any device to your coding agent.</text>
+  <text x="154" y="486" font-family="'DejaVu Sans Mono','SFMono-Regular',Menlo,monospace"
+        font-size="22" letter-spacing="2" fill="#66666c">Phone · laptop · browser  →  one MCP endpoint  ·  you approve every step</text>
+
+  <!-- footer url -->
+  <text x="150" y="566" font-family="'DejaVu Sans Mono','SFMono-Regular',Menlo,monospace"
+        font-size="24" font-weight="700" letter-spacing="4" fill="#d8dade">abacad.ai</text>
+</svg>

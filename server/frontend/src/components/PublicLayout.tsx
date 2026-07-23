@@ -51,10 +51,13 @@ export function PublicLayout({ children }: { children: ReactNode }) {
       <footer className="relative z-10 border-t border-border/70">
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between gap-4 px-4 font-mono text-[10px] uppercase tracking-[0.2em] text-ink-subtle sm:px-6">
           <span>abacad · device relay</span>
-          {/* /privacy and /terms are server-rendered pages (not React routes), so
-              they use plain anchors to force a full navigation rather than the
-              client router's catch-all redirect. */}
+          {/* /docs, /privacy, and /terms are server-rendered pages (not React
+              routes), so they use plain anchors to force a full navigation rather
+              than the client router's catch-all redirect. */}
           <nav className="flex items-center gap-4 sm:gap-5">
+            <a href="/docs/" className="transition-colors hover:text-ink">
+              Docs
+            </a>
             <Link to="/downloads" className="transition-colors hover:text-ink">
               Downloads
             </Link>

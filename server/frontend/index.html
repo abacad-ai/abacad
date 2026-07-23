@@ -34,6 +34,27 @@
     />
     <meta name="twitter:image" content="https://abacad.ai/og-image.png" />
 
+    <!-- Structured data for rich results / entity graph. operatingSystem lists
+         only what actually ships or is built (Android, macOS, Linux, Web) — no
+         inflated claims. No offers/ratings: we don't fabricate them. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "abacad",
+        "url": "https://abacad.ai/",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Android, macOS, Linux, Web",
+        "description": "Connect a phone, laptop, or browser as a device and let your coding agent drive it over one MCP endpoint — you approve every step.",
+        "image": "https://abacad.ai/og-image.png",
+        "publisher": {
+          "@type": "Organization",
+          "name": "abacad",
+          "url": "https://abacad.ai/"
+        }
+      }
+    </script>
+
     <script>
       // Stamp a forced theme before first paint so there is no flash of the
       // wrong scheme; no stored value means auto (follow the system).
