@@ -21,7 +21,7 @@ export function LandingPage() {
           works with any MCP agent
         </span>
         <h1
-          className="mt-6 whitespace-nowrap font-display text-[clamp(1.05rem,5.4vw,3.75rem)] font-bold leading-[1.14] tracking-tight text-ink"
+          className="mt-6 text-balance font-display text-[clamp(1.05rem,5.4vw,3.75rem)] font-bold leading-[1.14] tracking-tight text-ink"
           aria-label="Connect any device to your coding agent."
         >
           Connect <RotatingLockup items={DEVICES} intervalMs={3000} /> to your{" "}
