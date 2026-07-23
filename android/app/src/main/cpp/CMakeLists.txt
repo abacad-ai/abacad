@@ -37,6 +37,12 @@ set(BUILD_SHARED_LIBS          OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(libvncserver)
 
+# Silence warnings from the vendored upstream: we pin LibVNCServer as a submodule
+# and don't patch its source, so its -Wswitch / tautological-compare / zlib
+# const-cast / open()-mode warnings are just noise in our build. Scoped to the
+# vncserver target only — our own rfb_jni.c keeps full warnings.
+target_compile_options(vncserver PRIVATE -w)
+
 # --- our JNI lib -------------------------------------------------------------
 add_library(abacad_rfb SHARED
     rfb_jni.c
