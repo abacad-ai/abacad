@@ -1,13 +1,19 @@
 # abacad design tokens
 
 `tokens.json` is the single source of truth for abacad's visual language —
-colors, spacing, radii, and type sizes — shared by all three surfaces:
+colors, spacing, radii, and type sizes — shared by every client surface:
 
 | Surface | Generated file | Consumed as |
 |---|---|---|
 | Web dashboard (`server/frontend`) | `src/tokens.css` | CSS custom properties (`--brand`, `--space-md`, …) |
 | Android app (`android/`) | `android/Theme.kt` | `Theme.BRAND` ARGB ints, `Theme.SPACE_MD` dp, `Theme.TEXT_MD` sp |
 | macOS agent (`macos/`) | `abacad/Theme.swift` | `Theme.brand` SwiftUI `Color`, `Theme.spaceMd` CGFloat |
+| Linux agent (`linux/`) | `internal/gui/theme_gen.go` | `gui.Dark.Brand` hex strings + `gui.SpaceMd` px (gotk4 / libadwaita) |
+| Windows agent (`windows/`) | `Theme.xaml` | WinUI `{ThemeResource BrandBrush}`, `{StaticResource SpaceMd}` (ThemeDictionaries) |
+
+The Android **Jetpack Compose** theme (Material 3 `Color`/`Dp`) is generated
+alongside the Compose migration in `android/`, since it only compiles once the
+Compose dependencies are present.
 
 To change the palette or metrics, edit `tokens.json` and regenerate:
 

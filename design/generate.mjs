@@ -14,8 +14,13 @@
 //   server/frontend/src/tokens.css                       CSS custom properties
 //   android/app/src/main/java/ai/abacad/android/Theme.kt  Kotlin palettes (ARGB ints, dp/sp)
 //   macos/Sources/abacad/Theme.swift                SwiftUI dynamic Colors + CGFloats
+//   linux/internal/gui/theme_gen.go                 Go palettes for the gotk4/libadwaita GUI
+//   windows/Theme.xaml                              WinUI 3 ResourceDictionary (ThemeDictionaries)
+//
+// The Jetpack Compose theme (Color/Dp/Material3 scheme) is emitted alongside the
+// Android Compose migration, where the Compose deps that make it compile live.
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -45,6 +50,7 @@ function parse(hex) {
 
 const upperSnake = (name) => name.replace(/-/g, "_").toUpperCase();
 const camel = (name) => name.replace(/-(\w)/g, (_, c) => c.toUpperCase());
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
 // --- CSS ---------------------------------------------------------------
 {
@@ -126,4 +132,81 @@ const camel = (name) => name.replace(/-(\w)/g, (_, c) => c.toUpperCase());
   writeFileSync(join(root, "macos", "Sources", "abacad", "Theme.swift"), sw);
 }
 
-console.log("tokens: wrote tokens.css, Theme.kt, Theme.swift");
+// --- Linux (GTK4 / libadwaita, consumed by the gotk4 GUI) --------------
+// A Go source file in the GUI package: dark + light palettes as CSS-ready hex
+// strings plus dp/px metrics. The window keeps native Adwaita chrome; these
+// feed a CssProvider string and direct gdk.RGBA where our status/brand colors
+// override the theme. Mirrors Theme.kt/Theme.swift — constants in code, so the
+// cgo-free headless build never depends on this (the file isn't imported by
+// cmd/abacad; it only compiles into the GUI build).
+{
+  const goField = (k) => cap(camel(k));
+  // gofmt aligns struct fields and keyed-literal values into columns; emit that
+  // shape directly so `node generate.mjs` output is already gofmt-clean.
+  const fieldW = Math.max(...Object.keys(dark).map((k) => goField(k).length));
+  const goPalette = (scheme, name) =>
+    `var ${name} = Palette{\n` +
+    Object.entries(scheme)
+      .map(([k, hex]) => {
+        parse(hex);
+        const key = `${goField(k)}:`;
+        return `\t${key}${" ".repeat(fieldW + 2 - key.length)}${JSON.stringify(hex)},\n`;
+      })
+      .join("") +
+    `}\n`;
+
+  let go = `package gui\n\n// ${HEADER}\n\n`;
+  go += `// Palette is one appearance's abacad tokens as CSS-ready hex strings\n// ("#rrggbb" or "#rrggbbaa"). Feed them to a GTK CssProvider or gdk.RGBA.Parse.\n`;
+  go += `type Palette struct {\n`;
+  for (const k of Object.keys(dark)) go += `\t${goField(k)}${" ".repeat(fieldW + 1 - goField(k).length)}string\n`;
+  go += `}\n\n`;
+  go += goPalette(dark, "Dark") + `\n` + goPalette(light, "Light") + `\n`;
+  go += `// Of returns the palette for the active appearance; pass\n// adw.StyleManager.Dark() (true = dark).\n`;
+  go += `func Of(dark bool) Palette {\n\tif dark {\n\t\treturn Dark\n\t}\n\treturn Light\n}\n\n`;
+  go += `// Metrics (px). GTK works in device-independent px; scale by the surface\n// factor if you target hidpi manually (GTK usually handles it).\n`;
+  for (const [n, px] of Object.entries(tokens.space)) go += `const Space${cap(n)} = ${px}\n`;
+  for (const [n, px] of Object.entries(tokens.radius)) go += `const Radius${cap(n)} = ${px}\n`;
+  for (const [n, px] of Object.entries(tokens.font.size)) go += `const Text${cap(n)} = ${px}\n`;
+  const guiDir = join(root, "linux", "internal", "gui");
+  mkdirSync(guiDir, { recursive: true });
+  writeFileSync(join(guiDir, "theme_gen.go"), go);
+}
+
+// --- Windows (WinUI 3 / Fluent) ---------------------------------------
+// A XAML ResourceDictionary with ThemeDictionaries so WinUI swaps dark/light
+// with the system automatically (ActualTheme). Each token becomes a Color and a
+// matching SolidColorBrush ("<Name>Brush"); metrics become x:Double / CornerRadius.
+// This folds Windows — previously the one hand-maintained surface — into the
+// pipeline. The WinUI window keeps Fluent chrome (Mica); these supply the shared
+// semantics on top.
+{
+  const winHex = (hex) => {
+    const { r, g, b, a } = parse(hex);
+    const h2 = (v) => v.toString(16).toUpperCase().padStart(2, "0");
+    return `#${h2(a)}${h2(r)}${h2(g)}${h2(b)}`; // WinUI wants #AARRGGBB
+  };
+  const winKey = (k) => cap(camel(k));
+  const themeDict = (scheme, key) => {
+    let x = `    <ResourceDictionary x:Key="${key}">\n`;
+    for (const [k, hex] of Object.entries(scheme)) {
+      x += `      <Color x:Key="${winKey(k)}Color">${winHex(hex)}</Color>\n`;
+      x += `      <SolidColorBrush x:Key="${winKey(k)}Brush" Color="{StaticResource ${winKey(k)}Color}" />\n`;
+    }
+    x += `    </ResourceDictionary>\n`;
+    return x;
+  };
+
+  let xaml = `<!-- ${HEADER} -->\n`;
+  xaml += `<ResourceDictionary\n    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"\n    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">\n\n`;
+  xaml += `  <ResourceDictionary.ThemeDictionaries>\n`;
+  xaml += themeDict(dark, "Dark") + themeDict(light, "Default");
+  xaml += `  </ResourceDictionary.ThemeDictionaries>\n\n`;
+  xaml += `  <!-- Metrics (device-independent px) shared across both themes. -->\n`;
+  for (const [n, px] of Object.entries(tokens.space)) xaml += `  <x:Double x:Key="Space${cap(n)}">${px}</x:Double>\n`;
+  for (const [n, px] of Object.entries(tokens.radius)) xaml += `  <CornerRadius x:Key="Radius${cap(n)}">${px}</CornerRadius>\n`;
+  for (const [n, px] of Object.entries(tokens.font.size)) xaml += `  <x:Double x:Key="Text${cap(n)}">${px}</x:Double>\n`;
+  xaml += `</ResourceDictionary>\n`;
+  writeFileSync(join(root, "windows", "Theme.xaml"), xaml);
+}
+
+console.log("tokens: wrote tokens.css, Theme.kt, Theme.swift, theme_gen.go (linux), Theme.xaml (windows)");
