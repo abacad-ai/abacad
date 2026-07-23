@@ -29,6 +29,8 @@ export default defineConfig({
           label: "Reference",
           items: [
             { label: "Tool reference", slug: "reference/tools" },
+            { label: "Screen recording", slug: "reference/screen-recording" },
+            { label: "Transport", slug: "reference/transport" },
             { label: "Reading status markers", slug: "reference/status-markers" },
           ],
         },
@@ -38,6 +40,10 @@ export default defineConfig({
             { label: "SSH access", slug: "guides/ssh" },
             { label: "Running a phone hands-off", slug: "guides/running-hands-off" },
           ],
+        },
+        {
+          label: "Security",
+          items: [{ label: "Security & trust", slug: "security" }],
         },
       ],
       // Show the "edit"/last-updated affordances off; this is a curated public

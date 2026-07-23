@@ -80,15 +80,18 @@ abacad connects a real device (an Android phone, a Mac, a Linux box, or a browse
 
 - [What abacad is](%s/docs/): the product, the control-surface ladder, and the honest platform matrix.
 - [Tool reference](%s/docs/reference/tools/): every agent-facing operation (screenshot, tap, swipe, type, run_command, execute, push_file/pull_file), with per-platform status.
+- [Screen recording](%s/docs/reference/screen-recording/): the screen_recording tool — a high-quality file artifact plus an optional live view.
+- [Transport](%s/docs/reference/transport/): the JSON control plane vs the HTTP data plane (/blobs), split by message type.
 - [Reading status markers](%s/docs/reference/status-markers/): what the shipped / built / envisioned markers mean.
 - [SSH access](%s/docs/guides/ssh/): reach a device's own sshd behind NAT with stock ssh and nothing installed.
 - [Running a phone hands-off](%s/docs/guides/running-hands-off/): keep an Android device reachable long-term on a charger.
+- [Security](%s/docs/security/): the two-plane trust model, the controls in place today, and the honest limit (prompt injection).
 
 ## Notes
 
 - Capabilities are marked per platform: ✅ shipped, 🟡 client built but unproven, 🔮 envisioned. Read the marker for the platform you care about, not the row as a whole.
 - Android is the furthest along; macOS and Linux clients are built; Windows and iOS are planned; a browser tab can act as a device with no install.
-`, base, base, base, base, base)
+`, base, base, base, base, base, base, base, base)
 	})
 }
 
