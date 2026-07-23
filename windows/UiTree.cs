@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Windows.Automation;
+using FlaUI.Core.AutomationElements;
 
 namespace Abacad;
 
@@ -11,6 +11,10 @@ namespace Abacad;
 //
 // Bounds are UIA BoundingRectangle in physical screen pixels — the same space
 // InputInjection clicks in — so a node's bounds map directly to a click point.
+//
+// Uses the FlaUI/UIA3 client (see Uia.cs). This is the exact same UI-Automation
+// capability the old System.Windows.Automation version had; only the binding
+// changed when the app moved to WinUI 3.
 static class UiTree
 {
     const int MaxNodes = 3000; // matches the Android/macOS BFS cap
@@ -21,7 +25,7 @@ static class UiTree
         if (hwnd == IntPtr.Zero) return null;
 
         AutomationElement? root;
-        try { root = AutomationElement.FromHandle(hwnd); }
+        try { root = Uia.Automation.FromHandle(hwnd); }
         catch { return null; }
         if (root is null) return null;
 
@@ -34,10 +38,10 @@ static class UiTree
         {
             var el = queue.Dequeue();
             if (Describe(el) is { } node) nodes.Add(node);
-            AutomationElementCollection children;
-            try { children = el.FindAll(TreeScope.Children, Condition.TrueCondition); }
+            AutomationElement[] children;
+            try { children = el.FindAllChildren(); }
             catch { continue; }
-            foreach (AutomationElement child in children)
+            foreach (var child in children)
             {
                 if (enqueued >= MaxNodes) break;
                 queue.Enqueue(child);
@@ -52,24 +56,25 @@ static class UiTree
     {
         try
         {
-            var info = el.Current;
-            string cls = TrimControlType(info.ControlType?.ProgrammaticName);
+            // FlaUI's ControlType enum already reads as a short role name ("Button").
+            string cls = el.Properties.ControlType.ValueOrDefault.ToString();
+
             // Prefer visible text: editable value, then accessible name, then help.
             string text = "";
-            if (el.TryGetCurrentPattern(ValuePattern.Pattern, out var vp))
-                text = ((ValuePattern)vp).Current.Value ?? "";
-            if (string.IsNullOrEmpty(text)) text = info.Name ?? "";
-            if (string.IsNullOrEmpty(text)) text = info.HelpText ?? "";
+            var valuePattern = el.Patterns.Value.PatternOrDefault;
+            if (valuePattern != null) text = valuePattern.Value.ValueOrDefault ?? "";
+            if (string.IsNullOrEmpty(text)) text = el.Properties.Name.ValueOrDefault ?? "";
+            if (string.IsNullOrEmpty(text)) text = el.Properties.HelpText.ValueOrDefault ?? "";
 
-            string id = info.AutomationId ?? "";
-            bool clickable = el.TryGetCurrentPattern(InvokePattern.Pattern, out _)
-                          || el.TryGetCurrentPattern(TogglePattern.Pattern, out _)
-                          || el.TryGetCurrentPattern(SelectionItemPattern.Pattern, out _);
+            string id = el.Properties.AutomationId.ValueOrDefault ?? "";
+            bool clickable = el.Patterns.Invoke.IsSupported
+                          || el.Patterns.Toggle.IsSupported
+                          || el.Patterns.SelectionItem.IsSupported;
 
-            var r = info.BoundingRectangle;
+            var r = el.Properties.BoundingRectangle.ValueOrDefault;
             bool hasFrame = !r.IsEmpty && r.Width > 0 && r.Height > 0;
             int[] bounds = hasFrame
-                ? new[] { (int)r.Left, (int)r.Top, (int)r.Right, (int)r.Bottom }
+                ? new[] { r.Left, r.Top, r.Right, r.Bottom }
                 : new[] { 0, 0, 0, 0 };
 
             // Skip nodes with neither a role, text, nor a frame (e.g. the bare root).
@@ -85,14 +90,6 @@ static class UiTree
             };
         }
         catch { return null; } // stale/inaccessible element — drop it
-    }
-
-    // "ControlType.Button" → "Button"; the agent reasons over short role names.
-    static string TrimControlType(string? programmaticName)
-    {
-        if (string.IsNullOrEmpty(programmaticName)) return "";
-        int dot = programmaticName.LastIndexOf('.');
-        return dot >= 0 ? programmaticName[(dot + 1)..] : programmaticName;
     }
 
     static string ProcessName(IntPtr hwnd)

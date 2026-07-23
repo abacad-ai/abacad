@@ -1,5 +1,3 @@
-using System.Windows.Automation;
-
 namespace Abacad;
 
 // Routes a parsed {id, method, params} command to a handler and produces the
@@ -118,16 +116,17 @@ sealed class CommandDispatcher
 
     /// Replace the focused field's contents via UIA ValuePattern (matches the mac/
     /// Android input_text "set text" semantics). Falls back to typing if there is no
-    /// settable value pattern.
+    /// settable value pattern. Uses the FlaUI/UIA3 client (see Uia.cs).
     static bool SetFocusedText(string text)
     {
         try
         {
-            var focused = AutomationElement.FocusedElement;
-            if (focused != null && focused.TryGetCurrentPattern(ValuePattern.Pattern, out var vp))
+            var focused = Uia.Automation.FocusedElement();
+            var vp = focused?.Patterns.Value.PatternOrDefault;
+            if (vp != null && !vp.IsReadOnly.ValueOrDefault)
             {
-                var pattern = (ValuePattern)vp;
-                if (!pattern.Current.IsReadOnly) { pattern.SetValue(text); return true; }
+                vp.SetValue(text);
+                return true;
             }
         }
         catch { /* fall through to typing */ }

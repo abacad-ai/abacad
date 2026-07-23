@@ -2,43 +2,58 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <RootNamespace>Abacad</RootNamespace>
     <AssemblyName>Abacad</AssemblyName>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
 
-    <!-- Tray app: WinForms for the NotifyIcon + settings window. WPF is enabled
-         only to pull in the System.Windows.Automation (UI Automation) client
-         assemblies — the app draws no WPF UI. -->
-    <UseWindowsForms>true</UseWindowsForms>
-    <UseWPF>true</UseWPF>
+    <!-- WinUI 3 (Windows App SDK), Fluent chrome. Unpackaged (WindowsPackageType
+         None) so it ships as a plain .exe tray app like the old WinForms build,
+         no MSIX required. The UI-Automation *client* work (reading other apps'
+         trees) no longer rides on WPF — it uses FlaUI.UIA3 now, so UseWinUI and
+         the UIA client coexist fine. -->
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <Platforms>x64;arm64</Platforms>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
 
-    <!-- Build this Windows-targeted TFM on any OS (Linux/macOS CI), even though
-         the runtime (UIA / tray / SendInput) only executes on Windows. -->
-    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- Custom entry point (Program.cs) so `abacad connect` can run the pairing
+         CLI and exit before any WinUI init. -->
+    <DisableXamlGeneratedMain>true</DisableXamlGeneratedMain>
 
     <!-- PerMonitorV2 so GDI capture, UIA BoundingRectangle, and SendInput's
-         absolute coordinates all agree in physical pixels — the "1 screenshot
-         pixel == 1 click unit" invariant the macOS/Android clients hold. The
-         app.manifest declares the same; keep them in sync. -->
+         absolute coordinates all agree in physical pixels. -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+
+    <!-- NOTE: Windows App SDK apps build on Windows. This drops the previous
+         EnableWindowsTargeting cross-compile (the Mac-mini/Linux CI path) — the
+         Windows client now needs a Windows build host. -->
 
     <Product>abacad</Product>
     <AssemblyTitle>abacad</AssemblyTitle>
-    <!-- One monorepo version, read from the repo-root VERSION file (one level up
-         from windows/) at build time. Flows into AssemblyInformationalVersion,
-         which the client reports to the relay (?version= on the dial). "dev" if
-         the file is somehow absent. -->
+    <!-- One monorepo version, read from the repo-root VERSION file at build time. -->
     <Version Condition="Exists('$(MSBuildThisFileDirectory)..\VERSION')">$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)..\VERSION').Trim())</Version>
     <Version Condition="!Exists('$(MSBuildThisFileDirectory)..\VERSION')">dev</Version>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- DPAPI (ProtectedData) is a separate package even on Windows-targeting
-         .NET; it encrypts the server URL (which carries the device token) at rest. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.240923002" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.1742" />
+    <!-- Tray icon at the Win32 (Shell_NotifyIcon) level — WinUI has no NotifyIcon.
+         The .Core package is XAML-free and takes an HICON directly, so RelayMark's
+         GDI-drawn icon is reused as-is. -->
+    <PackageReference Include="H.NotifyIcon.Core" Version="2.1.3" />
+    <!-- UI-Automation client (reads/drives other apps' trees), replacing the old
+         System.Windows.Automation (which came in via UseWPF). -->
+    <PackageReference Include="FlaUI.UIA3" Version="4.0.0" />
+    <!-- GDI+ for RelayMark's tray glyph + ScreenCapture, now that UseWindowsForms
+         (which used to provide System.Drawing) is gone. -->
+    <PackageReference Include="System.Drawing.Common" Version="8.0.8" />
+    <!-- DPAPI (ProtectedData) encrypts the stored server URL (device token) at rest. -->
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
 
