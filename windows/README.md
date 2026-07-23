@@ -86,7 +86,8 @@ header, never the URL query.
 - **Primary display only** — capture and coordinates target the primary monitor.
 - **Single pointer** — `composite` is single-pointer (paths, modifier-fused clicks,
   and timing work; multi-touch gestures do not).
-- **No published installer yet** — build the exe yourself (above). A signed
-  (Authenticode) installer dropped at `downloads/abacad-windows-latest.exe` — the
-  analogue of the macOS notarized `.dmg` — is a follow-up; once it exists, add a
-  `Windows` entry to `CLIENT_DOWNLOADS` in `server/frontend/src/lib/devices.ts`.
+- **Unsigned download** — release publishes `abacad-<version>-windows-amd64.exe`
+  (self-contained single exe) and the downloads page lists it automatically from
+  the manifest, but it is **not** Authenticode-signed yet, so SmartScreen warns on
+  download. A signed installer — the analogue of the macOS notarized `.dmg` — is
+  the follow-up; wire the cert into `make windows-release`.

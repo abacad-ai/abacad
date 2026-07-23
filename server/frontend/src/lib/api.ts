@@ -112,13 +112,25 @@ export interface ActivitiesResult {
   next_before?: number; // absent once the trail is exhausted
 }
 
-// One published client build, as found on the server's downloads directory.
-export interface ClientBuild {
-  platform: string; // "macos", "android", …
+// One published client build, as listed in the downloads manifest. Named by the
+// repo-wide convention abacad-<version>-<platform>-<arch>.<suffix>.
+export interface Build {
+  platform: string; // "macos", "android", "linux", "windows"
+  arch: string; // "amd64" | "arm64" | "universal"
+  version: string;
   file: string;
   url: string; // /downloads/<file>
   size: number; // bytes
-  updated_at: number; // unix seconds
+  sha256: string; // hex; there for a future in-app auto-updater
+}
+
+// The client downloads manifest (server's static /downloads/manifest.json, written
+// by `make stage`): the current build per platform+arch. There's no downloads API
+// endpoint — the manifest is served straight off the downloads dir.
+export interface Manifest {
+  version: string;
+  generated_at: number; // unix seconds
+  builds: Build[];
 }
 
 export interface ActivityQuery {
@@ -173,8 +185,14 @@ export const api = {
     req<Me>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   logout: () => req<void>("/api/auth/logout", { method: "POST" }),
 
-  // Public (no session): the downloads page works signed out.
-  downloads: () => req<ClientBuild[]>("/api/downloads"),
+  // Public (no session): the downloads page works signed out. The manifest is a
+  // static file; a 404 (nothing staged on a fresh server) is normal, so surface
+  // it as an empty manifest rather than an error.
+  manifest: (): Promise<Manifest> =>
+    req<Manifest>("/downloads/manifest.json").catch((err) => {
+      if (err instanceof ApiError && err.status === 404) return { version: "", generated_at: 0, builds: [] };
+      throw err;
+    }),
 
   // Public: the running server version, for the footer's server/SPA skew check.
   version: () => req<{ version: string }>("/api/version"),

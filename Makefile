@@ -71,12 +71,28 @@ else
 CODESIGN_FLAGS := --options runtime --timestamp
 endif
 
+# ── Published artifact names ──────────────────────────────────────────────────
+# One convention for every platform: abacad-<version>-<platform>-<arch>.<suffix>.
+# The `stage` target below copies each build to these names in $(DOWNLOADS) and
+# regenerates manifest.json; nothing carries a "latest" name anymore — the
+# manifest is what points at the current version. Arch is Go's GOARCH vocabulary
+# (amd64/arm64); the Android APK bundles every ABI, so it's "universal".
+PKG_MACOS       := abacad-$(VERSION)-macos-arm64.dmg
+PKG_ANDROID     := abacad-$(VERSION)-android-universal.apk
+PKG_WINDOWS     := abacad-$(VERSION)-windows-amd64.exe
+PKG_LINUX_AMD64 := abacad-$(VERSION)-linux-amd64.tar.gz
+PKG_LINUX_ARM64 := abacad-$(VERSION)-linux-arm64.tar.gz
+
+# Where each platform's release build leaves its artifact (staged from here).
+APK_RELEASE := android/app/build/outputs/apk/release/app-release.apk
+WIN_EXE     := windows/publish/Abacad.exe
+
 .PHONY: build build-debug build-release debug release \
         dev tokens bump-version version android android-release \
         linux linux-release linux-run linux-test \
         macos macos-icon macos-dmg macos-release macos-trust-reset macos-clean \
         windows windows-debug windows-release \
-        publish publish-macos publish-android \
+        publish stage stage-macos stage-android stage-linux stage-windows manifest \
         _mac-pkg-dmg _mac-notarize-app _mac-notarize-dmg
 
 # Build every client platform, both variants. Run this on macOS, the only host
@@ -110,7 +126,8 @@ build-debug: android linux macos windows-debug
 	@echo "Built debug clients: Android, Linux, macOS, Windows (v$(VERSION))"
 
 build-release: android-release linux-release macos-release windows-release
-	@echo "Built release clients: Android, Linux, macOS, Windows (v$(VERSION))"
+	@$(MAKE) stage
+	@echo "Built + staged release clients: Android, Linux, macOS, Windows (v$(VERSION))"
 
 # Start the Go backend and the Vite frontend together in the foreground.
 # Open http://localhost:$(PORT). Ctrl-C stops both.
@@ -193,13 +210,17 @@ android-release:
 linux:
 	cd linux && go build -ldflags "$(GO_LINUX_LDFLAGS)" -o build/abacad ./cmd/abacad
 
-# Cross-compile the release binaries install.sh serves (pure-Go → CGO off, any
-# host cross-compiles). Copy the outputs into the server's downloads dir to
-# publish. Output: linux/build/abacad-linux-{amd64,arm64}
+# Cross-compile the release tarballs install.sh serves (pure-Go → CGO off, any
+# host cross-compiles). Each holds a single `abacad` binary, so install.sh just
+# untars and moves it. `make stage` copies these into the downloads dir.
+# Output: linux/build/abacad-<version>-linux-{amd64,arm64}.tar.gz
 linux-release:
-	cd linux && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$(GO_LINUX_LDFLAGS)" -o build/abacad-linux-amd64 ./cmd/abacad
-	cd linux && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$(GO_LINUX_LDFLAGS)" -o build/abacad-linux-arm64 ./cmd/abacad
-	@echo "Built linux/build/abacad-linux-amd64 and -arm64 (v$(VERSION))"
+	cd linux && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$(GO_LINUX_LDFLAGS)" -o build/abacad ./cmd/abacad
+	tar -czf linux/build/$(PKG_LINUX_AMD64) -C linux/build abacad
+	cd linux && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$(GO_LINUX_LDFLAGS)" -o build/abacad ./cmd/abacad
+	tar -czf linux/build/$(PKG_LINUX_ARM64) -C linux/build abacad
+	rm -f linux/build/abacad
+	@echo "Built linux/build/$(PKG_LINUX_AMD64) and $(PKG_LINUX_ARM64) (v$(VERSION))"
 
 # Build + run against a relay: make linux-run URL=wss://host/device?token=…
 linux-run: linux
@@ -211,7 +232,8 @@ linux-test:
 
 # ── Windows ──────────────────────────────────────────────────────────────────
 # Tray client targeting Windows 10/11. The .NET SDK can cross-build it from
-# macOS or Linux. Output: windows/bin/<Debug|Release>/net8.0-windows/
+# macOS or Linux. Debug: windows/bin/Debug/net8.0-windows/. Release: a
+# self-contained single exe at windows/publish/Abacad.exe.
 
 # `windows` (bare) is the release build, for back-compat and `make windows`.
 windows: windows-release
@@ -219,11 +241,12 @@ windows: windows-release
 windows-debug:
 	dotnet build windows/Abacad.csproj -c Debug
 
-# Release config, but UNSIGNED: there's no Authenticode/code-signing cert path in
+# Self-contained single-file exe (bundles the .NET runtime, so it runs on a clean
+# Windows box), but UNSIGNED: there's no Authenticode/code-signing cert path in
 # the repo yet, so the .exe runs but SmartScreen warns on download. TODO: sign
-# here once a cert is available.
+# here once a cert is available. Output: windows/publish/Abacad.exe
 windows-release:
-	dotnet build windows/Abacad.csproj -c Release
+	dotnet publish windows/Abacad.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o windows/publish
 
 # ── macOS ────────────────────────────────────────────────────────────────────
 # Needs a Mac with the Swift/Xcode toolchain; these targets do not build elsewhere.
@@ -323,30 +346,59 @@ _mac-notarize-dmg:
 	xcrun stapler staple "$(MAC_DMG)"
 	@echo "Notarized + stapled $(MAC_DMG)"
 
-# ── Publishing ───────────────────────────────────────────────────────────────
+# ── Staging & the manifest ───────────────────────────────────────────────────
 
-# Publish the built clients to the downloads directory under the names the
-# server serves at /downloads/ and lists on the public /downloads page:
-# abacad-<platform>-latest.<ext>. Building a client leaves it in its own build
-# tree; only this step makes it downloadable. In production the same thing
-# happens by copying the artifact onto the deploy volume — no restart needed.
-publish: publish-macos publish-android
-	@ls -lh $(DOWNLOADS)
+# Copy the built RELEASE artifacts into the downloads dir under their published
+# names and (re)generate manifest.json — the single file every consumer reads:
+# the /downloads page renders from it, install.sh greps the Linux tarball URL out
+# of it, and a future in-app auto-updater can diff against it. Building a client
+# leaves it in its own build tree; staging is what makes it downloadable, and it
+# travels with a fresh manifest so there's nothing to keep in sync by hand.
+#
+#   make build release   → builds all four, then stages + writes the manifest, so
+#                          a following `make dev` serves a working downloads page.
+#   make stage           → (re)stage whatever is already built, no rebuild.
+#
+# Each stage-* copies only if its artifact exists, so a partial build (say just
+# `make linux-release && make stage`) stages a partial set and the manifest lists
+# exactly what's there. In production the same thing happens by copying the release
+# assets + manifest.json onto the deploy volume — no restart needed.
+stage: stage-macos stage-android stage-linux stage-windows
+	node scripts/gen-manifest.mjs "$(DOWNLOADS)"
+	@ls -lh "$(DOWNLOADS)"
 
-# The .app is what you run locally; the .dmg is what people download, so this
-# copies one. It builds an unnotarized dmg only if none exists yet — depending on
-# macos-dmg unconditionally would re-sign the .app and repackage, silently
-# discarding the stapled ticket from a preceding `make macos-release`. So the
-# release flow is `make macos-release && make publish`; to force a fresh dev dmg,
-# `make macos-clean` (or `make macos-dmg`) first.
-publish-macos:
-	@test -f "$(MAC_DMG)" || $(MAKE) macos-dmg
-	@mkdir -p $(DOWNLOADS)
-	cp $(MAC_DMG) $(DOWNLOADS)/abacad-macos-latest.dmg
+# Back-compat alias — infra and docs say `make publish`.
+publish: stage
+
+# Regenerate manifest.json alone (after hand-dropping a file into $(DOWNLOADS)).
+manifest:
+	node scripts/gen-manifest.mjs "$(DOWNLOADS)"
+
+# The .app is what you run locally; the .dmg is what people download. Copy the
+# dmg exactly as macos-release left it — never rebuild here, or a re-sign/repack
+# would silently discard the stapled notarization ticket. No dmg yet ⇒ skip with
+# a hint rather than shipping an unsigned one by surprise.
+stage-macos:
+	@mkdir -p "$(DOWNLOADS)"
+	@if [ -f "$(MAC_DMG)" ]; then cp "$(MAC_DMG)" "$(DOWNLOADS)/$(PKG_MACOS)"; echo "  staged $(PKG_MACOS)"; \
+	 else echo "  (skip macos: no $(MAC_DMG) — run 'make macos-release')"; fi
 
 # The debug APK is debuggable — anyone with ADB access to a user's phone could
-# attach to a service that reads the screen and injects taps. Publish the
-# release build only.
-publish-android: android-release
-	@mkdir -p $(DOWNLOADS)
-	cp android/app/build/outputs/apk/release/app-release.apk $(DOWNLOADS)/abacad-android-latest.apk
+# attach to a service that reads the screen and injects taps. Stage the release
+# build only (release-only staging means the debug APK never reaches here).
+stage-android:
+	@mkdir -p "$(DOWNLOADS)"
+	@if [ -f "$(APK_RELEASE)" ]; then cp "$(APK_RELEASE)" "$(DOWNLOADS)/$(PKG_ANDROID)"; echo "  staged $(PKG_ANDROID)"; \
+	 else echo "  (skip android: no release APK — run 'make android-release')"; fi
+
+stage-linux:
+	@mkdir -p "$(DOWNLOADS)"
+	@for f in "$(PKG_LINUX_AMD64)" "$(PKG_LINUX_ARM64)"; do \
+	  if [ -f "linux/build/$$f" ]; then cp "linux/build/$$f" "$(DOWNLOADS)/$$f"; echo "  staged $$f"; \
+	  else echo "  (skip linux: no linux/build/$$f — run 'make linux-release')"; fi; \
+	done
+
+stage-windows:
+	@mkdir -p "$(DOWNLOADS)"
+	@if [ -f "$(WIN_EXE)" ]; then cp "$(WIN_EXE)" "$(DOWNLOADS)/$(PKG_WINDOWS)"; echo "  staged $(PKG_WINDOWS)"; \
+	 else echo "  (skip windows: no $(WIN_EXE) — run 'make windows-release')"; fi

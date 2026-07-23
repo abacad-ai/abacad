@@ -12,10 +12,12 @@
 #     (login-keychain Developer ID cert, `abacad-notary` profile,
 #     ~/.abacad/android-release.jks + ~/.gradle/gradle.properties).
 #
-# Artifacts are named to match the server's publishing convention
-# (abacad-<platform>-latest.<ext>, and the exact abacad-linux-{amd64,arm64}
-# names install.sh fetches), so the infra deploy can `gh release download <tag>`
-# and drop them onto the volume with no renaming.
+# Each job builds its client and stages it (via `make stage-<platform>`) under the
+# repo-wide name abacad-<version>-<platform>-<arch>.<suffix>. The release job then
+# gathers them, generates manifest.json over the set, and publishes everything —
+# so the infra deploy can `gh release download <tag>` and drop the artifacts +
+# manifest onto the volume with no renaming. The manifest is what every consumer
+# reads (downloads page, install.sh); there is no "latest" filename anymore.
 #
 # workflow_dispatch runs the four build jobs as a smoke test but publishes
 # nothing — the release job is gated on a v* tag.
@@ -44,12 +46,11 @@ jobs:
           go-version: "1.25"
           cache-dependency-path: linux/go.sum
       - run: make linux-release
+      - run: make stage-linux DOWNLOADS=dist
       - uses: actions/upload-artifact@v4
         with:
           name: linux
-          path: |
-            linux/build/abacad-linux-amd64
-            linux/build/abacad-linux-arm64
+          path: dist/
           if-no-files-found: error
 
   # ── Windows tray app — self-contained single exe, cross-built on Linux ───────
@@ -62,15 +63,14 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
-      - name: Publish self-contained exe
+      - name: Build + stage self-contained exe
         run: |
-          dotnet publish windows/Abacad.csproj -c Release -r win-x64 \
-            --self-contained -p:PublishSingleFile=true -o windows/publish
-          cp windows/publish/Abacad.exe abacad-windows-latest.exe
+          make windows-release
+          make stage-windows DOWNLOADS=dist
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: abacad-windows-latest.exe
+          path: dist/
           if-no-files-found: error
 
   # ── macOS menu-bar app — signed, notarized, stapled .dmg ─────────────────────
@@ -86,12 +86,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build, sign & notarize
         run: make macos-release
-      - name: Stage release name
-        run: cp macos/build/abacad.dmg abacad-macos-latest.dmg
+      - name: Stage under the published name
+        run: make stage-macos DOWNLOADS=dist
       - uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: abacad-macos-latest.dmg
+          path: dist/
           if-no-files-found: error
 
   # ── Android app — signed release APK ─────────────────────────────────────────
@@ -113,12 +113,12 @@ jobs:
         run: |
           export ANDROID_HOME="$HOME/Library/Android/sdk"
           make android-release
-      - name: Stage release name
-        run: cp android/app/build/outputs/apk/release/app-release.apk abacad-android-latest.apk
+      - name: Stage under the published name
+        run: make stage-android DOWNLOADS=dist
       - uses: actions/upload-artifact@v4
         with:
           name: android
-          path: abacad-android-latest.apk
+          path: dist/
           if-no-files-found: error
 
   # ── Gather every artifact and publish the GitHub Release ─────────────────────
@@ -145,6 +145,14 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      # Generate the manifest over the gathered artifacts, so it ships alongside
+      # them in the Release (and thus onto the deploy volume) — the same static
+      # manifest.json the server serves and every client reads.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Generate downloads manifest
+        run: node scripts/gen-manifest.mjs dist
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:

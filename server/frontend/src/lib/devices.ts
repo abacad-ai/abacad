@@ -6,7 +6,7 @@
 // a display label and a form factor, which drives both the section a device
 // lands in and the frame it wears.
 
-import { type DeviceView } from "@/lib/api";
+import { type Build, type DeviceView } from "@/lib/api";
 
 export type FormFactor = "handset" | "desktop";
 
@@ -52,17 +52,30 @@ export function platformInfo(platform: string): PlatformInfo {
   return KNOWN_PLATFORMS[platform] ?? { label: platform, factor: "desktop" };
 }
 
-// Public client builds, keyed by platform label. The server publishes release
-// artifacts at /downloads/<file> (a plain directory on the deploy volume), so a
-// new platform's client is a naming convention plus a file copy. Platforms with
-// no shipped client are simply absent — the UI then offers no download.
-const CLIENT_DOWNLOADS: Record<string, string> = {
-  macOS: "/downloads/abacad-macos-latest.dmg",
-  Android: "/downloads/abacad-android-latest.apk",
+// Map a display label back to the manifest's platform key (the manifest keys by
+// "macos"/"android"/…, while a device carries any of several aliases that
+// platformInfo() has already normalized to a label).
+const LABEL_TO_PLATFORM: Record<string, string> = {
+  macOS: "macos",
+  Android: "android",
+  Windows: "windows",
+  Linux: "linux",
 };
 
-export function clientDownload(info: PlatformInfo): string | null {
-  return CLIENT_DOWNLOADS[info.label] ?? null;
+// The direct download URL for a platform's client, chosen from the manifest builds
+// (see useManifest). Prefers arm64, then amd64, then whatever's published — good
+// enough for the one-click button on a device page; the /downloads page lists
+// every arch. Null when nothing is published for the platform (no dead button).
+export function clientDownload(builds: Build[], info: PlatformInfo): string | null {
+  const key = LABEL_TO_PLATFORM[info.label];
+  if (!key) return null;
+  const forPlatform = builds.filter((b) => b.platform === key);
+  if (forPlatform.length === 0) return null;
+  const pick =
+    forPlatform.find((b) => b.arch === "arm64") ??
+    forPlatform.find((b) => b.arch === "amd64") ??
+    forPlatform[0];
+  return pick.url;
 }
 
 // Section order — desktops first, then handsets, with unrecognized labels last.

@@ -48,11 +48,11 @@ make macos-release SIGN_IDENTITY="Developer ID Application: Beijing Xiaoyuanzhu 
 # → macos/build/abacad.dmg   (signed, notarized, stapled)
 ```
 
-Team `R3845XW5FZ`. Publishing the result is a separate step: `make publish-macos`
-copies the dmg into the local downloads directory; in production, copy
-`macos/build/abacad.dmg` into the deploy directory's
-`downloads/abacad-macos-latest.dmg` (infra repo, `deployment/xyz-sg-1/abacad.ai/`)
-and run its `deploy.sh`.
+Team `R3845XW5FZ`. Publishing the result is a separate step: `make stage-macos`
+copies the dmg into the local downloads directory under its published name
+`abacad-<version>-macos-arm64.dmg` (and `make stage` refreshes `manifest.json`);
+in production, copy that file into the deploy directory's `downloads/` (infra
+repo, `deployment/xyz-sg-1/abacad.ai/`) and run its `deploy.sh`.
 
 **One-time notary credential setup.** `make macos-release` reads notary credentials
 from a keychain profile named `abacad-notary` (override with `NOTARY_PROFILE`).

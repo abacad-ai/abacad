@@ -40,10 +40,6 @@ type API struct {
 	BaseDomain string             // domain devices are addressed under, for the ssh_host hint
 	VNC        *vnc.Manager       // live VNC session manager (screen_recording live channel)
 
-	// DownloadsDir is the directory of published client builds served at
-	// /downloads/; GET /api/downloads lists what it holds. See downloads.go.
-	DownloadsDir string
-
 	// Google OAuth. Empty client id/secret disables the "Sign in with Google"
 	// routes and hides the button; RedirectURL is derived from the request when
 	// blank. See oauth.go.
@@ -73,8 +69,9 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/auth/google/start", a.googleStart)
 	mux.HandleFunc("GET /api/auth/google/callback", a.googleCallback)
 
-	// Public: the client downloads page is reachable without an account.
-	mux.HandleFunc("GET /api/downloads", a.listDownloads)
+	// The client downloads page reads the static /downloads/manifest.json (written
+	// by `make stage`), so there's no downloads API endpoint — the artifacts and
+	// their manifest are served straight off disk by downloadsHandler in main.go.
 
 	// Public: the running server version, for the dashboard footer. Unauthenticated
 	// on purpose — it's the same number stamped into the served SPA and clients.

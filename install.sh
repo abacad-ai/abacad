@@ -29,8 +29,17 @@ case "$arch" in
 		;;
 esac
 
-asset="abacad-linux-$A"
-url="$SERVER/downloads/$asset"
+# Resolve the download from the published manifest rather than hardcoding a
+# filename: artifacts are versioned (abacad-<version>-linux-<arch>.tar.gz), so we
+# pull the current URL for this machine's arch out of /downloads/manifest.json.
+manifest="$SERVER/downloads/manifest.json"
+path="$(curl -fsSL "$manifest" | grep -o "/downloads/abacad-[0-9.]*-linux-$A\.tar\.gz" | head -n 1)"
+if [ -z "$path" ]; then
+	echo "No linux-$A build is published at $SERVER (checked $manifest)." >&2
+	echo "See $SERVER/downloads for what's available." >&2
+	exit 1
+fi
+url="$SERVER$path"
 
 # Prefer a system bin dir; fall back to a user-local one that needs no root.
 SUDO=""
@@ -45,16 +54,22 @@ else
 fi
 
 tmp="$(mktemp)"
-trap 'rm -f "$tmp"' EXIT
+tmpdir="$(mktemp -d)"
+trap 'rm -rf "$tmp" "$tmpdir"' EXIT
 
 echo "Downloading $url …"
 if ! curl -fsSL "$url" -o "$tmp"; then
-	echo "Download failed. Is $SERVER reachable, and is the $A build published?" >&2
+	echo "Download failed. Is $SERVER reachable?" >&2
 	exit 1
 fi
-chmod +x "$tmp"
-$SUDO mv "$tmp" "$bindir/abacad"
-trap - EXIT
+
+# The tarball holds a single `abacad` binary.
+if ! tar -xzf "$tmp" -C "$tmpdir" abacad; then
+	echo "Could not extract abacad from the downloaded archive." >&2
+	exit 1
+fi
+chmod +x "$tmpdir/abacad"
+$SUDO mv "$tmpdir/abacad" "$bindir/abacad"
 
 echo "Installed abacad to $bindir/abacad"
 case ":$PATH:" in

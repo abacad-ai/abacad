@@ -1,24 +1,25 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Download, Globe, Laptop, LoaderCircle, Monitor, Smartphone, Terminal } from "lucide-react";
-import { api, type ClientBuild } from "@/lib/api";
+import { type Build } from "@/lib/api";
+import { useManifest } from "@/lib/useManifest";
 import { PublicLayout } from "@/components/PublicLayout";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { platformInfo } from "@/lib/devices";
-import { cn, relativeTime } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 // Public client downloads at /downloads — deliberately reachable with no account,
 // since you install the client on a device before (or while) signing up. The
-// buttons come from GET /api/downloads, so the page offers exactly the builds
-// that exist on the server: no dead links, and a newly published platform shows
-// up without a frontend change.
+// buttons come from /downloads/manifest.json, so the page offers exactly the
+// builds staged on the server: no dead links, and a newly published platform (or
+// arch) shows up without a frontend change.
 //
-// Note the backend also owns /downloads/<file> (the artifacts themselves); this
-// SPA route is the bare /downloads path, which Go's mux leaves to the SPA.
+// Note the backend also owns /downloads/<file> (the artifacts + the manifest
+// itself); this SPA route is the bare /downloads path, which Go's mux leaves to
+// the SPA.
 
 interface PlatformCard {
-  key: string; // matches ClientBuild.platform
+  key: string; // matches Build.platform
   label: string;
   icon: typeof Laptop;
   requirement: string;
@@ -59,24 +60,14 @@ const CATALOG: PlatformCard[] = [
 ];
 
 export function DownloadsPage() {
-  const [builds, setBuilds] = useState<ClientBuild[] | null>(null);
-  const [failed, setFailed] = useState<string | null>(null);
+  const { builds, error: failed } = useManifest();
 
-  useEffect(() => {
-    let live = true;
-    api
-      .downloads()
-      .then((list) => live && setBuilds(list))
-      .catch((err: Error) => live && setFailed(err.message));
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  const buildFor = (key: string) => builds?.find((b) => b.platform === key) ?? null;
-  // A build published for a platform the catalog doesn't describe still gets a
-  // card, so copying a file to the server is always enough to offer it.
-  const extras = (builds ?? []).filter((b) => !CATALOG.some((c) => c.key === b.platform));
+  const buildsFor = (key: string) => (builds ?? []).filter((b) => b.platform === key);
+  // A platform the catalog doesn't describe still gets a card, so staging a file
+  // on the server is always enough to offer it.
+  const extraPlatforms = [...new Set((builds ?? []).map((b) => b.platform))].filter(
+    (p) => !CATALOG.some((c) => c.key === p),
+  );
 
   return (
     <PublicLayout>
@@ -100,19 +91,19 @@ export function DownloadsPage() {
 
         <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {CATALOG.map((card) => (
-            <ClientCard key={card.key} card={card} build={buildFor(card.key)} loading={builds === null && !failed} />
+            <ClientCard key={card.key} card={card} builds={buildsFor(card.key)} loading={builds === null && !failed} />
           ))}
-          {extras.map((build) => (
+          {extraPlatforms.map((p) => (
             <ClientCard
-              key={build.platform}
+              key={p}
               card={{
-                key: build.platform,
-                label: platformInfo(build.platform).label,
+                key: p,
+                label: platformInfo(p).label,
                 icon: Laptop,
                 requirement: "Latest build",
                 note: "",
               }}
-              build={build}
+              builds={buildsFor(p)}
               loading={false}
             />
           ))}
@@ -147,16 +138,13 @@ export function DownloadsPage() {
   );
 }
 
-function ClientCard({
-  card,
-  build,
-  loading,
-}: {
-  card: PlatformCard;
-  build: ClientBuild | null;
-  loading: boolean;
-}) {
+function ClientCard({ card, builds, loading }: { card: PlatformCard; builds: Build[]; loading: boolean }) {
   const Icon = card.icon;
+  // A platform can ship more than one arch (Linux amd64 + arm64) — one button
+  // each, arch-labeled. Versions agree across a platform's builds in practice.
+  const sorted = [...builds].sort((a, b) => a.arch.localeCompare(b.arch));
+  const version = sorted[0]?.version;
+  const multi = sorted.length > 1;
   return (
     <Card className="flex flex-col p-5">
       <span className="flex h-9 w-9 items-center justify-center rounded-md border border-brand/25 bg-brand-soft text-brand">
@@ -173,16 +161,20 @@ function ClientCard({
           <LoaderCircle size={16} className="animate-spin" />
           Checking for a build
         </span>
-      ) : build ? (
-        <>
-          <a href={build.url} download className={cn(buttonVariants(), "w-full")}>
-            <Download size={16} />
-            Download
-          </a>
-          <p className="mt-2 text-center font-mono text-[11px] text-ink-subtle">
-            {fileKind(build.file)} · {formatSize(build.size)} · {relativeTime(build.updated_at * 1000)}
+      ) : sorted.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          {sorted.map((b) => (
+            <a key={b.url} href={b.url} download className={cn(buttonVariants(), "w-full")}>
+              <Download size={16} />
+              Download{multi ? ` (${b.arch})` : ""}
+            </a>
+          ))}
+          <p className="text-center font-mono text-[11px] text-ink-subtle">
+            {fileKind(sorted[0].file)}
+            {multi ? "" : ` · ${formatSize(sorted[0].size)}`}
+            {version ? ` · v${version}` : ""}
           </p>
-        </>
+        </div>
       ) : (
         // No published artifact: say so plainly rather than offering a dead button.
         <span className="inline-flex h-11 items-center rounded-md border border-dashed border-border px-3 text-sm text-ink-subtle">
@@ -229,9 +221,10 @@ function Step({ n, title, body }: { n: number; title: string; body: string }) {
   );
 }
 
-// "abacad-macos-latest.dmg" -> "DMG". The extension is the most useful label for
-// an artifact whose name is otherwise the same on every platform.
+// "abacad-0.4.0-macos-arm64.dmg" -> "DMG". The extension is the most useful label
+// for an artifact whose name is otherwise the same on every platform.
 function fileKind(file: string): string {
+  if (file.endsWith(".tar.gz")) return "TAR.GZ";
   const dot = file.lastIndexOf(".");
   return dot === -1 ? "FILE" : file.slice(dot + 1).toUpperCase();
 }

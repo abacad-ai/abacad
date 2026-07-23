@@ -20,6 +20,7 @@ import {
 import { ApiError, api, type ActivityItem, type DeviceView } from "@/lib/api";
 import { clockTime, cn, relativeTime, untilTime } from "@/lib/utils";
 import { clientDownload, resolvePlatform, type PlatformInfo } from "@/lib/devices";
+import { useManifest } from "@/lib/useManifest";
 import { DeviceFrame, DeviceScreen } from "@/components/DeviceScreen";
 import { LiveView } from "@/components/LiveView";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -241,7 +242,8 @@ function Column({ title, children }: { title: string; children: React.ReactNode 
 // install — the tab is the client), and nothing at all for platforms whose client
 // hasn't shipped, where a dead button would be worse than none.
 function ClientLink({ device, platform }: { device: DeviceView; platform: PlatformInfo | null }) {
-  const download = platform ? clientDownload(platform) : null;
+  const { builds } = useManifest();
+  const download = platform ? clientDownload(builds ?? [], platform) : null;
   if (download) {
     return (
       <a href={download} download className={cn(buttonVariants({ variant: "outline" }), "mb-5 w-full")}>

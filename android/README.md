@@ -51,7 +51,7 @@ user's phone could attach to a service that reads the screen and injects taps.
 
 ```bash
 make android-release      # -> app/build/outputs/apk/release/app-release.apk
-make publish-android      # the above, copied into the server's downloads dir
+make stage-android        # copied into the downloads dir as abacad-<version>-android-universal.apk
 ```
 
 The release key is **permanent**: Android refuses to install an update signed by a
