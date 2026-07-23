@@ -2,8 +2,9 @@
   <!-- abacad relay mark: four connected dots (one hub → three devices) that read as
        an "A"; the green hub is the single "alive" accent. Self-contained charcoal
        tile so it reads on any surface (browser tab, app icon, dock). The three edges
-       form a true 120° tristar from the hub — same splay across tray / app / launcher. -->
-  <rect width="512" height="512" rx="114" fill="#0b0b0d"/>
+       form a true 120° tristar from the hub — same splay across tray / app / launcher.
+       Full-bleed square background; platform masks (squircle/circle) applied downstream. -->
+  <rect width="512" height="512" fill="#0b0b0d"/>
   <g fill="none" stroke="#d8dade" stroke-width="10"
      stroke-linecap="round" stroke-opacity=".5">
     <line x1="256" y1="303" x2="256" y2="114"/>
