@@ -19,8 +19,8 @@ BACKEND_ADDR ?= :1213
 
 # Where the server looks for public release artifacts. The backend runs with
 # server/backend as its working directory and defaults to a relative
-# "abacad-downloads" (ABACAD_DOWNLOADS overrides it), so this is that directory.
-DOWNLOADS ?= server/backend/abacad-downloads
+# "downloads" (ABACAD_DOWNLOADS overrides it), so this is that directory.
+DOWNLOADS ?= server/backend/downloads
 
 # ── macOS signing & notarization ─────────────────────────────────────────────
 #   SIGN_IDENTITY  : codesign identity. Auto-detected: the team's Developer ID

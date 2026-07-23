@@ -61,9 +61,9 @@ func Load() Config {
 	var c Config
 	flag.StringVar(&c.Addr, "addr", envOr("ABACAD_ADDR", ":8848"), "listen address")
 	flag.StringVar(&c.DBPath, "db", envOr("ABACAD_DB", "abacad.db"), "SQLite database path")
-	flag.StringVar(&c.BlobDir, "blobs", envOr("ABACAD_BLOBS", "abacad-blobs"), "directory for /blobs data-plane storage")
-	flag.StringVar(&c.ScreenshotDir, "screenshots", envOr("ABACAD_SCREENSHOTS", "abacad-screenshots"), "directory for per-device last-screenshot storage")
-	flag.StringVar(&c.DownloadsDir, "downloads", envOr("ABACAD_DOWNLOADS", "abacad-downloads"), "directory of public release artifacts served at /downloads/")
+	flag.StringVar(&c.BlobDir, "blobs", envOr("ABACAD_BLOBS", "blobs"), "directory for /blobs data-plane storage")
+	flag.StringVar(&c.ScreenshotDir, "screenshots", envOr("ABACAD_SCREENSHOTS", "screenshots"), "directory for per-device last-screenshot storage")
+	flag.StringVar(&c.DownloadsDir, "downloads", envOr("ABACAD_DOWNLOADS", "downloads"), "directory of public release artifacts served at /downloads/")
 	flag.Int64Var(&c.MaxBlobBytes, "max-blob-bytes", envOrInt64("ABACAD_MAX_BLOB_BYTES", 1<<30), "reject a single /blobs upload larger than this (bytes)")
 	flag.BoolVar(&c.DevCORS, "dev-cors", os.Getenv("ABACAD_DEV_CORS") == "1", "enable permissive CORS for local dev")
 	flag.BoolVar(&c.Seed, "seed", false, "seed a dev account/device/tokens on boot and print them")

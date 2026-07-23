@@ -4,7 +4,7 @@
 frontend/dist
 backend/internal/web/dist
 backend/abacad
-backend/abacad-blobs/
+backend/blobs/
 *.db
 *.db-wal
 *.db-shm

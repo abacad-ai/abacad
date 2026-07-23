@@ -2,4 +2,8 @@
 *.db
 *.db-wal
 *.db-shm
-/abacad-blobs/
+/blobs/
+# Published client builds (make publish). Release artifacts, not source — in
+# production they live on the deploy volume.
+/downloads/
+/screenshots/

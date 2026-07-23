@@ -1,9 +1,2 @@
 node_modules/
-# The frontend build output is generated; the *embedded* copy under
-# backend/internal/web/dist IS committed so `go build` works on a fresh clone.
-/frontend/dist/
-# Published client builds (make publish). Release artifacts, not source — in
-# production they live on the deploy volume.
-/backend/abacad-downloads/
-/backend/abacad-screenshots/
 *.log
