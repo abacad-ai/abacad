@@ -27,7 +27,7 @@ struct AbacadApp: App {
             // Our own mono relay mark instead of an SF Symbol; the glyph is fixed,
             // connection state is exposed via the accessibility label.
             Image(nsImage: RelayMark.trayImage())
-                .accessibilityLabel(agent.connected ? "abacad — connected" : "abacad — disconnected")
+                .accessibilityLabel(agent.connected ? "abacad — connected; this device can be viewed and controlled remotely" : "abacad — disconnected")
         }
         .menuBarExtraStyle(.window)
     }
@@ -110,6 +110,10 @@ struct AgentPanel: View {
                 Circle().fill(agent.connected ? Theme.success : Theme.inkSubtle)
                     .frame(width: 8, height: 8)
                 Text(agent.connected ? "Connected" : "Disconnected").font(.headline)
+            }
+            if agent.connected {
+                Text("This device can be viewed and controlled remotely by an agent.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             VStack(alignment: .leading, spacing: Theme.spaceXs) {

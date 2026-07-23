@@ -9,6 +9,13 @@ Unlike the macOS menu-bar app, this is a background process with no GUI: config
 comes from flags / env / a config file, so it runs equally on a desktop session
 or a headless box (systemd, container, CI).
 
+> **Disclosure.** While this daemon is connected, the machine can be **viewed and
+> controlled remotely by an agent** (screen capture + input injection). With no GUI
+> there is no on-screen indicator — it logs `device online — this machine can now be
+> viewed and controlled remotely by an agent` on connect. Only run it on machines you
+> are authorized to operate, and make sure anyone who uses the machine knows it is
+> remotely controllable.
+
 ## What it implements
 
 | Lane | Methods |

@@ -55,8 +55,8 @@ sealed class TrayApp : ApplicationContext
     {
         _tray.Icon = connected ? _iconOn : _iconOff;
         // NotifyIcon.Text is capped at 63 chars; these are well under.
-        _tray.Text = connected ? "abacad — connected" : "abacad — disconnected";
-        _statusItem.Text = connected ? "Connected" : "Disconnected";
+        _tray.Text = connected ? "abacad — remotely viewable & controllable" : "abacad — disconnected";
+        _statusItem.Text = connected ? "Connected — viewable & controllable remotely" : "Disconnected";
         _settings?.SetConnected(connected);
     }
 

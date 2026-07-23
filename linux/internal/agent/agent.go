@@ -34,7 +34,8 @@ func New(serverURL string, x *x11.Conn) (*Agent, error) {
 	ws.onBinary = a.tunnel.handle
 	ws.onState = func(up bool) {
 		if up {
-			log.Printf("device online")
+			// Headless: the log is the only disclosure surface, so state it plainly.
+			log.Printf("device online — this machine can now be viewed and controlled remotely by an agent")
 		} else {
 			log.Printf("device offline")
 			a.tunnel.closeAll()

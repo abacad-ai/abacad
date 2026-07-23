@@ -286,7 +286,7 @@ class AbacadAccessibilityService : AccessibilityService() {
         if (nm.getNotificationChannel(CHANNEL_ID) == null) {
             nm.createNotificationChannel(
                 NotificationChannel(CHANNEL_ID, "Connection", NotificationManager.IMPORTANCE_LOW).apply {
-                    description = "Keeps abacad reachable so an agent can drive this device."
+                    description = "Shown while this device can be viewed and controlled remotely by an agent."
                     setShowBadge(false)
                 },
             )
@@ -300,7 +300,7 @@ class AbacadAccessibilityService : AccessibilityService() {
         )
         return Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("abacad")
-            .setContentText("Keeping this device reachable for the agent")
+            .setContentText("This device can be viewed and controlled remotely by an agent")
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setOngoing(true)
             .setContentIntent(tap)
@@ -408,18 +408,18 @@ class AbacadAccessibilityService : AccessibilityService() {
                             "screenshot" -> captureScreenshot(params.optBoolean("include_ui_tree", true), done)
                             "tap" -> tapAt(
                                 params.optInt("x", -1), params.optInt("y", -1),
-                                params.optBoolean("humanize", true), done,
+                                params.optBoolean("humanize", false), done,
                             )
                             "long_press" -> longPressAt(
                                 params.optInt("x", -1), params.optInt("y", -1),
                                 params.optLong("duration_ms", 600L),
-                                params.optBoolean("humanize", true), done,
+                                params.optBoolean("humanize", false), done,
                             )
                             "swipe" -> swipeAt(
                                 params.optInt("x1", -1), params.optInt("y1", -1),
                                 params.optInt("x2", -1), params.optInt("y2", -1),
                                 params.optLong("duration_ms", 300L),
-                                params.optBoolean("humanize", true), done,
+                                params.optBoolean("humanize", false), done,
                             )
                             "input_text" -> inputText(params.optString("text", ""), done)
                             "back" -> globalAction(GLOBAL_ACTION_BACK, done)
