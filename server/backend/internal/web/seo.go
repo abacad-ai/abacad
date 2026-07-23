@@ -87,11 +87,15 @@ abacad connects a real device (an Android phone, a Mac, a Linux box, or a browse
 - [Running a phone hands-off](%s/docs/guides/running-hands-off/): keep an Android device reachable long-term on a charger.
 - [Security](%s/docs/security/): the two-plane trust model, the controls in place today, and the honest limit (prompt injection).
 
+## Full text
+
+- [All docs as a single file](%s/docs/llms-full.txt): the complete documentation concatenated for one-shot ingestion.
+
 ## Notes
 
 - Capabilities are marked per platform: ✅ shipped, 🟡 client built but unproven, 🔮 envisioned. Read the marker for the platform you care about, not the row as a whole.
 - Android is the furthest along; macOS and Linux clients are built; Windows and iOS are planned; a browser tab can act as a device with no install.
-`, base, base, base, base, base, base, base, base)
+`, base, base, base, base, base, base, base, base, base)
 	})
 }
 

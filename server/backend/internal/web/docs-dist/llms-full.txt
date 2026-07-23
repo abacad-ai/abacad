@@ -1,0 +1,600 @@
+<SYSTEM>This is the full developer documentation for abacad</SYSTEM>
+
+# What abacad is
+
+> abacad connects a real device — an Android phone, a Mac, a Linux box, or a browser tab — to a coding agent, so the agent can see the screen and act on it one step at a time, with a human approving. Honest about what ships today.
+
+abacad connects a real device — an Android phone, a Mac, a Linux box, or a browser tab — to an AI agent, so the agent can **see the screen and act on it**, one step at a time, while a human supervises.
+
+Agents can reason, but they have no hands. abacad gives them eyes and hands on a device you already own: install once, grant one permission, and point your coding agent at a single [MCP](https://modelcontextprotocol.io) endpoint.
+
+Note
+
+This is **not** a remote-desktop tool for people. There is no smooth video mirror. The core loop is **one screenshot plus the accessibility tree per step** — shaped for an agent that acts one action at a time, with a human approving sensitive steps. Think *control tower*, not remote desktop.
+
+## The control-surface ladder
+
+Any device can be driven at one of four levels. A good agent stays as **high** as the task allows and only drops down when it must:
+
+```plaintext
+1. API / programmatic   ← deterministic, structured, cheapest    (best)
+2. CLI / shell          ← scriptable, token-cheap, reliable
+3. Accessibility tree   ← semantic GUI, structured text
+4. Screenshot + pixels  ← vision, slow, error-prone              (last resort)
+```
+
+abacad’s leverage is the **semantic** rungs — the accessibility tree, which describes the screen as structured elements (role, text, id, bounds) instead of raw pixels. Pixel and coordinate operations are the escape hatch for when structure runs out (canvas, WebView, games), not the primary interface.
+
+## One contract across every device
+
+Every device type exposes the **same** tool surface, so an agent written once drives a phone, a laptop, or a browser tab without special-casing:
+
+| Tool                                          | Purpose                                          | Rung                   |
+| --------------------------------------------- | ------------------------------------------------ | ---------------------- |
+| `run_command` / `read_output`                 | shell (desktops, via SSH)                        | CLI                    |
+| `screenshot`                                  | one frame plus the accessibility tree, on demand | pixels + accessibility |
+| `tap` / `click` · `type` · `swipe` / `scroll` | inject input                                     | —                      |
+| `push_file` / `pull_file`                     | move files to/from the device                    | API                    |
+
+Each action waits for the UI to settle and returns the resulting screen, so the agent sees the effect of what it just did. The full list is in the [tool reference](/docs/reference/tools/).
+
+## How a device connects
+
+The device **dials out** and holds one persistent WebSocket connection to the abacad relay. The agent connects to the same relay, and the relay pipes bytes between them:
+
+```plaintext
+   your coding agent ──▶  abacad relay  ◀── device (dials out, holds the connection)
+        (MCP)                  │
+                     routes each command to the
+                     right online device
+```
+
+Because the device only ever dials out, this works through home NAT and carrier CGNAT with **no port-forwarding and no public inbound port** on the device. The relay is a blind byte-mover — for an SSH session it moves ciphertext and never holds the session keys (see [SSH access](/docs/guides/ssh/)).
+
+## You stay in control
+
+A human sets the device up, approves sensitive actions, and can take over or pull the plug at any time. Supervision happens through the per-step loop — the agent proposes an action, you can gate the risky ones — not through a live video feed.
+
+## Platform support
+
+What runs today, honestly marked. See [reading status markers](/docs/reference/status-markers/) for what each symbol means.
+
+| Platform    | How it’s driven                                         | Status          |
+| ----------- | ------------------------------------------------------- | --------------- |
+| **Android** | AccessibilityService (tree + input + screenshot)        | ✅ shipped       |
+| **macOS**   | AXUIElement + ScreenCaptureKit + CGEvent                | 🟡 client built |
+| **Linux**   | X11 capture + XTEST input (AT-SPI tree next)            | 🟡 client built |
+| **Windows** | UI Automation + SendInput                               | 🔮 envisioned   |
+| **Browser** | a tab becomes the device; driven by the DOM + `execute` | ✅ shipped       |
+| **iOS**     | not exposed by the OS to third-party apps               | 🔮 envisioned   |
+
+Android is the furthest along: on Android 11+ a single accessibility permission gives the agent the UI tree, input, and on-demand screenshots — a one-time setup, then the phone can sit on a charger in a drawer and stay reachable. See [running a phone hands-off](/docs/guides/running-hands-off/).
+
+## What abacad is not
+
+* **Not a live video mirror.** No continuous framebuffer, cursor stream, or audio — the loop is per-step, not real-time.
+* **Not human take-over software.** Real-time driving by a person is out of scope; a human supervises through the step loop.
+
+These are deliberate choices, not missing features — abacad is optimized for the agent’s eyes, not a person’s.
+
+# Running a phone hands-off
+
+> Can an Android phone run as an abacad device long-term, hands-off, and only get busy when the agent calls it? Yes — the connection idles cheaply and the screen auto-wakes on demand. Setup, the support matrix, and the one hard constraint (no secure lock).
+
+Can a phone run as an abacad device long-term, hands-off, and only “get busy” when the agent calls it? **Short answer: yes** — the connection idles cheaply and the agent wakes the screen on demand — with **one hard constraint (no secure lock)** and **one OEM-dependent risk (background-launch)**.
+
+The behavior below is delivered by **automatic wake** (run before every command) plus the phone’s own display timeout for sleep, over a **held idle WebSocket**. To keep that socket alive through screen-off, the app runs as a **foreground service** (ongoing notification), requests a **battery-optimization exemption**, holds a **CPU wakelock while unplugged**, and force-reconnects on **screen-on / network-regained** — so a screen-off device stays *reachable* (“sleeping”), not offline. There is no agent-facing wake/sleep tool — power is transparent to the agent.
+
+## The three dimensions
+
+Every deployment is a point in this space:
+
+| Dimension          | Options                                                        |
+| ------------------ | -------------------------------------------------------------- |
+| **Power**          | on charger · on battery                                        |
+| **Screen at idle** | stays on · turns off (to save energy / screen lifespan)        |
+| **Lock**           | None · Swipe (non-secure) · PIN/pattern/biometric (**secure**) |
+
+Two hard facts constrain the whole space:
+
+1. **The primitives need a live, unlocked screen.** With the screen off, `screenshot` returns black, its UI tree shows the lockscreen (not the target app), and `tap`/`swipe` land on the lockscreen. So work can only happen after the screen is on **and** past the keyguard — which is why wake is automatic.
+2. **A secure keyguard cannot be dismissed programmatically.** A *swipe* lock can be cleared; PIN / pattern / password / fingerprint means a human (or biometric) must unlock, and again after every reboot. Nothing in software climbs that wall.
+
+## How idle & wake work
+
+* **Idle connection.** The app dials out and holds one long-lived WebSocket (20s pings, no work until a command arrives). A **foreground service** keeps the process (and this socket) off the OEM idle/kill path; on a charger it stays alive indefinitely at near-zero cost.
+* **Doze (battery only).** Unplugged + screen-off + stationary triggers Doze, which suspends network for non-exempt apps. The app counters it with a **battery-optimization exemption** and a **partial wakelock while unplugged**, so the pings keep firing and the socket stays healthy. **On a charger there is no Doze**, so the wakelock is skipped.
+* **Reconnect triggers.** If the socket does die (deep Doze, a network blip, an OEM freeze), the client force-reconnects immediately on **screen-on**, **unlock**, and **network-regained** — so the device is reachable again the moment it’s touched.
+* **Automatic wake-on-command.** When a command arrives on a dark or locked phone, the service briefly powers the display on, shows over the keyguard, and dismisses a *non-secure* keyguard — then the command runs. This is invisible to the agent: it just issues `screenshot`/`tap`/etc. and the screen is brought up first. A *secure* keyguard can’t be dismissed, so the command returns a clear error instead.
+* **Sleep is the device’s own timeout.** There is no sleep command; after the system display-timeout the screen turns off on its own, and the next command auto-wakes it. For long uninterrupted sessions, enable *Stay awake while charging* so the screen never sleeps.
+
+## What you’ll see on the device
+
+* **A permanent notification — by design.** While connected, an ongoing, low-priority notification sits in the shade: *“abacad — Keeping this device reachable for the agent.”* It can’t be swiped away (that’s the foreground service staying alive) and won’t make sound. For a drawer phone this is **intended, not a cost** — it’s the honest “on duty” signal, the same pattern remote-control / VPN / recorder apps use.
+* **The screen still turns off on its own.** The app does not keep the screen on while idle — after the system display timeout it goes dark normally. (It only holds the screen awake *during* an active session, for \~3 min after the last command, so it doesn’t re-wake on every command.)
+* **Screen off ≠ offline.** With the screen dark the socket stays held, so the dashboard keeps showing the device **online** and an agent can reach it.
+* **The abacad app is never brought to the front.** Commands run over the accessibility service on **whatever app is already foreground** — the agent drives that app in place; abacad stays in the background.
+* **A secure lock stops here.** If a PIN/pattern/biometric is set, waking turns the screen on but can’t get past the keyguard; the command returns a clear error. Hands-off use needs None/Swipe.
+* **Battery.** On a charger this is all effectively free. Off-charger the app holds a CPU wakelock to keep the socket healthy through Doze, which adds meaningful drain — the plugged-in drawer phone is the intended posture.
+
+## Support matrix
+
+✅ supported · ⚠️ supported with a caveat · ❌ not supported
+
+| Power   | Screen idle         | Lock         | Verdict           | Notes                                                                                                                                                                         |
+| ------- | ------------------- | ------------ | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Charger | **On** (Stay Awake) | None / Swipe | ✅ **recommended** | No Doze, no lock wall, no wake step. The simplest, most reliable posture.                                                                                                     |
+| Charger | On (Stay Awake)     | Secure       | ⚠️                | Works only after a human unlocks once; re-locks on reboot/power-button.                                                                                                       |
+| Charger | **Off** (idle dark) | None / Swipe | ✅                 | Auto-wakes on the next command. Subject to the OEM background-launch risk below.                                                                                              |
+| Charger | Off                 | Secure       | ❌                 | Auto-wake turns the screen on but can’t unlock; the command errors at the keyguard.                                                                                           |
+| Battery | On                  | None / Swipe | ⚠️                | Fine while awake, but battery drains fast and Doze never engages (screen on). Charger is better.                                                                              |
+| Battery | **Off**             | None / Swipe | ⚠️                | Survives Doze with the battery-optimization exemption + off-charger wakelock; the wakelock costs battery, and the most aggressive OEMs may still freeze the app. Best-effort. |
+| Battery | Off                 | Secure       | ❌                 | Same wall as charger + off + secure.                                                                                                                                          |
+
+**Aggressive OEMs (Samsung / Xiaomi / Huawei / Oppo).** A foreground service + battery-opt exemption is the standard mitigation, but some ROMs sleep apps anyway. **Samsung One UI:** add the app to **Settings → Battery → Background usage limits → Never sleeping apps** (Device Care), or it will be deep-slept and the socket will drop. See [dontkillmyapp.com](https://dontkillmyapp.com) per brand.
+
+## What we support, and why
+
+1. **Blessed configuration: charger + no secure lock.** Everything else is a variation on this. Screen may be left **on** (Stay Awake) or **off** (auto-woken on the next command) — both supported on a charger.
+2. **No secure lock for hands-off.** A PIN/pattern/biometric is a hard wall we won’t pretend to solve. Secure-lock devices are supported only with a human-in-the-loop unlock, and we say so plainly.
+3. **Screen-off idle just works** for battery life and screen longevity: the phone sleeps on its own display timeout and the next command auto-wakes it.
+4. **On-battery is “same features, shorter life + looser latency,”** not a different capability set. Features aren’t gated on power source; the Doze latency caveat is documented.
+5. **OEM background-launch is a known risk.** Launching the waker from the background can be blocked on some aggressive ROMs. Mitigation: grant “Display over other apps” (SYSTEM\_ALERT\_WINDOW), which exempts background activity starts. If a ROM still blocks it, that device falls back to *screen stays on* (Stay Awake).
+6. **The foreground service (and its notification) stays on purpose.** The product is an always-on drawer phone, so maximizing uptime beats hiding a notification. The permanent low-priority notification is an accepted, expected “on duty” signal, not friction.
+
+## Setup checklist (hands-off, screen-off idle)
+
+1. Plug into a **charger** (kills Doze).
+2. Screen lock → **None** or **Swipe** (never a secure lock).
+3. Install the app, set the server URL, enable **Accessibility**.
+4. Tap **Allow Display Over Other Apps** → grant (makes auto-wake reliable on strict ROMs).
+5. Tap **Ignore Battery Optimization** → grant (keeps the held socket alive through Doze).
+6. **Samsung only:** Settings → Battery → Background usage limits → **Never sleeping apps** → add abacad.
+7. Verify: let the screen time out (or press the power button), then from the agent issue a `screenshot` → the screen auto-wakes & unlocks and the UI tree shows the real foreground app (not the lockscreen).
+
+If you don’t need screen-off idle, skip step 4 and instead enable Developer Options → **Stay awake while charging**; the screen never sleeps and the lock question is moot.
+
+## Known limits
+
+* **Secure keyguard** — unlock requires a human; re-locks on reboot. By design, unsolvable in software.
+* **OEM background-activity-launch** — per-device; mitigated by the overlay permission, else fall back to Stay Awake.
+* **On-battery Doze latency** — countered by the foreground service + battery-opt exemption + off-charger wakelock. Fully deep-sleeping the phone and reviving it is a future step (server-side queue + push-wake).
+* **Aggressive OEM app-sleep** — Samsung/Xiaomi/etc. may freeze even a foreground service; needs a per-brand “never sleeping” allowlisting by the user.
+
+# SSH access
+
+> Reach a device's own sshd behind NAT with stock ssh and nothing installed on the connecting machine — ssh <device>.abacad.ai, via a ProxyJump jump host. Works from phones, CI runners, and locked-down networks.
+
+How to reach a device’s own `sshd` with **stock `ssh` and nothing installed on the connecting machine** — `ssh <device>.abacad.ai`, just like any host.
+
+## The idea
+
+A device sits behind NAT and only ever **dials out** (the `/device` WebSocket). There is no inbound route to it. The relay makes it reachable anyway: the device’s `sshd` becomes addressable as `<device>.<base-domain>`, and a normal SSH client reaches it through a **jump host** the relay runs.
+
+The connecting end installs nothing
+
+No agent, no VPN, no `ProxyCommand` helper binary — just OpenSSH and one config block. This is what makes SSH work from phones (Blink, Termius, Termux) and locked-down / managed environments (CI runners, MDM’d laptops, cloud shells) where you can write `~/.ssh/config` but can’t install software.
+
+```sshconfig
+# ~/.ssh/config — once, then `ssh <device>.abacad.ai` works forever
+Host *.abacad.ai
+    ProxyJump abacad.ai
+```
+
+## Why `ProxyJump` (and not a ProxyCommand or a password)
+
+To route `<device>.abacad.ai` to the right device, the relay needs to learn *which* device the client wants. A **bare SSH connection carries no hostname** — SSH has no SNI and no `Host` header, so the target subdomain the client typed is resolved to an IP and then discarded. A relay fronting many devices on one `:22` can’t tell them apart.
+
+`ProxyJump` (`ssh -J`, which expands to `ssh -W <host>:<port> <jump>`) is the escape hatch: it asks the jump to open a `direct-tcpip` channel to `<device>.abacad.ai:22`, and **that target host string travels in-band** (RFC 4254 §7.2). The jump reads it, maps it to a device, and bridges. That’s the hook a plain connection lacks.
+
+Two alternatives were rejected:
+
+* **`ProxyCommand <helper>`** — works, but needs a helper executable on every client. Dead on sandboxed mobile clients and anywhere you can’t install binaries. `ProxyJump` needs no local executable — only config — so it works there.
+* **Password auth** — OpenSSH has *no* way to put a password in `ssh_config`, and no way to supply one non-interactively without `sshpass`/askpass (an install). So a password always prompts. Public keys are presented automatically and never prompt, which is why they’re the only method that meets “no prompt, nothing installed.”
+
+## How it works
+
+```plaintext
+  ssh <device>.abacad.ai
+        │  (ProxyJump abacad.ai)
+        ▼
+  ┌───────────── abacad relay ─────────────┐
+  │  SSH jump host                          │
+  │   1. pubkey auth ──▶ account            │        WebSocket (/device)
+  │   2. read direct-tcpip target           │◀───────────────────────────  device
+  │      "<device>.abacad.ai:22"            │                               (dials out)
+  │   3. authorize: account owns device?    │
+  │   4. open stream to device 127.0.0.1:22 ┼──▶ device dials its own sshd ──▶ 127.0.0.1:22
+  └─────────────────────────────────────────┘
+        ▲
+        └── the inner SSH session (client ⇄ device sshd) is end-to-end encrypted;
+            the relay moves ciphertext and never holds the session keys.
+```
+
+1. **Authenticate** — the client’s public key identifies the **account**. An unregistered key is rejected at the jump before any channel opens.
+2. **Route** — the `direct-tcpip` target `<device>.abacad.ai` maps to a device id. The jump only routes to a device **that account owns and that is online**.
+3. **Bridge** — the channel is spliced onto a relay stream opened to the device, which dials its **own `127.0.0.1:22`**. The port is pinned to sshd — the jump can never be used to reach arbitrary internal ports.
+
+## Security model
+
+* **Two independent checks, one key.** The jump authenticates you to your *account* (authorization: which devices may you reach). The device’s own `sshd` does the real *login* (authentication). They can use the same SSH key; the jump never sees the login.
+* **End-to-end encrypted, relay holds no keys.** The jump moves the inner SSH session as opaque bytes. It has a host key (so clients get a stable `known_hosts` entry for `abacad.ai`) but is *not* a man-in-the-middle of your device session.
+* **Not an open relay.** Routing is scoped to devices the authenticated account owns, and the device-side target is fixed to `127.0.0.1:22`.
+* **Public keys aren’t secrets** — they’re stored in full and indexed by SHA256 fingerprint; there’s no reveal-once flow.
+
+## Server setup
+
+The jump is **opt-in**. Enable it with a listen address (or several):
+
+| Env / flag                              | Meaning                                                | Example                      |
+| --------------------------------------- | ------------------------------------------------------ | ---------------------------- |
+| `ABACAD_SSH_ADDR` / `-ssh-addr`         | Listen address(es), comma-separated. Empty = disabled. | `:22,:443`                   |
+| `ABACAD_SSH_HOST_KEY` / `-ssh-host-key` | Persistent host key path (created if absent).          | `/data/ssh_host_ed25519_key` |
+| `ABACAD_BASE_DOMAIN` / `-base-domain`   | Domain devices hang off.                               | `abacad.ai`                  |
+
+* **DNS:** point `abacad.ai` (the jump + dashboard) at the host. With `ProxyJump`, the `<device>.abacad.ai` names are sent to the jump *literally* and never resolved by the client, so they need no DNS records — the wildcard is optional.
+* **Ports:** run on **`:22` and `:443`**. Many locked-down networks block outbound `:22` but allow `:443`; stock `ssh` speaks SSH-the-protocol over 443 fine (`ProxyJump abacad.ai:443`). In Docker the container is non-root and can’t bind `:22` directly — bind `:2222` inside and publish it: `docker run -p 22:2222 -p 443:2222 -e ABACAD_SSH_ADDR=:2222 …`.
+* **Host key:** keep it on the data volume so `known_hosts` stays valid across restarts.
+
+## User setup
+
+1. **Register a public key** — dashboard → Settings → *SSH access keys* (or `POST /api/ssh-keys {"name","public_key"}`). Paste the contents of your `.pub` file.
+
+2. **Add one config block** (shown in the dashboard with your real values):
+
+   ```sshconfig
+   Host *.abacad.ai
+       ProxyJump abacad.ai        # or abacad.ai:443 on restricted networks
+   ```
+
+3. **Connect** — `ssh <you>@<device>.abacad.ai`. `scp`, `rsync`, `git`, etc. work too; it’s a raw TCP tunnel. The device’s ssh hostname is shown per-device in the dashboard.
+
+## Status
+
+* **Implemented:** pubkey→account auth, account-scoped routing, target pinned to `127.0.0.1:22`, persistent ed25519 host key, multi-address listen, dashboard UI + `/api/ssh-keys` CRUD. Verified end-to-end with the system `ssh` CLI.
+* **Deferred:** short-lived SSH certificates (vs. registered keys), per-key device scoping (today a key reaches all of the account’s devices), and regional jump hosts for latency.
+
+# Screen recording
+
+> The screen_recording MCP tool — continuous device capture with two channels, a high-quality file artifact the agent keeps and an optional live view for a human. One stateful tool, per-platform status marked honestly.
+
+Continuous screen capture for a connected device — the moving-picture counterpart of [`screenshot`](/docs/reference/tools/). One MCP tool, `screen_recording`, serves two needs that share a capture pipeline but nothing else:
+
+1. **The agent keeps an artifact** — the screen is recorded on-device at full quality (resolution + fps) and transferred afterward as a file, so the agent can build a demo video, review a test run, etc. Quality matters; latency is irrelevant.
+2. **A human observes** — the screen is streamed live to a person. Low latency matters; quality can degrade. Ephemeral.
+
+These have opposite priorities, so they are **two channels of one recording**, not one knob. The screen is being recorded either way — the only question is *where it goes*: to a file, to a live viewer, or both.
+
+## The tool
+
+`screen_recording` is a **stateful** device tool: it manages an ongoing session rather than firing a single action. So the verb lives in an `action` parameter and the tool name is the **noun** it operates on — mirroring `screenshot`.
+
+```plaintext
+screen_recording(
+  device_id: <required — from list_devices; no default device>,
+  action:  "start" | "stop" | "status",
+
+
+  file: {                            # save the recording as a high-quality artifact
+    enabled:              bool,
+    fps:                  int,         # default = native/max
+    format:               string,      # default "mp4" (H.264)
+    max_duration_seconds: int          # safety cap
+  },                                   # video only — no audio
+
+
+  live: {                            # stream the recording to a human now
+    enabled:     bool,
+    mode:        "view" | "control",   # default "view"
+    ttl_seconds: int,                  # how long the viewer link stays valid (default 600)
+    reason:      string                # short note shown to the operator
+  }
+)
+```
+
+Both channels are optional; either or both may be on. A device has **at most one active recording at a time**, so `device_id` identifies the session completely — there is no `session_id`, and artifacts come back as self-describing `download_url`s, so there is no `recording_id` either.
+
+`screenshot` is unchanged and separate — it remains the per-step still the agent looks at between actions. `screen_recording` is for continuous capture only.
+
+### Actions
+
+* **`start`** — turns on whichever channels are `enabled`, ensuring on-device capture is running. Idempotent. Returns a handle per channel (a `viewer_url` for `live`, a `state` for `file`). The agent keeps issuing its normal input verbs while `file` records in the background.
+* **`status`** — reports the current session per channel. `file.state` walks `recording → stopped → uploading → ready`; when `ready`, `download_url` is populated.
+* **`stop`** — ends the session (or just one channel, if only that channel object is passed). Returns the finalized artifact metadata (`duration`, `width`/`height`, `fps`, `size`, `codec`) and, once transferred, the `download_url`.
+
+### Agent ergonomics
+
+```plaintext
+# Record a test run to a file while driving the app:
+screen_recording(action="start", file={enabled:true})
+… agent taps/clicks through the flow …
+screen_recording(action="status")            # poll → file.download_url when ready
+screen_recording(action="stop")
+
+
+# Let a human take a look, live:
+screen_recording(action="start", live={enabled:true, reason:"stuck on 2FA — take a look"})
+
+
+# Both at once — human watches while the agent films:
+screen_recording(action="start", live={enabled:true}, file={enabled:true})
+```
+
+## Transport
+
+Each channel uses the sanctioned path for its payload (see [transport](/docs/reference/transport/)):
+
+* **`file`** is a blob: encoded on-device at full quality, then moved device → store over the **HTTP data plane** and handed to the agent as a `download_url`. `stop` and `status` return a *reference*, never bytes — a full-res clip can be hundreds of MB and must not enter the agent’s context or the control socket.
+* **`live`** rides its **own dedicated connection** — never the control socket or the `/connect` tunnel. It’s a standard VNC path: a VNC server on the device bound to loopback *reverse-connects* out to a repeater on the server, which bridges to a stock noVNC viewer in the browser. The control socket is used *only* to start and stop it — no media ever flows on it. Because the VNC server only speaks over the reverse connection it dials, it’s never exposed to the network; the browser side is gated by a one-time viewer ticket.
+
+## Trust integration
+
+A `file` recording is a passive capture and needs nothing beyond normal transport. The `live` channel introduces a human input path, so it is treated as high-privilege (see [security](/docs/security/)):
+
+* **Scope-gated** — it flows through the same per-key method allowlist as every other tool; a key without the scope never sees it.
+* **Bounded** — the session ends on `stop`, on its TTL, or when either half of the connection drops.
+* **Session boundaries are auditable** — who opened it, when, `reason`, `mode`, and when a viewer connected/left (individual keystrokes are not logged).
+* **No input fight** — while a `control` session is live the agent’s own input verbs soft-fail with a clear reason, so agent and human don’t fight the cursor.
+
+## Platform support
+
+The `file` channel records the display to an on-device `.mp4` (H.264), then uploads it on stop. The `live` channel is the planned VNC path. Status is per platform — see [reading status markers](/docs/reference/status-markers/).
+
+| Platform | `file` capture/encode                         | `live`     |
+| -------- | --------------------------------------------- | ---------- |
+| Android  | MediaProjection → MediaRecorder (H.264) — ✅   | 🔮 planned |
+| macOS    | ScreenCaptureKit → AVAssetWriter (H.264) — 🟡 | 🔮 planned |
+| Linux    | ffmpeg x11grab → libx264 — 🟡                 | 🔮 planned |
+| Windows  | ffmpeg gdigrab → libx264 — 🔮                 | 🔮 planned |
+
+Notes:
+
+* **macOS** reuses the Screen Recording permission `screenshot` already requests.
+* **Linux / Windows** shell out to **ffmpeg** and report a clear error if it isn’t on `PATH`.
+* **Android** needs a per-session capture-consent dialog (the one break from silent operation) while recording; `start` is async (returns a permission-request state, then `recording` once the user consents).
+
+## Deliberately out of scope (for now)
+
+* **Live control on every platform.** `live.mode` ships as `view`; `control` is additive and can land per-platform later.
+* **Concurrent recordings per device.** One at a time keeps `device_id` sufficient as the session key.
+* **Audio.** Recordings are video only — a live VNC path carries no audio, so audio would be asymmetric across channels; skipped for now.
+
+# Reading status markers
+
+> abacad's docs mark every capability with an honest per-platform status — shipped, client built but unproven, or envisioned — so you always know what actually runs today versus what's planned.
+
+abacad is built one device type at a time, so a capability can be live on one platform and still on the roadmap for another. Every reference table marks status **per platform** with these symbols. We’d rather under-promise than surprise you.
+
+| Marker | Meaning                                                                                                                                                                                                 |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ✅      | **Shipped and working** — implemented and exercised on that platform.                                                                                                                                   |
+| 🟡     | **Client built, not yet proven** — the native client exists and works, but hasn’t been validated across the range of real end-user hardware and OS versions. Mostly the desktop clients (macOS, Linux). |
+| 🔮     | **Envisioned** — in the plan, not yet designed or built.                                                                                                                                                |
+| —      | **Not applicable** to that platform’s form factor.                                                                                                                                                      |
+
+When a row reads `Android ✅ · iOS 🔮`, it means the capability is real on Android today and planned for iOS. If you’re evaluating abacad for a specific platform, read the marker for **that** platform — not the row as a whole.
+
+Platform backends, for reference:
+
+* **Android** — AccessibilityService
+* **macOS** — AXUIElement + ScreenCaptureKit + CGEvent
+* **Linux** — X11 capture (GetImage) + XTEST input today; a semantic AT-SPI tree is the next Linux build
+* **Windows** — UI Automation
+* **Browser** — the DOM, same-origin
+
+# Tool reference
+
+> Every operation abacad exposes to an agent on a connected device — screenshot, tap, swipe, type, run_command, execute, push_file/pull_file — split by form factor, with an honest per-platform status for each.
+
+Every operation abacad exposes to an agent on a connected device, and which platforms support it — plus what we deliberately *don’t* expose or support. Each marker is per-platform; see [reading status markers](/docs/reference/status-markers/).
+
+## How to read this
+
+Capabilities sit on a **rung** of the [control-surface ladder](/docs/#the-control-surface-ladder). A good agent stays as high as the task allows and only drops down when it must. abacad’s leverage is the **semantic** rungs (the accessibility tree); pixel/coordinate operations are the escape hatch for when structure runs out (canvas, WebView, games).
+
+## Exposed to the agent
+
+The tool surface an agent drives, split by form factor.
+
+### Mobile
+
+| Capability                | Rung                   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Status              |
+| ------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| `screenshot`              | accessibility / pixels | One frame (JPEG) plus the accessibility UI tree by default (`include_ui_tree`, default true) — foreground app + nodes with class, text, id, clickable flag, bounds. The tree is the semantic layer to reason over; set the param false for canvas/game screens.                                                                                                                                                                                                                                                                   | Android ✅ · iOS 🔮  |
+| `tap`                     | pixels                 | Tap at absolute pixel coordinates — the center of a target node’s bounds.                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Android ✅ · iOS 🔮  |
+| `long_press`              | pixels                 | Press and hold at coordinates (default 600 ms) — context menus, drag handles.                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Android ✅ · iOS 🔮  |
+| `swipe`                   | pixels                 | Swipe / fling gesture between two points — scroll a feed, navigate.                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Android ✅ · iOS 🔮  |
+| `input_text`              | accessibility          | Set the focused field’s contents. Tap the field to focus it first, then call.                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Android ✅ · iOS 🔮  |
+| `press_keys`              | accessibility / pixels | Navigation keys (Back, Home, Recents) plus text keys.                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Android ✅ · iOS 🔮  |
+| `composite`               | accessibility / pixels | Run an ordered sequence of steps in one call — taps, `long_press`, `swipe`, text, key presses, `wait(ms)`, and `screenshot`s — executed on-device with real timing. Two wins: batch several actions plus a final screenshot into one round-trip, and express fine-grained input the flat verbs can’t (multiple pointers run **concurrently** for multi-touch — pinch, rotate, path gestures). The primitive the named verbs are sugar over.                                                                                       | Android 🟡 · iOS 🔮 |
+| Clipboard get / set       | API                    | Read and write the device clipboard, both directions.                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Android 🔮          |
+| TCP tunnel (`/connect`)   | API                    | Raw TCP stream to a `host:port` reachable from the device.                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Android ✅           |
+| `push_file` / `pull_file` | API                    | Read / write files on the device by path, over the `/blobs` data plane. Missing parent dirs are created automatically. Under scoped storage, writes are confined to the app’s own external dir until the user opts in to **Files & media access** (All-files access, one toggle in the Setup checklist), which unlocks arbitrary shared-storage paths like `/sdcard/Pictures/…`; pushed media is media-scanned so it appears in the gallery. Shell-only paths (`/data/local/tmp`) stay adb-only — no app permission reaches them. | Android 🟡          |
+| File transfer (`/blobs`)  | API                    | Generic HTTP upload / download of binary payloads by blob id.                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Android ✅           |
+
+### Desktop
+
+| Capability                | Rung                   | Description                                                                                                                                                                                                                                                                                                                                                          | Status                           |
+| ------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `screenshot`              | accessibility / pixels | One frame plus the accessibility UI tree by default (`include_ui_tree`) via AXUIElement + ScreenCaptureKit — windows/controls with role, text, id, bounds. Set the param false for canvas screens.                                                                                                                                                                   | macOS 🟡 · Windows 🔮 · Linux 🟡 |
+| `click`                   | pixels                 | Left click at absolute pixel coordinates, with optional modifier keys held.                                                                                                                                                                                                                                                                                          | macOS 🟡 · Windows 🔮 · Linux 🟡 |
+| `right_click`             | pixels                 | Right / secondary click to open a context menu.                                                                                                                                                                                                                                                                                                                      | macOS 🟡 · Windows 🔮 · Linux 🟡 |
+| `drag`                    | pixels                 | Press, move, and release between two points — move a window, select a range, drag-and-drop.                                                                                                                                                                                                                                                                          | macOS 🟡 · Windows 🔮 · Linux 🟡 |
+| `scroll`                  | pixels                 | Wheel / two-finger scroll by a delta at a point.                                                                                                                                                                                                                                                                                                                     | macOS 🟡 · Windows 🔮 · Linux 🟡 |
+| `input_text`              | accessibility          | Set the focused field’s contents. Click the field to focus it first, then call.                                                                                                                                                                                                                                                                                      | macOS 🟡 · Windows 🔮 · Linux 🟡 |
+| `press_keys`              | accessibility / pixels | Full keyboard and modifier chords (⌘-C, ⌘-Tab, Esc).                                                                                                                                                                                                                                                                                                                 | macOS 🟡 · Windows 🔮 · Linux 🟡 |
+| `composite`               | accessibility / pixels | Run an ordered sequence of steps in one call — `click`/`right_click`, `drag`, `scroll`, text, key presses (incl. modifier-held clicks like ⌘-click), `wait(ms)`, and `screenshot`s — executed on-device with real timing. The primitive the named verbs are sugar over.                                                                                              | macOS 🟡 · Windows 🔮 · Linux 🟡 |
+| Clipboard get / set       | API                    | Read and write the device clipboard, both directions.                                                                                                                                                                                                                                                                                                                | macOS 🟡 · Windows 🔮 · Linux 🔮 |
+| TCP tunnel (`/connect`)   | API                    | Raw TCP stream to a `host:port` reachable from the device — ssh, rsync, a DB client.                                                                                                                                                                                                                                                                                 | macOS 🟡 · Windows 🔮 · Linux 🟡 |
+| `push_file` / `pull_file` | API                    | Read and write files on the device’s filesystem by absolute path. The bytes ride the `/blobs` data plane over HTTP (the device fetches/posts with its own token), never the command socket, so multi-GB files are fine; the MCP layer stages the upload and inlines small text pulls so the agent never leaves the tool surface. Works headless (no display needed). | macOS 🟡 · Windows 🔮 · Linux ✅  |
+| File transfer (`/blobs`)  | API                    | The generic data plane the file verbs (and screenshots) move bytes over: HTTP upload / download of binary payloads by blob id, account-scoped.                                                                                                                                                                                                                       | Any ✅                            |
+
+On **Linux** the input + pixel rungs above are live (X11 capture, XTEST input), but `screenshot` returns an **empty** UI tree for now — the AT-SPI semantic tree is the next Linux build. So a Linux device is currently pixel-driven; prefer coordinates from the screenshot over the (empty) tree. `input_text` types into the focused element rather than replacing its contents, and Wayland sessions need XWayland.
+
+### Browser
+
+A browser tab acting as a device (open `<device-id>.abacad.ai`; the id in the Host is the connection key). The tab *is* the surface — one document, no iframe — driven by the semantic verbs plus `execute`, the JavaScript escape hatch.
+
+| Capability                        | Rung                   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Status    |
+| --------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| `execute`                         | API                    | Evaluate JavaScript in the device page and return the JSON result — the browser’s power verb. Runs as an async function body (`return`, `await`), so it reads page state, acts by selector, and builds content in place (`document.body.innerHTML = …`). **A top-level navigation (`location.href = …`, or a link/submit that unloads the page) unloads the device client and drops the device offline until it is reopened.** The top rung of the ladder, for the one platform where the native automation API *is* JavaScript. | Browser ✅ |
+| `screenshot`                      | accessibility / pixels | One frame (html2canvas, JPEG) plus a DOM-derived tree by default — elements with tag/role, text, id, clickable flag, and bounds. The page is its own surface, so pixels and tree are always available same-origin.                                                                                                                                                                                                                                                                                                               | Browser ✅ |
+| `click` / `scroll` / `input_text` | pixels / accessibility | The uniform cross-platform verbs, dispatched as synthetic DOM events into the page. Prefer `execute` for anything structured.                                                                                                                                                                                                                                                                                                                                                                                                    | Browser ✅ |
+| File transfer (`/blobs`)          | API                    | Generic HTTP upload / download of binary payloads by blob id.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Any ✅     |
+
+Deliberately **not** on a browser device: the nav keys (`back`/`home`/`recents`) and the desktop OS verbs — a tab has no OS shell to drive, so it rejects them as unknown methods.
+
+**Trust note:** a browser device can’t touch the host machine (sandboxed), but `execute` is *maximal* power over the surface’s origin — it can read same-origin cookies/storage and act as the logged-in user. Low risk to the machine, high power over the page: gate `execute` accordingly.
+
+## Not exposed to the agent
+
+Behaviors and infrastructure that exist but are not agent tools.
+
+|                      | Description                                                                                                                                                                                       | Platforms            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| Auto-wake on command | The device lights its own screen before acting and manages its own display timeout — power is the device’s affair, not an agent tool. (The protocol intentionally has no `wake`/`sleep` methods.) | Android ✅ · macOS 🟡 |
+| Per-device auth      | Each device dials in with its own hashed token; the agent authenticates separately with a per-account MCP bearer.                                                                                 | All ✅                |
+
+## Not supported
+
+The human remote-desktop surface (a live VNC/RustDesk-style mirror) is deliberately out of scope — abacad is one screenshot + tree per step for an agent, not a real-time mirror for a person.
+
+|                                   | Why not                                                                                                                      |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Live framebuffer / video stream   | Continuous real-time screen mirror. The core loop is per-step, not a live feed.                                              |
+| Cursor shape / position           | Only meaningful alongside a live video stream, which we don’t provide.                                                       |
+| Audio stream                      | Device audio to a human. Not agent-facing; out of scope.                                                                     |
+| Human take-over (live driving)    | A human dropping into a live stream to drive in real time. Supervision happens through the per-step loop, not a live mirror. |
+| Privacy mode (blank local screen) | Blacking out the physical display during a session. Out of scope.                                                            |
+
+# Transport — control plane vs data plane
+
+> How bytes move between the abacad server and a device — a JSON control plane over WebSocket and a binary data plane over HTTP (/blobs), split by message type, so large payloads never ride the command socket.
+
+How bytes move between the server and a device. One rule decides which of two channels anything travels on, and it’s decided by **type**, not by measuring size at runtime.
+
+## The rule
+
+> **Binary blobs never travel on the control WebSocket.** Blobs (images, files, media, recordings) always go through the **data plane** (HTTP) and are referenced by a blob id. The WebSocket is the **control plane**: it carries only structured JSON — commands, replies, status, metadata, and blob *references*.
+
+Equivalent test, applied per message type at design time: **if you’d have to base64 it, it’s a blob → data plane.** No size threshold, no gray zone, no fallback path. Keeping large binary payloads off the command socket keeps that socket responsive and its per-message memory bound small — nothing legitimate on it is ever large. Adding a feature adds a *message type*, not an endpoint.
+
+## What rides which channel
+
+| Kind                                                  | Plane        |
+| ----------------------------------------------------- | ------------ |
+| Commands (tap, swipe, input\_text, back/home/recents) | WS (control) |
+| Replies / acks, correlated by id                      | WS (control) |
+| Status, heartbeat, connect/disconnect events          | WS (control) |
+| Structured results — dimensions, UI tree, blob refs   | WS (control) |
+| **Screenshot image bytes**                            | HTTP (data)  |
+| **Files, media, recordings**                          | HTTP (data)  |
+
+The UI tree is structured JSON, so it stays inline even though it can reach a few hundred KB — the type rule answers this without a size check. If the tree ever became a problem you’d *paginate* it, not blobify it.
+
+## The data plane: one generic blob pair
+
+Not two endpoints per type (screenshot, file, …). **One** type-agnostic pair of dumb byte pipes. All meaning lives in the control frames that reference a blob id.
+
+```plaintext
+POST /blobs
+  auth:  session cookie, MCP bearer, or device token — any of the server's
+         identities, all resolving to the owning account
+  body:  raw bytes, streamed straight to disk (never buffered whole)
+  hdrs:  Content-Type preserved as blob metadata
+  → 201  { id, size, sha256 }
+
+
+GET /blobs/{id}
+  auth:  same; the blob's account must match the caller's (404 otherwise —
+         no existence leak across accounts)
+  range: supported (resumable download)
+  → 200/206  streamed bytes, stored Content-Type
+```
+
+* The endpoints **never branch on kind**. A screenshot blob and a 1 GB file blob take the same path.
+* **Streamed, not buffered** — copied to/from disk on both ends, so a large transfer never sits in RAM.
+* **NAT direction:** the device dials out, so the server can’t push. Both directions are **client-initiated**: upload = client `POST`, download = client `GET`. When the server wants to deliver a file *to* the phone, it sends a WS control frame and the phone does the `GET`.
+* **Account-scoped, no cross-account existence leak:** a `GET` for a blob owned by another account returns `404`, not `403` — the response never confirms the blob exists.
+* **Lifecycle is policy, not endpoint shape:** screenshot blobs are throwaway (short TTL / delete-after-fetch); file blobs persist. Retention is decided by the control layer that created the blob, not by a second endpoint.
+* Every blob returns a **sha-256** for integrity; the id itself is opaque to callers.
+
+### Not the same as the `/connect` tunnel
+
+`/blobs` and the `/connect` tunnel are **different lanes for different jobs**, not competing versions of one thing:
+
+* **`/blobs`** — the app’s own discrete objects (a screenshot, a file), addressed by id, stored server-side, fetched by whoever holds the id. Application data plane.
+* **`/connect`** — a raw TCP tunnel making a device-reachable `host:port` reachable to an agent-side client (ssh, rsync, git, a DB). The relay never stores or interprets the bytes; it’s transport, not storage.
+
+The **[SSH jump host](/docs/guides/ssh/)** is a third consumer of the same device tunnel: it fronts the tunnel with an SSH server so a stock `ssh` client with no helper can reach a device’s `sshd`. Same blind byte-mover underneath.
+
+## How each feature maps onto it
+
+Every feature is a control-frame choreography over the same `/blobs` pair — a method name and a bit of choreography, **zero new endpoints**.
+
+**Screenshot** — image → data plane, metadata → control plane:
+
+```plaintext
+server → WS: { id, method: "screenshot" }
+device:      capture → POST /blobs (image/jpeg) → image_id
+device → WS: { id, ok, result: { w, h, image_id, tree } }
+agent/dash:  GET /blobs/{image_id}
+```
+
+**Pull a file off the device:**
+
+```plaintext
+server → WS: { id, method: "upload_file", params: { path } }
+device:      read file → POST /blobs → blob_id
+device → WS: { id, ok, result: { blob_id, size } }
+```
+
+**Push a file to the device:**
+
+```plaintext
+caller:      POST /blobs → blob_id
+server → WS: { id, method: "download_file", params: { blob_id, dest } }
+device:      GET /blobs/{blob_id} → stream to dest
+device → WS: { id, ok, result: { written } }
+```
+
+# Security
+
+> How abacad secures the connection between an agent and your device — the two-plane trust model, the controls in place today, an honest account of what authentication can and can't defend, and how to report a vulnerability.
+
+abacad hands an agent real control of a real device, so the connection between them has to be trustworthy. This page explains how abacad thinks about that trust, the protections in place today, and — just as important — the one thing authentication cannot solve.
+
+## Two planes, opposite treatment
+
+abacad splits traffic into two planes and treats them deliberately differently:
+
+* **Control plane** — commands, screenshot metadata, and the UI tree. This is **server-mediated**: it flows through the relay, which routes each command to the right device. Mediating this plane is what makes human oversight possible — you can’t govern what you can’t see.
+* **Tunnel / data plane** — the `/connect` TCP tunnel, the SSH jump, and file bytes. This is **end-to-end opaque**: the relay authorizes the connection once, then moves ciphertext it cannot read. An SSH or TLS session stays private end to end; the relay holds no session keys.
+
+So: mediate the plane you must be able to oversee; stay blind to the plane you only need to carry.
+
+## What’s in place today
+
+* **Encryption is mandatory.** Clients require `wss://` + TLS; cleartext to a non-loopback host is refused. There is no “downgrade to plaintext” path.
+* **Secrets stay out of URLs.** Agent and device tokens travel in the `Authorization` header, not the query string — so they don’t leak through proxy access logs, `Referer` headers, or browser history. On macOS the token is stored in the system Keychain.
+* **Each principal proves a distinct identity.** A human signs in to the dashboard (password, rate-limited with lockout); an agent presents a scoped bearer token, individually revocable; each device authenticates with its own enrolled token and can be revoked instantly; an SSH client authenticates by public key.
+* **The SSH jump is not an open relay.** It authenticates the client’s key to an account, pins its own host key in your `known_hosts`, and pins the target to the device’s own `127.0.0.1:22` — it can never be steered to an arbitrary internal port. The inner SSH session is end-to-end encrypted; the relay moves ciphertext.
+* **The tunnel can’t become a pivot.** `/connect` targets are policed on the server and again on the device: link-local and cloud-metadata addresses (`169.254.0.0/16`, including `169.254.169.254`), the unspecified address, and multicast are denied. Your device’s own services and LAN stay reachable — that’s the point of the tunnel — but the pipe can’t be aimed at places that are never a legitimate target.
+
+## An integrity layer, not an approval layer
+
+abacad deliberately does **not** decide whether an action is *safe*. It doesn’t gate individual taps or judge intent — because judging whether an action is dangerous needs the task’s intent, which lives in the **agent**, not in abacad (which only sees a UI tree). Most agents already gate their own sensitive tool calls with a human in the loop. abacad’s job is the layer beneath that: authenticate the parties, carry the bytes with integrity, and keep the human in ultimate control of enrollment and revocation.
+
+## The honest limit: prompt injection
+
+There is one risk authentication **cannot** close: **prompt injection through authentic screen content.** If a page or app the agent is driving contains text crafted to hijack the agent, those bytes arrive with perfect integrity — from abacad’s point of view there is nothing wrong to detect. No amount of channel encryption or endpoint authentication solves this, and we won’t pretend otherwise.
+
+It’s defended, in order, by: the **agent’s own judgment** (the primary line — keep a human in the loop for sensitive actions), **device hygiene** (don’t leave an always-on automation phone logged into your bank), and your ability to **revoke a device’s access at any time**.
+
+## Self-hosting
+
+Because abacad runs as a single self-hostable server, you can keep the entire control path inside your own infrastructure and trust boundary. A self-signed certificate is fine for a LAN deployment.
+
+## Reporting a vulnerability
+
+Found a security issue? Please report it privately to **<security@abacad.ai>** rather than opening a public issue, so we can fix it before it’s disclosed. Include what the issue is and where, steps to reproduce or a proof of concept, and the impact you think it has. We aim to acknowledge reports within a few business days and work coordinated disclosure with good-faith researchers.

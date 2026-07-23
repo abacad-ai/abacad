@@ -1,0 +1,13 @@
+# abacad
+
+> A device interface for agents: connect a phone, laptop, or browser as a device and let a coding agent see the screen and act on it, one step at a time, with a human approving.
+
+## Documentation Sets
+
+- [Abridged documentation](https://abacad.ai/docs/llms-small.txt): a compact version of the documentation for abacad, with non-essential content removed
+- [Complete documentation](https://abacad.ai/docs/llms-full.txt): the full documentation for abacad
+
+## Notes
+
+- The complete documentation includes all content from the official documentation
+- The content is automatically generated from the same source as the official documentation

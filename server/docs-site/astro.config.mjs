@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
+import starlightLlmsTxt from "starlight-llms-txt";
 import sitemap from "@astrojs/sitemap";
 
 // The docs site is served as a static subtree under abacad.ai/docs by the Go
@@ -22,6 +23,16 @@ export default defineConfig({
       },
       favicon: "/favicon.svg",
       customCss: ["./src/styles/custom.css"],
+      // Emit /docs/llms.txt and /docs/llms-full.txt so an agent can pull the
+      // whole docs set in one fetch (llmstxt.org). The root /llms.txt (served by
+      // the Go server) links to the full-text file here.
+      plugins: [
+        starlightLlmsTxt({
+          projectName: "abacad",
+          description:
+            "A device interface for agents: connect a phone, laptop, or browser as a device and let a coding agent see the screen and act on it, one step at a time, with a human approving.",
+        }),
+      ],
       // A single honest status convention runs through every reference table.
       sidebar: [
         { label: "What abacad is", link: "/" },
