@@ -71,10 +71,9 @@ func main() {
 	hub := relay.NewHub()
 	evlog := events.NewLog()
 	trail := activity.New(st, time.Duration(cfg.ActivityRetentionDays)*24*time.Hour)
-	// Device-enrollment expiry (hosted only; TTL 0 = disabled, e.g. self-host).
-	if cfg.DeviceEnrollmentTTLHours > 0 {
-		devicegc.Start(st, hub, time.Duration(cfg.DeviceDormantDeleteDays)*24*time.Hour)
-	}
+	// Device-enrollment expiry is always on (fixed product behavior, see
+	// api.enrollmentTTL); the sweeper kicks expired devices and reaps dormant rows.
+	devicegc.Start(st, hub, time.Duration(cfg.DeviceDormantDeleteDays)*24*time.Hour)
 	factory := &resolver.Factory{Store: st, Hub: hub}
 
 	// /device: authenticate the device by its token, register under its real
@@ -193,7 +192,6 @@ func main() {
 	apiHandler := (&api.API{
 		Store: st, Hub: hub, Events: evlog, Activity: trail, Shots: shots, BaseDomain: cfg.BaseDomain,
 		VNC:            vncMgr,
-		EnrollmentTTL:  time.Duration(cfg.DeviceEnrollmentTTLHours) * time.Hour,
 		DownloadsDir:   cfg.DownloadsDir,
 		GoogleClientID: cfg.GoogleClientID, GoogleClientSecret: cfg.GoogleClientSecret, GoogleRedirectURL: cfg.GoogleRedirectURL,
 	}).Handler()

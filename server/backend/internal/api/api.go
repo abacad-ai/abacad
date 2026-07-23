@@ -40,11 +40,6 @@ type API struct {
 	BaseDomain string             // domain devices are addressed under, for the ssh_host hint
 	VNC        *vnc.Manager       // live VNC session manager (screen_recording live channel)
 
-	// EnrollmentTTL is how long a newly enrolled device stays valid before it must
-	// be extended or made permanent. 0 disables expiry (self-host default); the
-	// hosted service sets it (e.g. 24h) so devices are ephemeral by default.
-	EnrollmentTTL time.Duration
-
 	// DownloadsDir is the directory of published client builds served at
 	// /downloads/; GET /api/downloads lists what it holds. See downloads.go.
 	DownloadsDir string
@@ -358,13 +353,8 @@ func (a *API) updateDevice(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Extend enrollment: reset expiry to now + TTL. Only meaningful when the
-	// service runs with a TTL (hosted); a no-TTL instance has nothing to extend.
+	// Extend enrollment: reset expiry to now + TTL (keep-alive another window).
 	if body.Extend != nil && *body.Extend {
-		if a.EnrollmentTTL <= 0 {
-			writeErr(w, http.StatusBadRequest, "enrollment does not expire on this server")
-			return
-		}
 		if err := a.setExpiryOr404(w, id, accID, a.enrollmentExpiry()); err != nil {
 			return
 		}
@@ -844,13 +834,18 @@ func (a *API) clearCookie(r *http.Request) *http.Cookie {
 	}
 }
 
+// enrollmentTTL is how long a newly enrolled device stays reachable before it
+// must be extended or made permanent. It is a fixed product behavior, NOT an
+// operator config: a device silently ceasing to work after this long is a
+// user-facing change, so altering it warrants a real user-facing notice — not a
+// quiet deploy toggle. Devices that must persist are opted out per-device via the
+// "make permanent" consent gate. Applies to every deployment, self-host included.
+const enrollmentTTL = 24 * time.Hour
+
 // enrollmentExpiry returns the absolute expiry (unix seconds) for a device
-// enrolled now, or 0 (permanent) when enrollment TTL is disabled.
+// enrolled now.
 func (a *API) enrollmentExpiry() int64 {
-	if a.EnrollmentTTL <= 0 {
-		return 0
-	}
-	return time.Now().Add(a.EnrollmentTTL).Unix()
+	return time.Now().Add(enrollmentTTL).Unix()
 }
 
 func (a *API) viewDevice(d store.Device) deviceView {

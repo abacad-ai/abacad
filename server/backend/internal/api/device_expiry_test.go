@@ -5,15 +5,13 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 )
 
 // TestExtendAndPermanentGate covers the enrollment PATCH actions: extend moves
 // expiry forward; make-permanent requires attestation (422 otherwise) and records
-// a consent row; and extend is rejected when the server runs with no TTL.
+// a consent row.
 func TestExtendAndPermanentGate(t *testing.T) {
 	a, acc := gateFixture(t)
-	a.EnrollmentTTL = time.Hour // hosted-style: enrollment expires
 
 	dev, _, err := a.Store.CreateDevice(acc.ID, "phone", "android", a.enrollmentExpiry())
 	if err != nil {
@@ -29,14 +27,14 @@ func TestExtendAndPermanentGate(t *testing.T) {
 		return w.Code
 	}
 
-	// Extend moves expiry forward (still non-zero).
+	// Extend keeps expiry set and does not move it backward.
 	before, _ := a.Store.DeviceOwnedBy(dev.ID, acc.ID)
 	if code := call(`{"extend":true}`); code != 204 {
 		t.Fatalf("extend: got %d, want 204", code)
 	}
 	after, _ := a.Store.DeviceOwnedBy(dev.ID, acc.ID)
 	if after.ExpiresAt < before.ExpiresAt || after.ExpiresAt == 0 {
-		t.Fatalf("extend did not move expiry forward: before=%d after=%d", before.ExpiresAt, after.ExpiresAt)
+		t.Fatalf("extend did not keep expiry set/forward: before=%d after=%d", before.ExpiresAt, after.ExpiresAt)
 	}
 
 	// Make permanent without attestation is rejected.
@@ -52,21 +50,5 @@ func TestExtendAndPermanentGate(t *testing.T) {
 	}
 	if !hasConsent(t, a.Store, acc.ID, "enrollment.permanent") {
 		t.Fatal("no consent activity recorded for enrollment.permanent")
-	}
-}
-
-// TestExtendRejectedWithoutTTL: a self-hosted instance (no TTL) has nothing to
-// extend, so extend returns 400.
-func TestExtendRejectedWithoutTTL(t *testing.T) {
-	a, acc := gateFixture(t) // EnrollmentTTL defaults to 0
-	dev, _, _ := a.Store.CreateDevice(acc.ID, "phone", "android", 0)
-
-	r := httptest.NewRequest("PATCH", "/api/devices/"+dev.ID, strings.NewReader(`{"extend":true}`))
-	r.SetPathValue("id", dev.ID)
-	r = r.WithContext(context.WithValue(r.Context(), accountKey, acc))
-	w := httptest.NewRecorder()
-	a.updateDevice(w, r)
-	if w.Code != 400 {
-		t.Fatalf("extend with no TTL: got %d, want 400", w.Code)
 	}
 }
