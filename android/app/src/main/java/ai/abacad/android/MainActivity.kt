@@ -383,7 +383,7 @@ class MainActivity : ComponentActivity() {
         onDisconnect: () -> Unit,
     ) {
         val (dot, title, subtitle) = when {
-            s.paused -> Triple(c.warning, "Paused", "commands are being rejected on this device")
+            s.paused -> Triple(c.warning, "Paused", "the agent can't touch this device until you resume")
             s.controlling -> Triple(c.success, "Controlling now", "agent · ${s.lastMethod ?: "running"}")
             s.state == AbacadStatus.State.CONNECTED -> Triple(c.success, "Connected", "idle — no agent active")
             s.state == AbacadStatus.State.CONNECTING -> Triple(c.warning, "Connecting", s.detail)
@@ -394,23 +394,33 @@ class MainActivity : ComponentActivity() {
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             shape = RoundedCornerShape(AbacadDim.radiusMd),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(AbacadDim.spaceMd),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(10.dp).clip(CircleShape).background(dot))
-                Spacer(Modifier.width(AbacadDim.spaceMd))
-                Column(Modifier.weight(1f)) {
-                    Text(title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
-                    Text(subtitle, color = c.inkMuted, style = MaterialTheme.typography.bodySmall)
+            // Status and actions are stacked, not side-by-side: giving the title
+            // its own full-width row keeps "Controlling now" / "agent · screenshot"
+            // on single lines instead of being squeezed to a two-word column.
+            Column(Modifier.fillMaxWidth().padding(AbacadDim.spaceMd)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(10.dp).clip(CircleShape).background(dot))
+                    Spacer(Modifier.width(AbacadDim.spaceMd))
+                    Column(Modifier.weight(1f)) {
+                        Text(title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                        Text(subtitle, color = c.inkMuted, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
                 if (ready) {
-                    OutlinedButton(onClick = onPause) { Text(if (s.paused) "Resume" else "Pause") }
-                    Spacer(Modifier.width(AbacadDim.spaceSm))
-                    Button(
-                        onClick = onDisconnect,
-                        colors = ButtonDefaults.buttonColors(containerColor = c.danger, contentColor = Color.White),
-                    ) { Text("Disconnect") }
+                    Spacer(Modifier.height(AbacadDim.spaceMd))
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(AbacadDim.spaceSm),
+                    ) {
+                        OutlinedButton(onClick = onPause, modifier = Modifier.weight(1f)) {
+                            Text(if (s.paused) "Resume control" else "Pause control")
+                        }
+                        Button(
+                            onClick = onDisconnect,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = c.danger, contentColor = Color.White),
+                        ) { Text("Disconnect") }
+                    }
                 }
             }
         }
