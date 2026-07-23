@@ -101,15 +101,18 @@ class AbacadAccessibilityService : AccessibilityService() {
     /** screen_recording file channel (MediaProjection -> MediaRecorder -> /blobs). */
     private val screenRecorder by lazy { ScreenRecorder(this) }
 
-    /** screen_recording live channel: pipes the reverse-connect WS to the
-     *  droidVNC-NG companion's localhost RFB server. */
-    private val vncPipe by lazy { VncPipe(this) }
+    /** screen_recording live channel: runs the in-app RFB server (LibVNCServer) and
+     *  pipes the reverse-connect WS to its localhost socket. */
+    private val vncServer by lazy { VncServer(this) }
 
     /** Held for the life of the connection but only while unplugged, so pings keep firing and the
      *  socket survives Doze off-charger. On a charger there's no Doze, so we skip it (see
      *  [updateSessionWakeLock]). Distinct from [wakeLock], the transient wake-from-dark hold. */
     private var sessionWakeLock: PowerManager.WakeLock? = null
     private var isForeground = false
+    /** Ref-count of active MediaProjection sessions (file recording + live view) that
+     *  need the mediaProjection foreground-service type; see [promoteForegroundForRecording]. */
+    private val projectionFgCount = java.util.concurrent.atomic.AtomicInteger(0)
     private var netCallback: ConnectivityManager.NetworkCallback? = null
 
     /** A 1px, invisible, non-interactive overlay carrying FLAG_KEEP_SCREEN_ON; see [keepScreenAwake]. */
@@ -267,11 +270,14 @@ class AbacadAccessibilityService : AccessibilityService() {
 
     /**
      * Promote the (already-foreground) service to also carry the mediaProjection type
-     * while recording. Android 14+ requires a running mediaProjection foreground
-     * service before MediaProjection.getMediaProjection — see [ScreenRecorder].
+     * while a MediaProjection session runs. Android 14+ requires a running
+     * mediaProjection foreground service before MediaProjection.getMediaProjection —
+     * see [ScreenRecorder] / [VncServer]. Ref-counted so a live view and a file
+     * recording can overlap without one's teardown dropping the other's type.
      */
     internal fun promoteForegroundForRecording() {
         ensureNotificationChannel()
+        if (projectionFgCount.getAndIncrement() > 0) return // already promoted
         try {
             startForeground(
                 NOTIF_ID, buildNotification(),
@@ -284,8 +290,9 @@ class AbacadAccessibilityService : AccessibilityService() {
         }
     }
 
-    /** Revert to the plain data-sync foreground type once a recording ends. */
+    /** Revert to the plain data-sync foreground type once the last projection ends. */
     internal fun demoteForegroundAfterRecording() {
+        if (projectionFgCount.updateAndGet { if (it > 0) it - 1 else 0 } > 0) return // still in use
         try {
             startForeground(NOTIF_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         } catch (e: Exception) {
@@ -393,13 +400,13 @@ class AbacadAccessibilityService : AccessibilityService() {
             }
             return
         }
-        // Live view: launch the droidVNC-NG companion (real RFB server over
-        // MediaProjection) and pipe the reverse-connect WS to it. Network + a
+        // Live view: run the in-app RFB server (LibVNCServer over MediaProjection)
+        // and pipe the reverse-connect WS to its localhost socket. Network + a
         // long-lived pipe, not a main-thread one-shot.
         if (method == "vnc") {
             fileIoExecutor.execute {
                 try {
-                    done(CmdResult.Ok(vncPipe.handle(params)))
+                    done(CmdResult.Ok(vncServer.handle(params)))
                 } catch (e: Exception) {
                     done(CmdResult.Err(e.message ?: e.toString()))
                 }

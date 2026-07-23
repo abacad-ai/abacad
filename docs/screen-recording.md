@@ -194,7 +194,8 @@ off; the pixels flow on their own connection through standard components.
 ```
 
 - **Device** runs a normal VNC server (x11vnc on Linux, LibVNCServer on macOS/Windows,
-  droidVNC-NG on Android) bound to `127.0.0.1`, and makes a **reverse VNC connection**
+  LibVNCServer compiled into the APK on Android) bound to `127.0.0.1`, and makes a
+  **reverse VNC connection**
   outward to abacad.ai. Reverse-connect (`x11vnc -connect`, the UltraVNC-repeater model)
   is a standard VNC feature built exactly for the NAT case — the server dials the viewer
   instead of listening, so nothing ever has to reach the NAT'd device.
@@ -254,7 +255,7 @@ after a successful transfer. The `live` column is the planned RFB approach (not 
 | macOS    | ScreenCaptureKit `SCStream` → `AVAssetWriter` H.264 | compiles + links (Mac mini) | LibVNCServer |
 | Linux    | `ffmpeg` x11grab → libx264 (shells out) | builds + vets | x11vnc / LibVNCServer |
 | Windows  | `ffmpeg` gdigrab → libx264 (shells out) | code-complete (no .NET to compile) | LibVNCServer or managed RFB |
-| Android  | MediaProjection → `MediaRecorder` H.264 | compiles (Gradle, Mac mini) | droidVNC-NG pattern |
+| Android  | MediaProjection → `MediaRecorder` H.264 | compiles (Gradle, Mac mini) | LibVNCServer in-app (code-complete, unverified) |
 
 Notes:
 - **macOS** reuses the Screen Recording permission `screenshot` already requests.
@@ -267,8 +268,9 @@ Notes:
 `live` uses each platform's VNC server in standard **reverse-connect** mode (dialing the
 abacad.ai repeater), so the server side is stock **repeater + websockify + noVNC** with
 almost no bespoke code. Desktops unify on **LibVNCServer** (portable C) / **x11vnc**, fed
-by the existing capture + input; Android follows the **droidVNC-NG** approach
-(MediaProjection for the framebuffer + AccessibilityService for input).
+by the existing capture + input; Android **compiles LibVNCServer straight into the APK**
+(no droidVNC-NG companion), fed by MediaProjection frames pushed over JNI — view-only for
+now, with viewer input (AccessibilityService injection) as a follow-on.
 
 ---
 
