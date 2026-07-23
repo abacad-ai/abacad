@@ -28,6 +28,35 @@ object AbacadStatus {
     var detail: String = "not connected"
         private set
 
+    /**
+     * Soft-kill: the device operator has paused control. While true the client
+     * stays connected but [DeviceClient] rejects every incoming command locally.
+     * Cleared only from the app (never by the agent), so it's a real local stop.
+     */
+    @Volatile
+    var paused: Boolean = false
+        private set
+
+    /** A live-view (VNC) session is active — someone is watching this screen right now. */
+    @Volatile
+    var watched: Boolean = false
+        private set
+
+    /** A screen recording is in progress. */
+    @Volatile
+    var recording: Boolean = false
+        private set
+
+    /** Wall-clock of the last command the agent ran, and its method — drives the
+     *  "controlling now" state and the header subtitle. */
+    @Volatile
+    var lastCommandAt: Long = 0
+        private set
+
+    @Volatile
+    var lastMethod: String? = null
+        private set
+
     private const val MAX_LINES = 40
     private val lines = ArrayDeque<Line>()
     private val listeners = LinkedHashSet<() -> Unit>()
@@ -54,13 +83,57 @@ object AbacadStatus {
         append(text)
     }
 
+    /** Toggle the soft-kill pause (from the app). Recorded as an activity line. */
+    fun setPaused(p: Boolean) {
+        if (paused == p) return
+        paused = p
+        append(if (p) "⏸ control paused by device operator" else "▶ control resumed")
+    }
+
+    /** Live-view (watched) flag; [DeviceClient] sets it from vnc start/stop. */
+    fun setWatched(w: Boolean) {
+        if (watched == w) return
+        watched = w
+        append(if (w) "👁 live view started — screen being watched" else "live view ended")
+    }
+
+    /** Recording flag; set from screen_recording start/stop. */
+    fun setRecording(r: Boolean) {
+        if (recording == r) return
+        recording = r
+        append(if (r) "● screen recording started" else "screen recording stopped")
+    }
+
+    /** Note that a command arrived (drives the "controlling now" state). */
+    fun noteCommand(method: String) {
+        lastCommandAt = System.currentTimeMillis()
+        lastMethod = method
+        notifyListeners()
+    }
+
+    /**
+     * True when an agent is actively driving right now: connected, not paused, and
+     * a command ran within the last [WINDOW_MS]. The UI shows a distinct
+     * "Controlling now" state vs. a plain idle "Connected".
+     */
+    fun controlling(): Boolean =
+        state == State.CONNECTED &&
+            !paused &&
+            System.currentTimeMillis() - lastCommandAt < CONTROLLING_WINDOW_MS
+
+    private const val CONTROLLING_WINDOW_MS = 6_000L
+
     private fun append(text: String) {
-        val snapshot: List<() -> Unit>
         synchronized(this) {
             lines.addLast(Line(System.currentTimeMillis(), text))
             while (lines.size > MAX_LINES) lines.removeFirst()
-            snapshot = listeners.toList()
         }
+        notifyListeners()
+    }
+
+    private fun notifyListeners() {
+        val snapshot: List<() -> Unit>
+        synchronized(this) { snapshot = listeners.toList() }
         snapshot.forEach { it() }
     }
 }

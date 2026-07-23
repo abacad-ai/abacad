@@ -7,7 +7,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -15,186 +14,236 @@ import android.os.Environment
 import android.os.PowerManager
 import android.provider.Settings
 import android.text.format.DateFormat
-import android.view.Gravity
-import android.widget.Button
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
 import java.util.Date
 
 /**
- * Minimal setup screen: enter the abacad server URL, save it, enable the
- * accessibility service, and grant the handful of permissions that let the
- * device survive screen-off idle. All control happens over the network
- * afterward; this screen only configures the connection.
+ * The abacad device agent's single screen, in Jetpack Compose + Material 3.
  *
- * Two live panels drive it, both refreshed whenever the screen is shown:
- *  - a connection-status panel fed by [AbacadStatus] (connected / reconnecting /
- *    stuck, plus recent command activity) — so the user doesn't reach for adb;
- *  - a setup checklist that reads the *current* state of each capability
- *    (accessibility on? battery-exempt? overlay? …) and shows a colored dot per
- *    row, each row tappable to jump straight to the system screen that fixes it.
- *    The checklist re-evaluates in [onResume], so returning from a Settings page
- *    reflects the change immediately.
+ * It is the consent + awareness surface for the person whose phone is being
+ * driven, built around one `ready` flag:
+ *  - **Not ready** (disconnected, or the required Accessibility service is off):
+ *    setup is the screen — server URL, Scan QR, Connect, and the capability
+ *    checklist with a colored dot per row (tap to fix).
+ *  - **Ready** (connected + accessibility on): the live surface leads — a
+ *    "Controlling now" / "Connected" state, "screen being watched" / "recording"
+ *    flags, a Pause / Disconnect pair, and the recent-actions tail; setup folds
+ *    into a collapsed drawer that carries a "needs attention" badge.
+ *
+ * All device control happens over the network in [AbacadAccessibilityService];
+ * this screen only observes [AbacadStatus] and issues connect / disconnect /
+ * pause intents.
  */
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
 
-    private companion object {
-        const val REQ_SCAN = 1
-        const val REQ_NOTIF = 2
-    }
-
-    /** Severity of a checklist row, mapped to the dot color. */
     private enum class Level { OK, WARN, BAD, INFO }
 
-    /**
-     * One setup requirement: how to read its current state ([evaluate] → level +
-     * a short human detail) and, optionally, what tapping the row does ([onTap]).
-     */
+    /** One setup requirement: read its live state, and (optionally) fix it on tap. */
     private class Check(
         val title: String,
         val evaluate: () -> Pair<Level, String>,
         val onTap: (() -> Unit)?,
     )
 
-    /** A rendered checklist row: its check, its dot view, its detail view. */
-    private class Row(val check: Check, val dot: TextView, val detail: TextView)
+    private data class RenderedCheck(val title: String, val level: Level, val detail: String, val onTap: (() -> Unit)?)
 
-    private lateinit var urlField: EditText
-    private lateinit var statusView: TextView
-    private lateinit var activityView: TextView
-    private val rows = mutableListOf<Row>()
+    private val prefs get() = getSharedPreferences(AbacadAccessibilityService.PREFS, Context.MODE_PRIVATE)
 
-    // Resolved in onCreate; the activity is recreated on a uiMode (dark/light) change.
-    private lateinit var theme: Theme.Palette
+    private lateinit var scanLauncher: ActivityResultLauncher<Intent>
+    private lateinit var notifPermLauncher: ActivityResultLauncher<String>
 
-    // Re-render the panel whenever AbacadStatus changes (called off the UI thread).
-    private val statusListener: () -> Unit = { runOnUiThread { renderStatus() } }
+    // Compose observation: statusTick bumps on every AbacadStatus change; sysTick
+    // bumps in onResume so the checklist re-reads live system state after the user
+    // returns from a Settings page.
+    private var statusTick by mutableIntStateOf(0)
+    private var sysTick by mutableIntStateOf(0)
+    private var url by mutableStateOf("")
+
+    private val statusListener: () -> Unit = { runOnUiThread { statusTick++ } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val prefs = getSharedPreferences(AbacadAccessibilityService.PREFS, Context.MODE_PRIVATE)
-        theme = Theme.of(resources)
-        val dp = resources.displayMetrics.density
-        val pad = (Theme.SPACE_XL * dp).toInt()
+        url = prefs.getString(AbacadAccessibilityService.KEY_SERVER_URL, "").orEmpty()
 
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad, pad, pad)
+        scanLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+            if (res.resultCode != Activity.RESULT_OK) return@registerForActivityResult
+            val scanned = res.data?.getStringExtra(ScanActivity.RESULT_TEXT)?.trim().orEmpty()
+            if (scanned.isNotEmpty()) {
+                url = scanned
+                saveAndConnect(scanned)
+                toast("Scanned. Connecting…")
+            }
         }
+        notifPermLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
-        // --- live connection status panel (top of screen) ---
-        val statusHeader = sectionHeader("Connection")
-        statusView = TextView(this).apply {
-            textSize = Theme.TEXT_MD
-            setPadding(0, (Theme.SPACE_XS * dp).toInt(), 0, 0)
-        }
-        activityView = TextView(this).apply {
-            textSize = Theme.TEXT_XS
-            typeface = Typeface.MONOSPACE
-            setTextColor(theme.INK_SUBTLE)
-            setPadding(0, (Theme.SPACE_SM * dp).toInt(), 0, pad)
-        }
+        setContent {
+            val dark = isSystemInDarkTheme()
+            val palette = abacadColors(dark)
+            MaterialTheme(colorScheme = abacadColorScheme(dark)) {
+                // Read the ticks so recomposition follows status + resume.
+                val st = statusTick
+                val sy = sysTick
+                val snap = remember(st) { snapshot() }
+                val accessibilityOn = remember(sy) { isAccessibilityEnabled() }
+                val checks = remember(sy) {
+                    buildChecks().map { c -> val (lv, d) = c.evaluate(); RenderedCheck(c.title, lv, d, c.onTap) }
+                }
+                val ready = snap.state == AbacadStatus.State.CONNECTED && accessibilityOn
 
-        urlField = EditText(this).apply {
-            hint = "ws://<server-ip>:8848/device"
-            setText(prefs.getString(AbacadAccessibilityService.KEY_SERVER_URL, ""))
-        }
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(AbacadDim.spaceLg),
+                    ) {
+                        Text(
+                            "abacad",
+                            color = MaterialTheme.colorScheme.onBackground,
+                            fontFamily = FontFamily.SansSerif,
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleLarge,
+                        )
+                        Spacer(Modifier.height(AbacadDim.spaceLg))
 
-        val scanBtn = Button(this).apply {
-            text = "Scan QR"
-            setOnClickListener {
-                startActivityForResult(Intent(this@MainActivity, ScanActivity::class.java), REQ_SCAN)
+                        StateBanner(snap, palette, ready, onPause = ::togglePause, onDisconnect = ::disconnect)
+
+                        if (ready) {
+                            AwarenessFlags(snap, palette)
+                            Spacer(Modifier.height(AbacadDim.spaceLg))
+                            SectionLabel("Recent actions")
+                            RecentActions(snap, palette)
+                            Spacer(Modifier.height(AbacadDim.spaceLg))
+                            SetupDrawer(checks, palette, startExpanded = false)
+                        } else {
+                            Spacer(Modifier.height(AbacadDim.spaceLg))
+                            ConnectSection(
+                                url = url,
+                                onUrl = { url = it },
+                                onScan = { scanLauncher.launch(Intent(this@MainActivity, ScanActivity::class.java)) },
+                                onConnect = { saveAndConnect(url); toast("Saved. Connecting…") },
+                            )
+                            Spacer(Modifier.height(AbacadDim.spaceLg))
+                            SectionLabel("Setup")
+                            Checklist(checks, palette)
+                            Spacer(Modifier.height(AbacadDim.spaceLg))
+                            SetupHelp(palette)
+                        }
+                    }
+                }
             }
         }
 
-        val connectBtn = Button(this).apply {
-            text = "Save & Connect"
-            setOnClickListener {
-                val url = urlField.text.toString().trim()
-                prefs.edit().putString(AbacadAccessibilityService.KEY_SERVER_URL, url).apply()
-                sendBroadcast(Intent(AbacadAccessibilityService.ACTION_RECONNECT).setPackage(packageName))
-                // Don't echo the URL — it carries the device token.
-                Toast.makeText(this@MainActivity, "Saved. Connecting…", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        // --- setup checklist: one tappable row per capability, colored by state ---
-        val setupHeader = sectionHeader("Setup").apply {
-            setPadding(0, pad, 0, 0)
-        }
-        val checklist = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        for (check in buildChecks()) checklist.addView(buildRow(check, dp))
-
-        val info = TextView(this).apply {
-            textSize = Theme.TEXT_SM
-            setTextColor(theme.INK_MUTED)
-            text = """
-                abacad — device agent
-
-                1. Tap Scan QR and point at the connection QR on the abacad
-                   dashboard — or type ws://<server-ip>:8848/device by hand
-                   (server machine + this phone on the same Wi-Fi).
-                2. Tap Save & Connect (scanning connects for you).
-                3. Work down the Setup list above until every dot is green.
-                   Accessibility is required; the rest keep the connection alive
-                   while the screen sleeps.
-
-                A green dot means the requirement is met right now; amber/red means
-                tap the row to fix it. "Never sleeping apps" can't be read back, so
-                it stays amber — tap it and add abacad there once.
-
-                Once connected, an agent (via the server) can read the screen, type,
-                inject taps/swipes, and screenshot this device. It stays connected
-                while the screen sleeps; the agent wakes the screen automatically
-                when it needs it (a one-time ~few-second cost), then runs at normal
-                latency. See docs/power-lockscreen.md for the full support matrix.
-
-                Logs:  adb logcat -s ABACAD
-            """.trimIndent()
-        }
-
-        root.setBackgroundColor(theme.CANVAS)
-        root.addView(statusHeader)
-        root.addView(statusView)
-        root.addView(activityView)
-        root.addView(urlField)
-        root.addView(scanBtn)
-        root.addView(connectBtn)
-        root.addView(setupHeader)
-        root.addView(checklist)
-        root.addView(info)
-        setContentView(ScrollView(this).apply { addView(root) })
-
-        // Android 13+: the foreground-service notification needs POST_NOTIFICATIONS to be visible.
-        // The service still runs without it, but the ongoing notification is the user's signal that
-        // the device is connected, so ask once up front.
+        // Android 13+: the ongoing foreground-service notification is the user's
+        // signal the device is connected — ask for POST_NOTIFICATIONS once up front.
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
-            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIF)
-        }
-
-        // Spike smoke-check: confirm the in-app RFB core (LibVNCServer, compiled
-        // straight into our APK — no droidVNC-NG companion) loads and runs on this
-        // device. Logs the linked LibVNCServer version to `adb logcat -s ABACAD`.
-        // Temporary — replaced when the real capture/input/VncPipe wiring lands.
-        try {
-            android.util.Log.i(AbacadAccessibilityService.TAG, "in-app RFB core: ${RfbNative.nativeVersion()}")
-        } catch (t: Throwable) {
-            android.util.Log.e(AbacadAccessibilityService.TAG, "in-app RFB core failed to load", t)
+            notifPermLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 
-    // ---- setup checklist ------------------------------------------------------
+    override fun onResume() {
+        super.onResume()
+        AbacadStatus.addListener(statusListener)
+        statusTick++
+        sysTick++
+    }
 
-    /**
-     * The requirements shown in the Setup list, in priority order: accessibility
-     * (required) first, then the keep-alive grants, then advisory rows. Each
-     * [Check.evaluate] reads live system state so the row repaints on [onResume].
-     */
+    override fun onPause() {
+        super.onPause()
+        AbacadStatus.removeListener(statusListener)
+    }
+
+    // ---- actions --------------------------------------------------------------
+
+    private fun saveAndConnect(u: String) {
+        val clean = u.trim()
+        prefs.edit().putString(AbacadAccessibilityService.KEY_SERVER_URL, clean).apply()
+        // Don't echo the URL — it carries the device token.
+        sendBroadcast(Intent(AbacadAccessibilityService.ACTION_RECONNECT).setPackage(packageName))
+    }
+
+    private fun disconnect() {
+        sendBroadcast(Intent(AbacadAccessibilityService.ACTION_DISCONNECT).setPackage(packageName))
+    }
+
+    private fun togglePause() {
+        AbacadStatus.setPaused(!AbacadStatus.paused)
+    }
+
+    // ---- status snapshot ------------------------------------------------------
+
+    private data class Snapshot(
+        val state: AbacadStatus.State,
+        val detail: String,
+        val paused: Boolean,
+        val watched: Boolean,
+        val recording: Boolean,
+        val controlling: Boolean,
+        val lastMethod: String?,
+        val lines: List<AbacadStatus.Line>,
+    )
+
+    private fun snapshot() = Snapshot(
+        state = AbacadStatus.state,
+        detail = AbacadStatus.detail,
+        paused = AbacadStatus.paused,
+        watched = AbacadStatus.watched,
+        recording = AbacadStatus.recording,
+        controlling = AbacadStatus.controlling(),
+        lastMethod = AbacadStatus.lastMethod,
+        lines = AbacadStatus.recentLines(),
+    )
+
+    // ---- setup checklist (ported from the classic-View version) ---------------
+
     private fun buildChecks(): List<Check> {
         val checks = mutableListOf<Check>()
 
@@ -214,16 +263,10 @@ class MainActivity : Activity() {
                 else Level.WARN to "Not exempt — tap to allow (drops on sleep)"
             },
             onTap = {
-                if (isBatteryExempt()) {
-                    toast("Already exempt from battery optimization")
-                } else {
-                    safeStart(
-                        Intent(
-                            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                            Uri.parse("package:$packageName"),
-                        ),
-                    )
-                }
+                if (isBatteryExempt()) toast("Already exempt from battery optimization")
+                else safeStart(
+                    Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")),
+                )
             },
         )
 
@@ -233,41 +276,22 @@ class MainActivity : Activity() {
                 if (Settings.canDrawOverlays(this)) Level.OK to "Allowed — auto-wake reliable"
                 else Level.WARN to "Not allowed — auto-wake may fail on strict ROMs"
             },
-            onTap = {
-                safeStart(
-                    Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:$packageName"),
-                    ),
-                )
-            },
+            onTap = { safeStart(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) },
         )
 
-        // All-files access: without it, push_file/pull_file can only touch the app's
-        // own external dir; scoped storage blocks raw writes to shared paths like
-        // /sdcard/Pictures. Granting is a single Settings toggle (no runtime dialog
-        // exists for this one), and the row flips green on return via onResume.
         checks += Check(
             title = "Files & media access",
             evaluate = {
-                if (Environment.isExternalStorageManager()) {
-                    Level.OK to "Granted — can save to any folder (Pictures, Download…)"
-                } else {
-                    Level.WARN to "Off — tap to allow saving files to shared storage"
-                }
+                if (Environment.isExternalStorageManager()) Level.OK to "Granted — can save to any folder (Pictures, Download…)"
+                else Level.WARN to "Off — tap to allow saving files to shared storage"
             },
             onTap = {
                 if (Environment.isExternalStorageManager()) {
                     toast("Already granted — files can be saved anywhere in shared storage")
                 } else {
-                    // Deep-link straight to this app's All-files-access toggle; fall
-                    // back to the all-apps list on ROMs that don't honor the per-app action.
                     try {
                         startActivity(
-                            Intent(
-                                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                                Uri.parse("package:$packageName"),
-                            ),
+                            Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName")),
                         )
                     } catch (_: ActivityNotFoundException) {
                         safeStart(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
@@ -276,7 +300,6 @@ class MainActivity : Activity() {
             },
         )
 
-        // Below 33 notifications are on by default; only worth a row on 13+.
         if (Build.VERSION.SDK_INT >= 33) {
             checks += Check(
                 title = "Notifications",
@@ -287,14 +310,10 @@ class MainActivity : Activity() {
                 onTap = {
                     if (notificationsGranted()) {
                         safeStart(
-                            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                                .putExtra(Settings.EXTRA_APP_PACKAGE, packageName),
+                            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName),
                         )
                     } else {
-                        requestPermissions(
-                            arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
-                            REQ_NOTIF,
-                        )
+                        notifPermLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
                     }
                 },
             )
@@ -303,92 +322,26 @@ class MainActivity : Activity() {
         checks += Check(
             title = "Screen lock",
             evaluate = {
-                if (isDeviceSecure()) {
-                    Level.WARN to "Secure lock — can't auto-unlock when asleep"
-                } else {
-                    Level.OK to "None/Swipe — auto-unlock OK"
-                }
+                if (isDeviceSecure()) Level.WARN to "Secure lock — can't auto-unlock when asleep"
+                else Level.OK to "None/Swipe — auto-unlock OK"
             },
             onTap = { safeStart(Intent(Settings.ACTION_SECURITY_SETTINGS)) },
         )
 
-        // One UI freezes background apps regardless of the grants above unless the
-        // app is on its "Never sleeping apps" allowlist — which has no public
-        // getter, so this row is always advisory (amber) and just deep-links out.
         if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) {
             checks += Check(
                 title = "Never sleeping apps (Samsung)",
                 evaluate = { Level.WARN to "Add abacad here so One UI won't freeze it" },
-                onTap = {
-                    safeStart(
-                        Intent(
-                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                            Uri.parse("package:$packageName"),
-                        ),
-                    )
-                },
+                onTap = { safeStart(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) },
             )
         }
 
         return checks
     }
 
-    /** Build a tappable checklist row (dot + title/detail); registers it for refresh. */
-    private fun buildRow(check: Check, dp: Float): LinearLayout {
-        val dot = TextView(this).apply {
-            text = "●"
-            textSize = Theme.TEXT_MD
-            setPadding(0, 0, (Theme.SPACE_MD * dp).toInt(), 0)
-        }
-        val title = TextView(this).apply {
-            text = check.title
-            textSize = Theme.TEXT_MD
-            setTextColor(theme.INK)
-        }
-        val detail = TextView(this).apply {
-            textSize = Theme.TEXT_XS
-            setTextColor(theme.INK_MUTED)
-        }
-        val text = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            addView(title)
-            addView(detail)
-        }
-        rows += Row(check, dot, detail)
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            val v = (Theme.SPACE_MD * dp).toInt()
-            setPadding(0, v, 0, v)
-            addView(dot)
-            addView(text)
-            check.onTap?.let { tap -> isClickable = true; setOnClickListener { tap() } }
-        }
-    }
-
-    /** Re-read every checklist row's live state and repaint its dot + detail. */
-    private fun refreshChecks() {
-        for (row in rows) {
-            val (level, detail) = row.check.evaluate()
-            row.dot.setTextColor(
-                when (level) {
-                    Level.OK -> theme.SUCCESS
-                    Level.WARN -> theme.WARNING
-                    Level.BAD -> theme.DANGER
-                    Level.INFO -> theme.INK_SUBTLE
-                },
-            )
-            row.detail.text = detail
-        }
-    }
-
     private fun isAccessibilityEnabled(): Boolean {
         val me = ComponentName(this, AbacadAccessibilityService::class.java)
-        val enabled = Settings.Secure.getString(
-            contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
-        ) ?: return false
+        val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
         return enabled.split(':').any { ComponentName.unflattenFromString(it) == me }
     }
 
@@ -402,7 +355,6 @@ class MainActivity : Activity() {
         Build.VERSION.SDK_INT < 33 ||
             checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
-    /** Start a settings intent, tolerating OEMs that don't expose it. */
     private fun safeStart(intent: Intent) {
         try {
             startActivity(intent)
@@ -413,58 +365,203 @@ class MainActivity : Activity() {
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
-    private fun sectionHeader(text: String) = TextView(this).apply {
-        this.text = text
-        textSize = Theme.TEXT_LG
-        setTextColor(theme.INK)
-        setTypeface(typeface, Typeface.BOLD)
+    // ---- composables ----------------------------------------------------------
+
+    private fun levelColor(level: Level, c: AbacadColors): Color = when (level) {
+        Level.OK -> c.success
+        Level.WARN -> c.warning
+        Level.BAD -> c.danger
+        Level.INFO -> c.inkSubtle
     }
 
-    override fun onResume() {
-        super.onResume()
-        AbacadStatus.addListener(statusListener)
-        renderStatus()
-        refreshChecks()
-    }
-
-    override fun onPause() {
-        super.onPause()
-        AbacadStatus.removeListener(statusListener)
-    }
-
-    /** Paint the current [AbacadStatus] state (colored headline) and recent activity. */
-    private fun renderStatus() {
-        val s = AbacadStatus.state
-        statusView.text = "● ${s.name.lowercase()} — ${AbacadStatus.detail}"
-        statusView.setTextColor(
-            when (s) {
-                AbacadStatus.State.CONNECTED -> theme.SUCCESS
-                AbacadStatus.State.CONNECTING, AbacadStatus.State.RECONNECTING -> theme.WARNING
-                AbacadStatus.State.DISCONNECTED -> theme.DANGER
-            },
-        )
-        val lines = AbacadStatus.recentLines()
-        activityView.text = if (lines.isEmpty()) {
-            "No activity yet."
-        } else {
-            // Newest first, capped so the panel stays readable.
-            lines.asReversed().take(12).joinToString("\n") { line ->
-                "${DateFormat.format("HH:mm:ss", Date(line.ts))}  ${line.text}"
+    @Composable
+    private fun StateBanner(
+        s: Snapshot,
+        c: AbacadColors,
+        ready: Boolean,
+        onPause: () -> Unit,
+        onDisconnect: () -> Unit,
+    ) {
+        val (dot, title, subtitle) = when {
+            s.paused -> Triple(c.warning, "Paused", "commands are being rejected on this device")
+            s.controlling -> Triple(c.success, "Controlling now", "agent · ${s.lastMethod ?: "running"}")
+            s.state == AbacadStatus.State.CONNECTED -> Triple(c.success, "Connected", "idle — no agent active")
+            s.state == AbacadStatus.State.CONNECTING -> Triple(c.warning, "Connecting", s.detail)
+            s.state == AbacadStatus.State.RECONNECTING -> Triple(c.warning, "Reconnecting", s.detail)
+            else -> Triple(c.inkSubtle, "Disconnected", s.detail)
+        }
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(AbacadDim.radiusMd),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(AbacadDim.spaceMd),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(10.dp).clip(CircleShape).background(dot))
+                Spacer(Modifier.width(AbacadDim.spaceMd))
+                Column(Modifier.weight(1f)) {
+                    Text(title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                    Text(subtitle, color = c.inkMuted, style = MaterialTheme.typography.bodySmall)
+                }
+                if (ready) {
+                    OutlinedButton(onClick = onPause) { Text(if (s.paused) "Resume" else "Pause") }
+                    Spacer(Modifier.width(AbacadDim.spaceSm))
+                    Button(
+                        onClick = onDisconnect,
+                        colors = ButtonDefaults.buttonColors(containerColor = c.danger, contentColor = Color.White),
+                    ) { Text("Disconnect") }
+                }
             }
         }
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQ_SCAN || resultCode != RESULT_OK) return
-        val url = data?.getStringExtra(ScanActivity.RESULT_TEXT)?.trim().orEmpty()
-        if (url.isEmpty()) return
-        urlField.setText(url)
-        // Scanning is an explicit "connect me" gesture — save + reconnect straight away.
-        getSharedPreferences(AbacadAccessibilityService.PREFS, Context.MODE_PRIVATE)
-            .edit().putString(AbacadAccessibilityService.KEY_SERVER_URL, url).apply()
-        sendBroadcast(Intent(AbacadAccessibilityService.ACTION_RECONNECT).setPackage(packageName))
-        // Don't echo the URL — it carries the device token.
-        Toast.makeText(this, "Scanned. Connecting…", Toast.LENGTH_SHORT).show()
+    @Composable
+    private fun AwarenessFlags(s: Snapshot, c: AbacadColors) {
+        if (!s.watched && !s.recording) return
+        Spacer(Modifier.height(AbacadDim.spaceSm))
+        Row(horizontalArrangement = Arrangement.spacedBy(AbacadDim.spaceSm)) {
+            if (s.watched) Flag("👁  Screen being watched", c.warning, c.warningSoft)
+            if (s.recording) Flag("●  Recording", c.danger, c.dangerSoft)
+        }
+    }
+
+    @Composable
+    private fun Flag(text: String, fg: Color, bg: Color) {
+        Box(
+            Modifier.clip(RoundedCornerShape(AbacadDim.radiusPill)).background(bg)
+                .padding(horizontal = AbacadDim.spaceMd, vertical = AbacadDim.spaceXs),
+        ) { Text(text, color = fg, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold) }
+    }
+
+    @Composable
+    private fun RecentActions(s: Snapshot, c: AbacadColors) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(AbacadDim.radiusMd),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(AbacadDim.spaceMd)) {
+                if (s.lines.isEmpty()) {
+                    Text("No activity yet.", color = c.inkMuted, style = MaterialTheme.typography.bodySmall)
+                } else {
+                    s.lines.asReversed().take(12).forEach { line ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                            Text(
+                                DateFormat.format("HH:mm:ss", Date(line.ts)).toString(),
+                                color = c.inkSubtle,
+                                fontFamily = FontFamily.Monospace,
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                            Spacer(Modifier.width(AbacadDim.spaceSm))
+                            Text(line.text, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun ConnectSection(url: String, onUrl: (String) -> Unit, onScan: () -> Unit, onConnect: () -> Unit) {
+        OutlinedTextField(
+            value = url,
+            onValueChange = onUrl,
+            label = { Text("Server URL") },
+            placeholder = { Text("ws://<server-ip>:8848/device") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(AbacadDim.spaceSm))
+        Row(horizontalArrangement = Arrangement.spacedBy(AbacadDim.spaceSm)) {
+            OutlinedButton(onClick = onScan, modifier = Modifier.weight(1f)) { Text("Scan QR") }
+            Button(onClick = onConnect, modifier = Modifier.weight(1f)) { Text("Save & Connect") }
+        }
+    }
+
+    @Composable
+    private fun SetupDrawer(checks: List<RenderedCheck>, c: AbacadColors, startExpanded: Boolean) {
+        var expanded by remember { mutableStateOf(startExpanded) }
+        val attention = checks.count { it.level != Level.OK }
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(AbacadDim.radiusMd),
+        ) {
+            Column(Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(AbacadDim.spaceMd),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Setup", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.width(AbacadDim.spaceSm))
+                    Text(
+                        if (attention == 0) "✓ all set" else "$attention needs attention",
+                        color = if (attention == 0) c.success else c.warning,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(if (expanded) "▾" else "▸", color = c.inkSubtle)
+                }
+                if (expanded) {
+                    Column(Modifier.padding(horizontal = AbacadDim.spaceMd).padding(bottom = AbacadDim.spaceSm)) {
+                        checks.forEach { CheckRow(it, c) }
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun Checklist(checks: List<RenderedCheck>, c: AbacadColors) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(AbacadDim.radiusMd),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(AbacadDim.spaceMd)) {
+                checks.forEach { CheckRow(it, c) }
+            }
+        }
+    }
+
+    @Composable
+    private fun CheckRow(row: RenderedCheck, c: AbacadColors) {
+        val base = Modifier.fillMaxWidth()
+        val clickable = if (row.onTap != null) base.clickable { row.onTap.invoke() } else base
+        Row(
+            clickable.padding(vertical = AbacadDim.spaceSm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(9.dp).clip(CircleShape).background(levelColor(row.level, c)))
+            Spacer(Modifier.width(AbacadDim.spaceMd))
+            Column(Modifier.weight(1f)) {
+                Text(row.title, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyMedium)
+                Text(row.detail, color = c.inkMuted, style = MaterialTheme.typography.bodySmall)
+            }
+            if (row.onTap != null) Text("›", color = c.inkSubtle)
+        }
+    }
+
+    @Composable
+    private fun SectionLabel(text: String) {
+        Text(
+            text.uppercase(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontFamily = FontFamily.Monospace,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(bottom = AbacadDim.spaceSm),
+        )
+    }
+
+    @Composable
+    private fun SetupHelp(c: AbacadColors) {
+        Text(
+            "Scan the connection QR on the abacad dashboard, or type ws://<server-ip>:8848/device " +
+                "(server and phone on the same Wi-Fi), then tap Save & Connect. Work the Setup list until " +
+                "every dot is green — Accessibility is required; the rest keep the connection alive while the " +
+                "screen sleeps. Once connected, an agent can read the screen, type, tap/swipe, and screenshot " +
+                "this device; you can Pause or Disconnect here at any time.",
+            color = c.inkMuted,
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
 }

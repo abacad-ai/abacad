@@ -66,6 +66,7 @@ class AbacadAccessibilityService : AccessibilityService() {
         const val PREFS = "abacad"
         const val KEY_SERVER_URL = "server_url"
         const val ACTION_RECONNECT = "ai.abacad.android.RECONNECT"
+        const val ACTION_DISCONNECT = "ai.abacad.android.DISCONNECT"
 
         /** Foreground-service notification: keeps the process (and its idle socket) alive
          *  through screen-off so OEM battery managers don't freeze it. */
@@ -133,8 +134,19 @@ class AbacadAccessibilityService : AccessibilityService() {
 
     private val reconnectReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            Log.i(TAG, "RECONNECT")
-            connectFromPrefs()
+            when (intent?.action) {
+                ACTION_DISCONNECT -> {
+                    Log.i(TAG, "DISCONNECT")
+                    device?.close()
+                }
+                else -> {
+                    Log.i(TAG, "RECONNECT")
+                    // A manual connect is a fresh intent to allow control: clear any
+                    // operator pause so the device isn't silently rejecting commands.
+                    AbacadStatus.setPaused(false)
+                    connectFromPrefs()
+                }
+            }
         }
     }
 
@@ -158,7 +170,7 @@ class AbacadAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         Log.i(TAG, "service LIVE — ${Build.MANUFACTURER} ${Build.MODEL} sdk=${Build.VERSION.SDK_INT}")
-        val filter = IntentFilter(ACTION_RECONNECT)
+        val filter = IntentFilter(ACTION_RECONNECT).apply { addAction(ACTION_DISCONNECT) }
         if (Build.VERSION.SDK_INT >= 33) {
             registerReceiver(reconnectReceiver, filter, Context.RECEIVER_EXPORTED)
         } else {

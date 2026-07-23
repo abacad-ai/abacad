@@ -16,9 +16,10 @@
 //   macos/Sources/abacad/Theme.swift                SwiftUI dynamic Colors + CGFloats
 //   linux/internal/gui/theme_gen.go                 Go palettes for the gotk4/libadwaita GUI
 //   windows/Theme.xaml                              WinUI 3 ResourceDictionary (ThemeDictionaries)
+//   android/…/ThemeCompose.kt                       Jetpack Compose Colors + Material 3 scheme + Dp/sp
 //
-// The Jetpack Compose theme (Color/Dp/Material3 scheme) is emitted alongside the
-// Android Compose migration, where the Compose deps that make it compile live.
+// Theme.kt (classic ARGB ints) and ThemeCompose.kt (Compose) coexist during the
+// Android migration; ThemeCompose.kt only compiles once the Compose deps are present.
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -101,6 +102,53 @@ const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
   for (const [name, px] of Object.entries(tokens.font.size)) kt += `    const val TEXT_${upperSnake(name)} = ${px}f // sp\n`;
   kt += `}\n`;
   writeFileSync(join(root, "android", "app", "src", "main", "java", "ai", "abacad", "android", "Theme.kt"), kt);
+}
+
+// --- Jetpack Compose (Material 3) --------------------------------------
+// The Compose-native theme: every token as a Compose Color (AbacadColors), the
+// semantic ones mapped onto a Material 3 ColorScheme so stock components inherit
+// the palette, and dp/sp metrics (AbacadDim). Status colors stay addressable by
+// name for the connection-state UI. Auto dark/light: pass isSystemInDarkTheme().
+{
+  const color = (hex) => {
+    const { r, g, b, a } = parse(hex);
+    const v = ((a << 24) | (r << 16) | (g << 8) | b) >>> 0;
+    return `Color(0x${v.toString(16).toUpperCase().padStart(8, "0")})`;
+  };
+  const compPalette = (scheme, name) =>
+    `val ${name} = AbacadColors(\n` +
+    Object.entries(scheme)
+      .map(([k, hex]) => `    ${camel(k)} = ${color(hex)},\n`)
+      .join("") +
+    `)\n`;
+  // The Material 3 role → token mapping, shared by the dark and light builders.
+  const schemeArgs =
+    `        background = c.canvas,\n        onBackground = c.ink,\n` +
+    `        surface = c.surface,\n        onSurface = c.ink,\n` +
+    `        surfaceVariant = c.surfaceRaised,\n        onSurfaceVariant = c.inkMuted,\n` +
+    `        primary = c.brand,\n        onPrimary = c.onBrand,\n` +
+    `        outline = c.border,\n        outlineVariant = c.borderStrong,\n` +
+    `        error = c.danger,\n        errorContainer = c.dangerSoft,\n        scrim = c.scrim,\n`;
+
+  let c = `package ai.abacad.android\n\n`;
+  c += `import androidx.compose.material3.ColorScheme\nimport androidx.compose.material3.darkColorScheme\nimport androidx.compose.material3.lightColorScheme\n`;
+  c += `import androidx.compose.ui.graphics.Color\nimport androidx.compose.ui.unit.dp\nimport androidx.compose.ui.unit.sp\n\n`;
+  c += `// ${HEADER}\n\n`;
+  c += `/** Every abacad token as a Compose [Color]. Status colors (success/warning/\n * danger) are used by name for the connection-state UI; the neutral chrome is\n * also mapped onto Material 3 via [abacadColorScheme]. */\n`;
+  c += `data class AbacadColors(\n`;
+  for (const k of Object.keys(dark)) c += `    val ${camel(k)}: Color,\n`;
+  c += `)\n\n`;
+  c += compPalette(dark, "AbacadDark") + `\n` + compPalette(light, "AbacadLight") + `\n`;
+  c += `fun abacadColors(dark: Boolean): AbacadColors = if (dark) AbacadDark else AbacadLight\n\n`;
+  c += `/** Map the neutral chrome + error tokens onto a Material 3 [ColorScheme]. */\n`;
+  c += `fun abacadColorScheme(dark: Boolean): ColorScheme {\n    val c = abacadColors(dark)\n`;
+  c += `    return if (dark) darkColorScheme(\n${schemeArgs}    ) else lightColorScheme(\n${schemeArgs}    )\n}\n\n`;
+  c += `/** Spacing (dp), corner radii (dp) and type sizes (sp). */\nobject AbacadDim {\n`;
+  for (const [n, px] of Object.entries(tokens.space)) c += `    val space${cap(camel(n))} = ${px}.dp\n`;
+  for (const [n, px] of Object.entries(tokens.radius)) c += `    val radius${cap(camel(n))} = ${px}.dp\n`;
+  for (const [n, px] of Object.entries(tokens.font.size)) c += `    val text${cap(camel(n))} = ${px}.sp\n`;
+  c += `}\n`;
+  writeFileSync(join(root, "android", "app", "src", "main", "java", "ai", "abacad", "android", "ThemeCompose.kt"), c);
 }
 
 // --- Swift -------------------------------------------------------------
@@ -209,4 +257,4 @@ const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
   writeFileSync(join(root, "windows", "Theme.xaml"), xaml);
 }
 
-console.log("tokens: wrote tokens.css, Theme.kt, Theme.swift, theme_gen.go (linux), Theme.xaml (windows)");
+console.log("tokens: wrote tokens.css, Theme.kt, ThemeCompose.kt, Theme.swift, theme_gen.go (linux), Theme.xaml (windows)");

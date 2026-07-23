@@ -99,6 +99,13 @@ android {
     // (?version= on the dial). AGP 8 no longer generates BuildConfig unless asked.
     buildFeatures {
         buildConfig = true
+        compose = true
+    }
+
+    // Compose compiler 1.5.14 pairs with Kotlin 1.9.24 (this repo's Kotlin plugin
+    // version). Bump both together if either moves.
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.14"
     }
 
     compileOptions {
@@ -112,12 +119,25 @@ android {
 }
 
 dependencies {
-    // OkHttp: outbound WebSocket to the abacad server. Everything else stays on
-    // framework APIs (no AndroidX).
+    // OkHttp: outbound WebSocket to the abacad server. The device-control core
+    // stays on framework APIs; only the UI (below) uses AndroidX.
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // ZXing core: pure-Java QR decoder. Paired with the framework Camera2 API so
-    // we can scan the connection QR without pulling in CameraX/ML Kit (AndroidX).
+    // we can scan the connection QR without pulling in CameraX/ML Kit.
     implementation("com.google.zxing:core:3.5.3")
+
+    // Jetpack Compose + Material 3 — the setup/awareness UI (MainActivity). The
+    // BOM pins a mutually-compatible set; 2024.06 maps to Compose UI 1.6 /
+    // Material3 1.2, which the 1.5.14 compiler (Kotlin 1.9.24) builds.
+    implementation(platform("androidx.compose:compose-bom:2024.06.00"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.activity:activity-compose:1.9.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.2")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    debugImplementation("androidx.compose.ui:ui-tooling")
 }
 
 // Without a signing config AGP would quietly emit app-release-unsigned.apk,

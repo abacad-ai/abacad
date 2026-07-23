@@ -115,6 +115,22 @@ class DeviceClient(
     private fun presenceFrame(state: String): String =
         JSONObject().put("type", "presence").put("state", state).toString()
 
+    // Reflect live-view / recording sessions in the status panel so the person at
+    // the device sees when their screen is being watched or recorded. Best-effort,
+    // inferred from the command verbs the server relays.
+    private fun updateAwareness(method: String, params: JSONObject) {
+        when (method) {
+            "vnc" -> when (params.optString("action")) {
+                "start" -> AbacadStatus.setWatched(true)
+                "stop" -> AbacadStatus.setWatched(false)
+            }
+            "screen_recording" -> when (params.optString("action")) {
+                "start" -> AbacadStatus.setRecording(true)
+                "stop" -> AbacadStatus.setRecording(false)
+            }
+        }
+    }
+
     private fun isLoopback(h: String): Boolean =
         h == "127.0.0.1" || h == "::1" || h == "localhost" || h == "10.0.2.2" // 10.0.2.2 = emulator host
 
@@ -166,6 +182,20 @@ class DeviceClient(
             val method = cmd.optString("method")
             val params = cmd.optJSONObject("params") ?: JSONObject()
             Log.i(tag, "cmd $method (id=$id)")
+            // Soft-kill: while the operator has paused control from the app, reject
+            // every command locally without touching the device. The agent sees an
+            // error; only the app can clear the pause. This is the on-device stop.
+            if (AbacadStatus.paused) {
+                Log.i(tag, "cmd $method rejected — paused")
+                AbacadStatus.event("$method · rejected · paused")
+                webSocket.send(
+                    JSONObject().put("id", id).put("ok", false)
+                        .put("error", "paused by device operator").toString(),
+                )
+                return
+            }
+            AbacadStatus.noteCommand(method)
+            updateAwareness(method, params)
             val startNs = System.nanoTime()
             executor(method, params) { result ->
                 val ms = (System.nanoTime() - startNs) / 1_000_000
