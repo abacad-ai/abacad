@@ -350,3 +350,9 @@ escalate itself" — be made without an asterisk.
 - [`ssh.md`](ssh.md) — the jump host (edge ④), the one place server-to-client
   authentication (host-key pinning) is already done right, and the model edge ③
   should copy.
+- [`shared-responsibility.md`](shared-responsibility.md) — who secures what, split by
+  self-host vs the hosted service.
+- [`incident-response.md`](incident-response.md) — how the hosted service handles a
+  security incident and its notification duties.
+- [`abuse.md`](abuse.md) — reporting misuse of the service (distinct from a
+  vulnerability, which goes to [`../SECURITY.md`](../SECURITY.md)).
