@@ -86,9 +86,9 @@ const lb = JSON.parse(textOf(await cb.callTool({ name: "list_devices", arguments
 check(la.length === 1 && la[0].device_id === A.deviceId && la[0].online === true, "A sees exactly its own device, online");
 check(lb.length === 1 && lb[0].device_id === B.deviceId && lb[0].online === true, "B sees exactly its own device, online");
 
-// 2. Routing: default screenshot reaches each account's own mock (image back).
-const sa = await ca.callTool({ name: "screenshot", arguments: { include_ui_tree: false } });
-check(sa.content.some((c) => c.type === "image"), "A default screenshot returns an image");
+// 2. Routing: a screenshot targeting A's own device_id reaches A's mock (image back).
+const sa = await ca.callTool({ name: "screenshot", arguments: { device_id: A.deviceId, include_ui_tree: false } });
+check(sa.content.some((c) => c.type === "image"), "A screenshot on its own device_id returns an image");
 
 // 3. Explicit device_id for own device works.
 const tapOwn = await ca.callTool({ name: "tap", arguments: { x: 1, y: 1, device_id: A.deviceId } });

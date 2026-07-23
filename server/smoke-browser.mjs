@@ -21,42 +21,48 @@ const toolNames = tools.map((t) => t.name);
 console.log("tools:", toolNames.join(", "));
 const hasExecuteTool = toolNames.includes("execute");
 
-async function callWithRetry(name, args, tries = 20) {
-  for (let i = 0; i < tries; i++) {
-    const r = await client.callTool({ name, arguments: args });
-    const text = r.content.find((c) => c.type === "text")?.text ?? "";
-    if (!r.isError || !/no device connected/.test(text)) return r;
-    await new Promise((res) => setTimeout(res, 300));
-  }
-  throw new Error(`device never connected for ${name}`);
-}
-
 const textOf = (r) =>
   r.content.filter((c) => c.type === "text").map((c) => c.text).join("\n");
 
+// Every tool now requires an explicit device_id — there is no fallback. Poll
+// list_devices until the browser mock is online and reuse its id below.
+async function waitForDeviceID(tries = 20) {
+  for (let i = 0; i < tries; i++) {
+    const r = await client.callTool({ name: "list_devices", arguments: {} });
+    try {
+      const online = JSON.parse(textOf(r)).find((d) => d.online);
+      if (online) return online.device_id;
+    } catch {}
+    await new Promise((res) => setTimeout(res, 300));
+  }
+  throw new Error("no device came online");
+}
+const device_id = await waitForDeviceID();
+console.log("device:", device_id);
+
 // screenshot returns an image + (by default) the DOM tree.
-const shot = await callWithRetry("screenshot", {});
+const shot = await client.callTool({ name: "screenshot", arguments: { device_id } });
 const shotText = textOf(shot);
 const hasImage = shot.content.some((c) => c.type === "image" && typeof c.data === "string" && c.data.length > 0);
 console.log("screenshot:", shot.content.map((c) => c.type).join(","), "| tree:", /"nodes"/.test(shotText));
 
 // semantic shortcuts: click (=tap in-page), scroll, input_text.
-const click = await client.callTool({ name: "click", arguments: { x: 416, y: 114 } });
+const click = await client.callTool({ name: "click", arguments: { device_id, x: 416, y: 114 } });
 console.log("click:", textOf(click));
-const scroll = await client.callTool({ name: "scroll", arguments: { x: 400, y: 300, dy: 3 } });
+const scroll = await client.callTool({ name: "scroll", arguments: { device_id, x: 400, y: 300, dy: 3 } });
 console.log("scroll:", textOf(scroll));
-const type = await client.callTool({ name: "input_text", arguments: { text: "hello" } });
+const type = await client.callTool({ name: "input_text", arguments: { device_id, text: "hello" } });
 console.log("input_text:", textOf(type));
 
 // execute: value round-trip, object serialization, undefined -> "no value",
 // and a thrown error surfaced as a tool error.
-const execNum = await client.callTool({ name: "execute", arguments: { code: "return 40 + 2" } });
+const execNum = await client.callTool({ name: "execute", arguments: { device_id, code: "return 40 + 2" } });
 console.log("execute(number):", textOf(execNum));
-const execObj = await client.callTool({ name: "execute", arguments: { code: "return { msg: 'hi', n: 3 }" } });
+const execObj = await client.callTool({ name: "execute", arguments: { device_id, code: "return { msg: 'hi', n: 3 }" } });
 console.log("execute(object):", textOf(execObj));
-const execVoid = await client.callTool({ name: "execute", arguments: { code: "globalThis.__x = 1;" } });
+const execVoid = await client.callTool({ name: "execute", arguments: { device_id, code: "globalThis.__x = 1;" } });
 console.log("execute(void):", textOf(execVoid));
-const execThrow = await client.callTool({ name: "execute", arguments: { code: "throw new Error('boom')" } });
+const execThrow = await client.callTool({ name: "execute", arguments: { device_id, code: "throw new Error('boom')" } });
 console.log("execute(throw):", "isError=" + execThrow.isError, "|", textOf(execThrow));
 
 await client.close();

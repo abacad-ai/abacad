@@ -46,43 +46,31 @@ type accountResolver struct {
 // tools use it to stage and read blobs on the caller's behalf.
 func (a *accountResolver) AccountID() string { return a.accountID }
 
-// Resolve maps an optional device_id to a live connection the account owns.
+// Resolve maps a required device_id to a live connection the account owns. There
+// is deliberately NO fallback: an empty device_id is an error, never a guess at
+// the "most-recently-active" device. Silent auto-selection targeted whichever
+// device happened to come online last, so a call meant for the phone could land
+// on a laptop the moment it reconnected. Every caller must name its device.
 func (a *accountResolver) Resolve(_ context.Context, deviceID string) (*relay.DeviceConn, error) {
-	if deviceID != "" {
-		d, err := a.store.DeviceOwnedBy(deviceID, a.accountID)
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, fmt.Errorf("device %q is not in your account — call list_devices to see your devices", deviceID)
-		}
-		if err != nil {
-			return nil, err
-		}
-		if !a.scope.AllowsDevice(d.ID) {
-			return nil, fmt.Errorf("device %q (%s) is not permitted for this API key — call list_devices to see the devices it can reach", d.Name, d.ID)
-		}
-		dc, ok := a.hub.Get(d.ID)
-		if !ok {
-			return nil, fmt.Errorf("device %q (%s) is not connected — open the abacad app on it", d.Name, d.ID)
-		}
-		dc.SetHumanize(d.Humanize)
-		return dc, nil
+	if deviceID == "" {
+		return nil, errors.New("device_id is required — no device was specified. Call list_devices to see your devices (id, name, platform, online) and pass the device_id you want to target")
 	}
-
-	// No device_id: pick the most-recently-active device that is online and in scope.
-	devices, err := a.store.DevicesByAccount(a.accountID)
+	d, err := a.store.DeviceOwnedBy(deviceID, a.accountID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, fmt.Errorf("device %q is not in your account — call list_devices to see your devices", deviceID)
+	}
 	if err != nil {
 		return nil, err
 	}
-	for _, d := range devices { // already ordered last_seen desc
-		if !a.scope.AllowsDevice(d.ID) {
-			continue
-		}
-		if dc, ok := a.hub.Get(d.ID); ok {
-			dc.SetHumanize(d.Humanize)
-			return dc, nil
-		}
+	if !a.scope.AllowsDevice(d.ID) {
+		return nil, fmt.Errorf("device %q (%s) is not permitted for this API key — call list_devices to see the devices it can reach", d.Name, d.ID)
 	}
-	// Phrasing kept compatible with the smoke retry on /no device connected/.
-	return nil, errors.New("no device connected — open the abacad app on one of your devices and connect it, then try again (see list_devices)")
+	dc, ok := a.hub.Get(d.ID)
+	if !ok {
+		return nil, fmt.Errorf("device %q (%s) is not connected — open the abacad app on it", d.Name, d.ID)
+	}
+	dc.SetHumanize(d.Humanize)
+	return dc, nil
 }
 
 // List returns the account's devices with live status for the list_devices tool.

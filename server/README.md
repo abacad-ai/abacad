@@ -29,8 +29,9 @@ devices, and point their agent at one endpoint — `https://abacad.ai/mcp` — t
   a set of devices and methods (and, optionally, the `/connect` tunnel); create and
   manage keys on the dashboard's **Access** page. Tools:
   `list_devices`, `screenshot`, `tap`, `long_press`, `swipe`, `input_text`, `back`,
-  `home`, `recents`. Every action tool takes an optional `device_id`; omit it to use
-  your only / most-recently-active device.
+  `home`, `recents`. Every action tool **requires** a `device_id` (the id from
+  `list_devices`) — there is no default device, so a call with no `device_id` is
+  rejected. Call `list_devices` first to get the id.
 - **Device WebSocket** (`/device?token=<device-token>`) — the device dials out
   (NAT-friendly) and holds the connection open. The per-device token maps the socket
   to an account + a unique `device_id`. The wire protocol (`{id,method,params}` /

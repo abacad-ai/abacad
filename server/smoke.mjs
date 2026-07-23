@@ -21,45 +21,51 @@ await client.connect(new StreamableHTTPClientTransport(url, transportOpts));
 const { tools } = await client.listTools();
 console.log("tools:", tools.map((t) => t.name).join(", "));
 
-// The device may still be connecting; retry the first call briefly.
-async function callWithRetry(name, args, tries = 20) {
-  for (let i = 0; i < tries; i++) {
-    const r = await client.callTool({ name, arguments: args });
-    const text = r.content.find((c) => c.type === "text")?.text ?? "";
-    if (!r.isError || !/no device connected/.test(text)) return r;
-    await new Promise((res) => setTimeout(res, 300));
-  }
-  throw new Error(`device never connected for ${name}`);
-}
-
 const textOf = (r) =>
   r.content.filter((c) => c.type === "text").map((c) => c.text).join("\n");
 
+// Every tool now requires an explicit device_id — there is no fallback. The mock
+// device may still be connecting, so poll list_devices until one is online and
+// use its id for every subsequent call.
+async function waitForDeviceID(tries = 20) {
+  for (let i = 0; i < tries; i++) {
+    const r = await client.callTool({ name: "list_devices", arguments: {} });
+    try {
+      const online = JSON.parse(textOf(r)).find((d) => d.online);
+      if (online) return online.device_id;
+    } catch {}
+    await new Promise((res) => setTimeout(res, 300));
+  }
+  throw new Error("no device came online");
+}
+const device_id = await waitForDeviceID();
+console.log("device:", device_id);
+
 // screenshot returns an image + (by default) the UI tree.
-const shot = await callWithRetry("screenshot", {});
+const shot = await client.callTool({ name: "screenshot", arguments: { device_id } });
 const shotText = textOf(shot);
 const hasImage = shot.content.some((c) => c.type === "image" && typeof c.data === "string" && c.data.length > 0);
 console.log("screenshot content types:", shot.content.map((c) => c.type).join(","), "| tree present:", /"nodes"/.test(shotText));
 
 // opting out of the tree still yields an image, no tree.
-const shotNoTree = await client.callTool({ name: "screenshot", arguments: { include_ui_tree: false } });
+const shotNoTree = await client.callTool({ name: "screenshot", arguments: { device_id, include_ui_tree: false } });
 const treeSuppressed = !/"nodes"/.test(textOf(shotNoTree));
 
-const tap = await client.callTool({ name: "tap", arguments: { x: 120, y: 130 } });
+const tap = await client.callTool({ name: "tap", arguments: { device_id, x: 120, y: 130 } });
 console.log("tap:", textOf(tap));
 
-const longPress = await client.callTool({ name: "long_press", arguments: { x: 120, y: 130 } });
+const longPress = await client.callTool({ name: "long_press", arguments: { device_id, x: 120, y: 130 } });
 console.log("long_press:", textOf(longPress));
 
-const swipe = await client.callTool({ name: "swipe", arguments: { x1: 540, y1: 1400, x2: 540, y2: 400 } });
+const swipe = await client.callTool({ name: "swipe", arguments: { device_id, x1: 540, y1: 1400, x2: 540, y2: 400 } });
 console.log("swipe:", textOf(swipe));
 
-const type = await client.callTool({ name: "input_text", arguments: { text: "hello world" } });
+const type = await client.callTool({ name: "input_text", arguments: { device_id, text: "hello world" } });
 console.log("input_text:", textOf(type));
 
-const back = await client.callTool({ name: "back", arguments: {} });
-const home = await client.callTool({ name: "home", arguments: {} });
-const recents = await client.callTool({ name: "recents", arguments: {} });
+const back = await client.callTool({ name: "back", arguments: { device_id } });
+const home = await client.callTool({ name: "home", arguments: { device_id } });
+const recents = await client.callTool({ name: "recents", arguments: { device_id } });
 console.log("nav keys:", textOf(back), "|", textOf(home), "|", textOf(recents));
 
 await client.close();

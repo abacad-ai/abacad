@@ -26,9 +26,9 @@ const commandTimeout = 60 * time.Second
 // The handler builds one per request from the bearer token; the dispatcher uses
 // it so tools never see another account's devices.
 type DeviceResolver interface {
-	// Resolve returns the live connection for an optional device_id. Empty
-	// deviceID means "pick my default": the sole device, else the most-recently
-	// active one that is online. Errors are surfaced to the agent as tool errors.
+	// Resolve returns the live connection for a required device_id. Empty
+	// deviceID is an error, not a default — there is no auto-selection. Errors
+	// are surfaced to the agent as tool errors.
 	Resolve(ctx context.Context, deviceID string) (*relay.DeviceConn, error)
 	// List returns a summary of the account's devices for the list_devices tool.
 	List(ctx context.Context) ([]DeviceSummary, error)
@@ -47,12 +47,12 @@ type DeviceSummary struct {
 	LastSeen string `json:"last_seen,omitempty"`
 }
 
-// deviceIDArg is the optional target-selector present on every action tool.
+// deviceIDArg is the required target-selector present on every action tool.
 type deviceIDArg struct {
 	DeviceID string `json:"device_id"`
 }
 
-const deviceIDSchema = `"device_id":{"type":"string","description":"which device to target (from list_devices); omit to use your only / most-recently-active device"}`
+const deviceIDSchema = `"device_id":{"type":"string","description":"REQUIRED — which device to target (the device_id from list_devices). There is no default; a call with no device_id is rejected, so always pass one explicitly."}`
 
 // actionTool is a device-driving tool. call receives the already-resolved
 // connection for the target device. A file-transfer tool sets fileCall instead
@@ -71,8 +71,9 @@ type actionTool struct {
 // verbs plus the desktop verbs (click/right_click/drag/scroll/press_keys/composite).
 // The list is a global superset — a device answers the subset it implements and
 // rejects the rest as "unknown method", so no per-platform filtering is needed.
-// Every tool's schema leads with an optional device_id selector (the first
-// property, by convention) for multi-device accounts.
+// Every tool's schema leads with a required device_id selector (the first
+// property, by convention); there is no default device, so the caller must name
+// one on every call.
 var actionTools = []actionTool{
 	{
 		name:        "screenshot",
@@ -629,7 +630,7 @@ func textResult(s string) toolResult {
 
 // listDevicesTool describes the account's devices so the agent can pick one.
 const listDevicesName = "list_devices"
-const listDevicesDescription = "List the devices connected to your abacad account, with their id, name, platform (e.g. android, macos, browser), and whether they are currently online. Use the platform to pick the right verbs — mobile devices take tap/swipe, desktops take click/scroll/press_keys, and a browser device is best driven with execute (run JS in the page) alongside screenshot/click/scroll. Pass a device_id to any other tool to target a specific device; omit it to use your only / most-recently-active device."
+const listDevicesDescription = "List the devices connected to your abacad account, with their id, name, platform (e.g. android, macos, browser), and whether they are currently online. Use the platform to pick the right verbs — mobile devices take tap/swipe, desktops take click/scroll/press_keys, and a browser device is best driven with execute (run JS in the page) alongside screenshot/click/scroll. Every other tool requires a device_id — pass the device_id of the device you want to target on every call. There is no default device, so call this first to get the id."
 const listDevicesSchema = `{"type":"object","properties":{},"additionalProperties":false}`
 
 // toolInfos returns the tools/list payload (list_devices first, then the device

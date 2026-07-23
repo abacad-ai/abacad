@@ -30,12 +30,12 @@ rather than firing a single action. So, unlike the single-shot verbs (`tap`, `cl
 the verb lives in an `action` parameter and the tool name is the **noun** it operates on
 — mirroring `screenshot` (`screen` + `shot` → `screen` + `recording`).
 
-`device_id` comes first, matching the convention across every device tool: an
-optional target selector always in the leading position, then the tool's own args.
+`device_id` comes first, matching the convention across every device tool: the
+required target selector always in the leading position, then the tool's own args.
 
 ```
 screen_recording(
-  device_id: <opt — defaults to your only / most-recently-active device>,
+  device_id: <required — the device_id from list_devices; no default device>,
   action:  "start" | "stop" | "status",
 
   live: {                            # stream the recording to a human now

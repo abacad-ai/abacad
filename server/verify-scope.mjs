@@ -88,10 +88,10 @@ async function main() {
   check("list_devices shows device1", textOf(ld).includes(id1));
   check("list_devices hides device2", !textOf(ld).includes(id2), textOf(ld));
 
-  const shot = await rpc(secret, "tools/call", { name: "screenshot", arguments: {} });
+  const shot = await rpc(secret, "tools/call", { name: "screenshot", arguments: { device_id: id1 } });
   check("screenshot allowed on in-scope device", !isErr(shot), textOf(shot));
 
-  const tap = await rpc(secret, "tools/call", { name: "tap", arguments: { x: 1, y: 1 } });
+  const tap = await rpc(secret, "tools/call", { name: "tap", arguments: { device_id: id1, x: 1, y: 1 } });
   check("tap denied (method not in scope)", isErr(tap) && /not permitted/.test(textOf(tap)), textOf(tap));
 
   const shot2 = await rpc(secret, "tools/call", { name: "screenshot", arguments: { device_id: id2 } });
@@ -113,7 +113,7 @@ async function main() {
   const names2 = (list2.json.result?.tools ?? []).map((t) => t.name);
   check("tools/list now includes tap", names2.includes("tap"));
 
-  const tap2 = await rpc(secret, "tools/call", { name: "tap", arguments: { x: 1, y: 1 } });
+  const tap2 = await rpc(secret, "tools/call", { name: "tap", arguments: { device_id: id1, x: 1, y: 1 } });
   check("tap now allowed", !isErr(tap2), textOf(tap2));
 
   const ld2 = await rpc(secret, "tools/call", { name: "list_devices", arguments: {} });

@@ -36,8 +36,8 @@ type Handler struct {
 }
 
 // ServeHTTP handles GET /connect?device=<id>&target=<host:port> (token via
-// ?token= or Authorization: Bearer, checked by ResolverFor). device may be empty
-// to use the account's default (sole / most-recently-active online) device.
+// ?token= or Authorization: Bearer, checked by ResolverFor). device is required:
+// Resolve rejects an empty device with an error (there is no default device).
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	resolver, accountID, scope, err := h.ResolverFor(r)
 	if err != nil {
