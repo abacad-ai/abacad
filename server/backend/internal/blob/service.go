@@ -108,3 +108,18 @@ func (s *Service) Open(accountID, id string) (*os.File, store.Blob, error) {
 	}
 	return f, b, nil
 }
+
+// OpenByID is Open without the account gate: the caller has already proven
+// authorization out of band (a verified capability-URL signature), so ownership
+// is not re-checked here. Never call this on an unauthenticated path.
+func (s *Service) OpenByID(id string) (*os.File, store.Blob, error) {
+	b, err := s.Store.BlobByID(id)
+	if err != nil {
+		return nil, store.Blob{}, err
+	}
+	f, err := os.Open(filepath.Join(s.Dir, b.ID)) // b.ID is from the DB, not user input
+	if err != nil {
+		return nil, store.Blob{}, err
+	}
+	return f, b, nil
+}

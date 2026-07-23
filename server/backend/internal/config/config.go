@@ -25,6 +25,14 @@ type Config struct {
 	SSHHostKey string // path to the jump's persistent host key (created if absent)
 	BaseDomain string // domain devices hang off, e.g. "abacad.ai"
 
+	// Signed /blobs capability URLs (send_file / get_file). BlobSigningKey is the
+	// HMAC key; empty means "generate a random one at boot" (fine for a single
+	// instance, set it explicitly for persistence across restarts / multi-instance).
+	// PublicBaseURL is the scheme+host the minted URLs point at; empty derives
+	// https://<BaseDomain>, and it is overridable for local testing.
+	BlobSigningKey string
+	PublicBaseURL  string
+
 	// Google OAuth ("Sign in with Google"). Disabled unless both the client id
 	// and secret are set; RedirectURL is optional and derived from the incoming
 	// request when empty (<origin>/api/auth/google/callback).
@@ -56,6 +64,8 @@ func Load() Config {
 	flag.StringVar(&c.SSHAddr, "ssh-addr", envOr("ABACAD_SSH_ADDR", ""), "SSH jump host listen address(es), comma-separated e.g. :22,:443 (empty disables it)")
 	flag.StringVar(&c.SSHHostKey, "ssh-host-key", envOr("ABACAD_SSH_HOST_KEY", "ssh_host_ed25519_key"), "path to the SSH jump host key (created if absent)")
 	flag.StringVar(&c.BaseDomain, "base-domain", envOr("ABACAD_BASE_DOMAIN", "abacad.ai"), "domain devices are addressed under (ssh <device>.<base-domain>)")
+	flag.StringVar(&c.BlobSigningKey, "blob-signing-key", envOr("ABACAD_BLOB_SIGNING_KEY", ""), "HMAC key for signed /blobs capability URLs (empty generates a random key at boot)")
+	flag.StringVar(&c.PublicBaseURL, "public-base-url", envOr("ABACAD_PUBLIC_BASE_URL", ""), "scheme+host that minted signed URLs point at (empty derives https://<base-domain>)")
 	flag.StringVar(&c.GoogleClientID, "google-client-id", envOr("ABACAD_GOOGLE_CLIENT_ID", ""), "Google OAuth client ID (enables 'Sign in with Google' when set together with the secret)")
 	flag.StringVar(&c.GoogleClientSecret, "google-client-secret", envOr("ABACAD_GOOGLE_CLIENT_SECRET", ""), "Google OAuth client secret")
 	flag.StringVar(&c.GoogleRedirectURL, "google-redirect-url", envOr("ABACAD_GOOGLE_REDIRECT_URL", ""), "Google OAuth redirect URL (default: derived from the request as <origin>/api/auth/google/callback)")

@@ -1,15 +1,11 @@
 package mcp
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"abacad/internal/protocol"
 	"abacad/internal/relay"
@@ -375,16 +371,16 @@ var actionTools = []actionTool{
 	// device without the verb rejects them as unknown). The bytes ride the
 	// /blobs data plane over HTTP, never the device socket — see docs. ---
 	{
-		name:        "push_file",
-		description: "Write a file onto the connected device's filesystem at an absolute path. Provide the bytes inline as text (for a text file) or content_base64 (for binary); exactly one. The device fetches the bytes over HTTP and writes them, so large files are fine. Returns the bytes written and their sha256. Parent directories must already exist. This is a real filesystem write — the path is whatever you pass, subject to the device user's permissions.",
-		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"path":{"type":"string","description":"absolute destination path on the device"},"content":{"type":"string","description":"file contents as UTF-8 text (use this for text files)"},"content_base64":{"type":"string","description":"file contents as base64 (use this for binary files); mutually exclusive with content"},"mode":{"type":"integer","description":"unix file mode, e.g. 493 for 0755 (default 420 = 0644)"}},"required":["path"],"additionalProperties":false}`,
-		fileCall:    pushFile,
+		name:        "send_file",
+		description: "Send a file TO the device's filesystem. Returns a short-lived signed upload URL; POST the file bytes to that URL and the server writes them to the device at the given path, returning {written, size, sha256} on success (or an error status) in the POST response — so you learn pass/fail from the POST, not from a later call. The bytes ride HTTP, never this MCP channel. Parent directories must already exist. This is a real filesystem write, subject to the device user's permissions.",
+		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"path":{"type":"string","description":"absolute destination path on the device"},"mode":{"type":"integer","description":"unix file mode, e.g. 493 for 0755 (default 420 = 0644)"}},"required":["path"],"additionalProperties":false}`,
+		fileCall:    sendFile,
 	},
 	{
-		name:        "pull_file",
-		description: "Read a file from the connected device's filesystem at an absolute path. The device uploads the bytes over HTTP; small text files (<= 64 KiB) are returned inline, otherwise you get the blob id, size, and sha256 and can fetch the raw bytes from GET /blobs/{id}. Use this to inspect configs, logs, or any file the device user can read.",
-		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"path":{"type":"string","description":"absolute source path on the device"},"max_inline_bytes":{"type":"integer","description":"cap on inlined text (default 65536); larger files return a blob id only"}},"required":["path"],"additionalProperties":false}`,
-		fileCall:    pullFile,
+		name:        "get_file",
+		description: "Get a file FROM the device's filesystem. The device uploads the bytes over HTTP; returns a short-lived signed download URL plus the size and sha256. GET that URL to fetch the raw bytes (Range/resume supported). The bytes never cross this MCP channel. Use this to retrieve configs, logs, or any file the device user can read.",
+		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"path":{"type":"string","description":"absolute source path on the device"}},"required":["path"],"additionalProperties":false}`,
+		fileCall:    getFile,
 	},
 
 	// --- Screen recording (file channel). Continuous capture, recorded on-device
@@ -501,80 +497,40 @@ func formatRecording(action string, r protocol.ScreenRecordingResult) string {
 	return b.String()
 }
 
-// maxInlineDefault bounds how much of a pulled file is returned inline in the
-// tool result, to keep a large pull from flooding the agent's context. Beyond
-// it (or for non-text bytes) the agent gets the blob id and fetches the rest.
-const maxInlineDefault = 64 << 10
-
-// pushFile stages the agent-provided bytes as a blob, then tells the device to
-// download that blob and write it to dest. The device verifies the bytes it
-// wrote by size + sha256, which we cross-check against what we staged.
-func pushFile(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage, accountID string, blobs BlobStore) toolResult {
+// sendFile returns a signed upload URL bound to (account, device, path, mode). The
+// agent POSTs the file bytes to that URL; the server (POST /blobs/send) stores
+// them, delivers them to the device via the same push_file device command as
+// before, and reports the device-confirmed sha256 in the POST response — so no
+// bytes cross this MCP channel. callTool already resolved + liveness-checked the
+// device, so a URL is only minted for a device that is currently online.
+func sendFile(_ context.Context, _ *relay.DeviceConn, args json.RawMessage, accountID string, blobs BlobStore) toolResult {
 	var a struct {
-		Path          string  `json:"path"`
-		Content       *string `json:"content"`
-		ContentBase64 *string `json:"content_base64"`
-		Mode          *int    `json:"mode"`
+		DeviceID string `json:"device_id"`
+		Path     string `json:"path"`
+		Mode     *int   `json:"mode"`
 	}
 	if err := json.Unmarshal(args, &a); err != nil {
 		return errorResult("invalid args: " + err.Error())
 	}
 	if a.Path == "" {
-		return errorResult("push_file requires a path")
+		return errorResult("send_file requires a path")
 	}
-	if (a.Content == nil) == (a.ContentBase64 == nil) {
-		return errorResult("push_file requires exactly one of content or content_base64")
-	}
-
-	var data []byte
-	if a.Content != nil {
-		data = []byte(*a.Content)
-	} else {
-		b, err := base64.StdEncoding.DecodeString(*a.ContentBase64)
-		if err != nil {
-			return errorResult("content_base64 is not valid base64: " + err.Error())
-		}
-		data = b
-	}
-
-	blobID, size, sum, err := blobs.Put(accountID, "application/octet-stream", bytes.NewReader(data))
-	if err != nil {
-		return errorResult("could not stage file: " + err.Error())
-	}
-
-	params := map[string]any{"blob_id": blobID, "dest_path": a.Path}
-	if a.Mode != nil {
-		params["mode"] = *a.Mode
-	}
-	raw, err := dc.Send(ctx, protocol.MethodPushFile, params, commandTimeout)
-	if err != nil {
-		return errorResult(err.Error())
-	}
-	var r protocol.PushFileResult
-	_ = json.Unmarshal(raw, &r)
-	if r.SHA256 != "" && r.SHA256 != sum {
-		return errorResult(fmt.Sprintf("integrity check failed: staged sha256 %s but device wrote %s", sum, r.SHA256))
-	}
-	return textResult(fmt.Sprintf("wrote %d bytes to %s (sha256 %s)", size, a.Path, sum))
+	upURL := blobs.SignedUploadURL(accountID, a.DeviceID, a.Path, a.Mode)
+	return textResult(fmt.Sprintf("POST the file bytes to this URL to write %s on the device; the response reports {written, size, sha256}:\n%s", a.Path, upURL))
 }
 
-// pullFile asks the device to upload the file at path as a blob, then reads that
-// blob back and inlines it if it is small UTF-8 text; otherwise it returns the
-// handle (blob id + size + sha256) for the agent to fetch on its own terms.
-func pullFile(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage, accountID string, blobs BlobStore) toolResult {
+// getFile asks the device to upload the file at path as a blob, then returns a
+// signed download URL for it (plus size + sha256). The agent GETs that URL to
+// fetch the raw bytes; nothing is inlined into the tool result.
+func getFile(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage, _ string, blobs BlobStore) toolResult {
 	var a struct {
-		Path           string `json:"path"`
-		MaxInlineBytes *int64 `json:"max_inline_bytes"`
+		Path string `json:"path"`
 	}
 	if err := json.Unmarshal(args, &a); err != nil {
 		return errorResult("invalid args: " + err.Error())
 	}
 	if a.Path == "" {
-		return errorResult("pull_file requires a path")
-	}
-	inlineCap := int64(maxInlineDefault)
-	if a.MaxInlineBytes != nil && *a.MaxInlineBytes >= 0 {
-		inlineCap = *a.MaxInlineBytes
+		return errorResult("get_file requires a path")
 	}
 
 	raw, err := dc.Send(ctx, protocol.MethodPullFile, map[string]any{"src_path": a.Path}, commandTimeout)
@@ -586,24 +542,8 @@ func pullFile(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage, a
 		return errorResult("device did not return a blob for the file")
 	}
 
-	handle := fmt.Sprintf("blob_id %s · %d bytes · sha256 %s", r.BlobID, r.Size, r.SHA256)
-	if r.Size > inlineCap {
-		return textResult(fmt.Sprintf("%s\n(too large to inline; fetch the bytes from GET /blobs/%s)", handle, r.BlobID))
-	}
-
-	rc, _, _, err := blobs.Open(accountID, r.BlobID)
-	if err != nil {
-		return errorResult("could not read the uploaded blob: " + err.Error())
-	}
-	defer rc.Close()
-	content, err := io.ReadAll(io.LimitReader(rc, inlineCap))
-	if err != nil {
-		return errorResult("could not read the uploaded blob: " + err.Error())
-	}
-	if !utf8.Valid(content) {
-		return textResult(fmt.Sprintf("%s\n(binary content; fetch the bytes from GET /blobs/%s)", handle, r.BlobID))
-	}
-	return textResult(fmt.Sprintf("%s\n\n%s", handle, content))
+	dlURL := blobs.SignedDownloadURL(r.BlobID)
+	return textResult(fmt.Sprintf("GET this URL to download %s (%d bytes, sha256 %s):\n%s", a.Path, r.Size, r.SHA256, dlURL))
 }
 
 // globalAction builds a no-argument nav-key tool (back / home / recents).

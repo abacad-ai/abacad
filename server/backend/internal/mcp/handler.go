@@ -18,18 +18,18 @@ type Scope interface {
 	AllowsMethod(name string) bool
 }
 
-// BlobStore lets the file-transfer tools (push_file / pull_file) stage and read
-// data-plane bytes on behalf of the agent's account, so the agent never has to
-// leave the MCP surface to move a file. Satisfied by an adapter over
-// blob.Service in main. All operations are account-scoped: Open returns the
-// not-found error for a blob owned by a different account.
+// BlobStore mints the signed capability URLs the file-transfer tools hand back to
+// the agent (send_file / get_file), so the agent only ever deals in URLs and the
+// bytes never cross the MCP surface. Satisfied by an adapter over blob.Service +
+// blob.Signer in main.
 type BlobStore interface {
-	// Put stores r's bytes under accountID and returns the new blob's id, size,
-	// and hex sha256.
-	Put(accountID, contentType string, r io.Reader) (id string, size int64, sha256 string, err error)
-	// Open returns a reader over the blob's bytes plus its size and hex sha256,
-	// if id belongs to accountID. The caller closes the reader.
-	Open(accountID, id string) (rc io.ReadCloser, size int64, sha256 string, err error)
+	// SignedUploadURL mints a capability URL bound to (accountID, deviceID, path,
+	// mode). The agent POSTs bytes to it; the server stores them and delivers them
+	// to that device path, returning pass/fail on the POST. Backs send_file.
+	SignedUploadURL(accountID, deviceID, path string, mode *int) string
+	// SignedDownloadURL mints a capability URL the agent GETs to fetch an existing
+	// blob's bytes. Backs get_file.
+	SignedDownloadURL(blobID string) string
 }
 
 // ResolverFunc builds the per-request DeviceResolver and method Scope from the
@@ -40,8 +40,9 @@ type ResolverFunc func(r *http.Request) (DeviceResolver, Scope, error)
 // Handler serves POST /mcp (Streamable HTTP, stateless).
 type Handler struct {
 	ResolverFor ResolverFunc
-	// Blobs backs push_file / pull_file. May be nil, in which case those tools
-	// return a clear "file transfer is not configured" error rather than panic.
+	// Blobs backs send_file / get_file (it mints their signed URLs). May be nil,
+	// in which case those tools return a clear "file transfer is not configured"
+	// error rather than panic.
 	Blobs BlobStore
 }
 
