@@ -1,7 +1,10 @@
 package ai.abacad.android
 
 import android.net.Uri
+import android.os.Environment
+import android.system.ErrnoException
 import android.system.Os
+import android.util.Log
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -41,7 +44,8 @@ class BlobClient private constructor(
     /**
      * Stream the blob to [destPath] and return (bytesWritten, hexSha256). Writes to
      * a temp file in the destination directory and renames into place, so a reader
-     * never observes a half-written file. The parent directory must already exist.
+     * never observes a half-written file. Missing parent directories are created
+     * (best effort) so a push to a fresh folder doesn't require pre-`mkdir`.
      */
     fun download(blobId: String, destPath: String, mode: Int): Pair<Long, String> {
         val req = Request.Builder().url("$base/$blobId")
@@ -52,7 +56,15 @@ class BlobClient private constructor(
             }
             val dest = File(destPath)
             val dir = dest.parentFile ?: throw IOException("no parent directory for $destPath")
-            val tmp = File.createTempFile(".abacad-dl-", null, dir)
+            // Create the destination tree if it doesn't exist yet. mkdirs() returns
+            // false when it can't (no permission, or already present) — don't fail on
+            // that here; the temp-file create below reports the real, path-specific error.
+            if (!dir.exists()) dir.mkdirs()
+            val tmp = try {
+                File.createTempFile(".abacad-dl-", null, dir)
+            } catch (e: IOException) {
+                throw explainWriteFailure(e, destPath)
+            }
             val digest = MessageDigest.getInstance("SHA-256")
             var size = 0L
             try {
@@ -67,14 +79,43 @@ class BlobClient private constructor(
                         }
                     }
                 }
-                Os.chmod(tmp.absolutePath, mode)
+                // Emulated/FUSE external storage (/sdcard) ignores unix perms and throws
+                // EPERM on chmod even with All-files access — so this is best effort, not
+                // fatal. On real filesystems (app dirs, removable cards) it applies normally.
+                try {
+                    Os.chmod(tmp.absolutePath, mode)
+                } catch (e: ErrnoException) {
+                    Log.d(TAG, "chmod skipped on $destPath (emulated storage?): ${e.message}")
+                }
                 if (!tmp.renameTo(dest)) throw IOException("could not move file into $destPath")
             } catch (e: Exception) {
                 tmp.delete()
-                throw e
+                throw explainWriteFailure(e, destPath)
             }
             return Pair(size, hex(digest.digest()))
         }
+    }
+
+    /**
+     * Turn a raw filesystem error into an actionable one when the likely cause is a
+     * missing All-files-access grant: a permission/ENOENT failure writing to *shared*
+     * storage while [Environment.isExternalStorageManager] is false. Anything else
+     * (app-owned dirs, shell-only paths like /data/local/tmp, real I/O errors) passes
+     * through unchanged — All-files access wouldn't fix those and we shouldn't imply it.
+     */
+    private fun explainWriteFailure(e: Exception, destPath: String): Exception {
+        val msg = e.message ?: ""
+        val permissionish = msg.contains("EACCES") || msg.contains("EPERM") ||
+            msg.contains("ENOENT") || msg.contains("Permission denied") ||
+            msg.contains("Operation not permitted") || msg.contains("No such file")
+        val shared = destPath.startsWith("/sdcard/") || destPath.startsWith("/storage/")
+        if (permissionish && shared && !Environment.isExternalStorageManager()) {
+            return IOException(
+                "cannot write $destPath — grant \"Files & media access\" in the abacad app " +
+                    "(Setup → Files & media access), then retry",
+            )
+        }
+        return e
     }
 
     /** Stream [srcPath] to /blobs and return (blobId, size, hexSha256). */
@@ -100,6 +141,8 @@ class BlobClient private constructor(
     }
 
     companion object {
+        private const val TAG = "ABACAD"
+
         /**
          * Derive the /blobs endpoint from the relay URL: same host, over http(s)
          * instead of ws(s). Returns null if the URL can't be parsed into an

@@ -53,7 +53,7 @@ The tool surface an agent drives, split by form factor.
 | `composite` | accessibility / pixels | Run an ordered sequence of steps in one call — taps, `long_press`, `swipe`, text, key presses, `wait(ms)`, and `screenshot`s — executed on-device with real timing. Two wins: batch several actions plus a final screenshot into one round-trip, and express fine-grained input the flat verbs can't (multiple pointers run **concurrently** for multi-touch — pinch, rotate, path gestures). The primitive the named verbs are sugar over. | Android 🟡 · iOS 🔮 |
 | Clipboard get / set | API | Read and write the device clipboard, both directions. | Android 🔮 |
 | TCP tunnel (`/connect`) | API | Raw TCP stream to a `host:port` reachable from the device. | Android ✅ |
-| `push_file` / `pull_file` | API | Read / write files on the device by path, over the `/blobs` data plane. | Android 🟡 |
+| `push_file` / `pull_file` | API | Read / write files on the device by path, over the `/blobs` data plane. Missing parent dirs are created automatically. Under scoped storage, writes are confined to the app's own external dir until the user opts in to **Files & media access** (All-files access, one toggle in the Setup checklist), which unlocks arbitrary shared-storage paths like `/sdcard/Pictures/…`; pushed media is media-scanned so it appears in the gallery. Shell-only paths (`/data/local/tmp`) stay adb-only — no app permission reaches them. | Android 🟡 |
 | File transfer (`/blobs`) | API | Generic HTTP upload / download of binary payloads by blob id. | Android ✅ |
 
 ### Desktop

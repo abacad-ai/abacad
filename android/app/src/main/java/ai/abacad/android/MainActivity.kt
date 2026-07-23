@@ -11,6 +11,7 @@ import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.PowerManager
 import android.provider.Settings
 import android.text.format.DateFormat
@@ -229,6 +230,39 @@ class MainActivity : Activity() {
                         Uri.parse("package:$packageName"),
                     ),
                 )
+            },
+        )
+
+        // All-files access: without it, push_file/pull_file can only touch the app's
+        // own external dir; scoped storage blocks raw writes to shared paths like
+        // /sdcard/Pictures. Granting is a single Settings toggle (no runtime dialog
+        // exists for this one), and the row flips green on return via onResume.
+        checks += Check(
+            title = "Files & media access",
+            evaluate = {
+                if (Environment.isExternalStorageManager()) {
+                    Level.OK to "Granted — can save to any folder (Pictures, Download…)"
+                } else {
+                    Level.WARN to "Off — tap to allow saving files to shared storage"
+                }
+            },
+            onTap = {
+                if (Environment.isExternalStorageManager()) {
+                    toast("Already granted — files can be saved anywhere in shared storage")
+                } else {
+                    // Deep-link straight to this app's All-files-access toggle; fall
+                    // back to the all-apps list on ROMs that don't honor the per-app action.
+                    try {
+                        startActivity(
+                            Intent(
+                                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                                Uri.parse("package:$packageName"),
+                            ),
+                        )
+                    } catch (_: ActivityNotFoundException) {
+                        safeStart(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                    }
+                }
             },
         )
 

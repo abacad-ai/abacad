@@ -21,6 +21,7 @@ import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.hardware.HardwareBuffer
+import android.media.MediaScannerConnection
 import android.net.ConnectivityManager
 import android.net.Network
 import android.os.BatteryManager
@@ -666,6 +667,16 @@ class AbacadAccessibilityService : AccessibilityService() {
         if (blobId.isEmpty() || dest.isEmpty()) throw IllegalArgumentException("push_file requires blob_id and dest_path")
         val mode = params.optInt("mode", "644".toInt(8)) // 0644
         val (size, sha) = blobs.download(blobId, dest, mode)
+        // A raw File write to shared storage isn't indexed into MediaStore, so a pushed
+        // image/video wouldn't show in the gallery until the next scan. Nudge the scanner
+        // for shared-storage destinations so it appears right away. Best effort.
+        if (dest.startsWith("/sdcard/") || dest.startsWith("/storage/")) {
+            try {
+                MediaScannerConnection.scanFile(applicationContext, arrayOf(dest), null, null)
+            } catch (e: Exception) {
+                Log.d(TAG, "media scan skipped for $dest: ${e.message}")
+            }
+        }
         return JSONObject().put("written", true).put("size", size).put("sha256", sha)
     }
 

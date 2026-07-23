@@ -33,6 +33,13 @@
     <!-- CAMERA: only to scan the connection QR shown by the server dashboard. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <!-- MANAGE_EXTERNAL_STORAGE ("All files access"): lets push_file / pull_file
+         read and write arbitrary shared-storage paths (e.g. /sdcard/Pictures/…) with
+         plain java.io.File, which scoped storage otherwise blocks. Off by default and
+         opt-in from the Setup checklist (Environment.isExternalStorageManager());
+         until granted, transfers are confined to the app's own external files dir.
+         Does NOT reach shell-owned paths like /data/local/tmp — those stay adb-only. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
     <!-- Package visibility (Android 11+): so live view can detect + launch the
          droidVNC-NG companion (the real RFB server for the live channel). -->
