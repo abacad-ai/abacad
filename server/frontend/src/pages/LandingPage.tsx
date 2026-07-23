@@ -22,9 +22,9 @@ export function LandingPage() {
         </span>
         <h1
           className="mt-6 whitespace-nowrap font-display text-[clamp(1.05rem,5.4vw,3.75rem)] font-bold leading-[1.14] tracking-tight text-ink"
-          aria-label="Give a device to your coding agent."
+          aria-label="Connect any device to your coding agent."
         >
-          Give <RotatingLockup items={DEVICES} intervalMs={3000} /> to your{" "}
+          Connect <RotatingLockup items={DEVICES} intervalMs={3000} /> to your{" "}
           <RotatingLockup items={AGENTS} intervalMs={3000} startDelayMs={1500} />.
         </h1>
         <p className="mt-6 max-w-2xl text-base leading-7 text-ink-muted sm:text-lg">

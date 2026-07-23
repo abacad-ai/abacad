@@ -43,12 +43,22 @@ function usePrefersReducedMotion() {
   return reduced;
 }
 
-// Picks a random index other than `current` so the mark always visibly changes.
-function nextRandom(length: number, current: number) {
-  if (length < 2) return current;
-  const n = Math.floor(Math.random() * (length - 1));
-  // Map the (length-1) choices onto every index except `current`.
-  return n < current ? n : n + 1;
+// Picks a random index other than `current`, weighted by each item's `weight`
+// (default 1) so more popular brands surface more often. Still always changes.
+function nextWeighted(items: Brand[], current: number) {
+  if (items.length < 2) return current;
+  let total = 0;
+  for (let i = 0; i < items.length; i++) {
+    if (i !== current) total += items[i].weight ?? 1;
+  }
+  let r = Math.random() * total;
+  for (let i = 0; i < items.length; i++) {
+    if (i === current) continue;
+    r -= items[i].weight ?? 1;
+    if (r < 0) return i;
+  }
+  // Fallback for degenerate weights (all zero / float rounding).
+  return current === 0 ? 1 : 0;
 }
 
 // Devices and agents rotate on their own timers (and a start offset), each
@@ -75,7 +85,7 @@ export function RotatingLockup({
       intervalId = window.setInterval(() => {
         setPhase("leave");
         swapTimer.current = window.setTimeout(() => {
-          setIndex((i) => nextRandom(items.length, i));
+          setIndex((i) => nextWeighted(items, i));
           setPhase("enter");
           // Two frames so the browser paints the entering start state before we
           // transition it home — otherwise the "enter" step is skipped.
