@@ -466,6 +466,14 @@ func downloadsHandler(dir string) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+		// An .apk is a zip; the minimal prod container has no system mime.types,
+		// so http.ServeFile can't resolve the extension and content-sniffs it as
+		// application/zip. Android's download manager then sees a zip MIME on a
+		// .apk name and saves it as <name>.apk.zip. Set the right type ourselves
+		// (ServeFile leaves a pre-set Content-Type untouched).
+		if strings.EqualFold(filepath.Ext(name), ".apk") {
+			w.Header().Set("Content-Type", "application/vnd.android.package-archive")
+		}
 		http.ServeFile(w, r, p)
 	})
 }
