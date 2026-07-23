@@ -103,6 +103,13 @@ WIN_EXE     := windows/publish/Abacad.exe
 #   make build debug    → debug/dev builds only (fast, local; macOS ad-hoc signed)
 #   make build release  → publishable builds only (signed; macOS notarized dmg)
 #
+# A platform that fails to build is skipped, not fatal: the build moves on to the
+# rest, and the release variant still stages whatever did build. So one broken
+# toolchain — e.g. Windows/WinUI 3, which can't cross-build from macOS — doesn't
+# block shipping the others. (The per-platform CI jobs in release.yml invoke the
+# platform targets directly and still fail hard on their own, so a genuine
+# release regression is never masked.)
+#
 # `debug`/`release` after `build` are parsed as the variant here, not run as
 # separate goals. The release half needs the macOS signing/notary setup (see
 # macos-release) and emits an UNSIGNED Windows .exe — there's no Authenticode
@@ -122,12 +129,32 @@ endif
 debug release:
 	@:
 
-build-debug: android linux macos windows-debug
-	@echo "Built debug clients: Android, Linux, macOS, Windows (v$(VERSION))"
+# Platforms per variant. These are looped over inside the recipe (not declared as
+# prerequisites) on purpose: a prerequisite that fails aborts the whole build,
+# whereas a loop lets a failed platform be skipped so the rest still build. The
+# run exits 0 even when a platform is skipped — a partial local build is a success
+# here, not an error — but prints a loud SKIPPED line so it's never silent.
+DEBUG_PLATFORMS   := android linux macos windows-debug
+RELEASE_PLATFORMS := android-release linux-release macos-release windows-release
 
-build-release: android-release linux-release macos-release windows-release
-	@$(MAKE) stage
-	@echo "Built + staged release clients: Android, Linux, macOS, Windows (v$(VERSION))"
+build-debug:
+	@failed=""; \
+	for t in $(DEBUG_PLATFORMS); do \
+	  echo "==== build $$t ===="; \
+	  $(MAKE) $$t || { failed="$$failed $$t"; echo "  (skipped $$t — build failed)"; }; \
+	done; \
+	if [ -n "$$failed" ]; then echo "Built debug clients (v$(VERSION)) — SKIPPED failed:$$failed"; \
+	else echo "Built debug clients: Android, Linux, macOS, Windows (v$(VERSION))"; fi
+
+build-release:
+	@failed=""; \
+	for t in $(RELEASE_PLATFORMS); do \
+	  echo "==== build $$t ===="; \
+	  $(MAKE) $$t || { failed="$$failed $$t"; echo "  (skipped $$t — build failed)"; }; \
+	done; \
+	$(MAKE) stage; \
+	if [ -n "$$failed" ]; then echo "Built + staged release clients (v$(VERSION)) — SKIPPED failed:$$failed"; \
+	else echo "Built + staged release clients: Android, Linux, macOS, Windows (v$(VERSION))"; fi
 
 # Start the Go backend and the Vite frontend together in the foreground.
 # Open http://localhost:$(PORT). Ctrl-C stops both.
