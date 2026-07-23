@@ -39,12 +39,30 @@ android {
     namespace = "ai.abacad.android"
     compileSdk = 34
 
+    // NDK pinned to AGP 8.5.2's default so externalNativeBuild needs no toolchain
+    // hunting. The in-app RFB server (LibVNCServer, C) is compiled here.
+    ndkVersion = "26.1.10909125"
+
     defaultConfig {
         applicationId = "ai.abacad.android"
         minSdk = 30          // Android 11 — AccessibilityService.takeScreenshot() lives here
         targetSdk = 34
         versionCode = monorepoVersionCode
         versionName = monorepoVersion
+
+        // 64-bit only for now: the live-view target devices are arm64, and it
+        // keeps the LibVNCServer build (Spike B) to a single ABI while we prove
+        // the pipeline. Add armeabi-v7a here if a 32-bit device needs it.
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     signingConfigs {

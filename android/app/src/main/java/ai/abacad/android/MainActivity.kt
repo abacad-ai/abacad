@@ -176,6 +176,16 @@ class MainActivity : Activity() {
         ) {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIF)
         }
+
+        // Spike smoke-check: confirm the in-app RFB core (LibVNCServer, compiled
+        // straight into our APK — no droidVNC-NG companion) loads and runs on this
+        // device. Logs the linked LibVNCServer version to `adb logcat -s ABACAD`.
+        // Temporary — replaced when the real capture/input/VncPipe wiring lands.
+        try {
+            android.util.Log.i(AbacadAccessibilityService.TAG, "in-app RFB core: ${RfbNative.nativeVersion()}")
+        } catch (t: Throwable) {
+            android.util.Log.e(AbacadAccessibilityService.TAG, "in-app RFB core failed to load", t)
+        }
     }
 
     // ---- setup checklist ------------------------------------------------------
