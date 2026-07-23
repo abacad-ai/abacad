@@ -21,6 +21,7 @@ import (
 	"syscall"
 
 	"abacad-linux/internal/agent"
+	"abacad-linux/internal/gui"
 	"abacad-linux/internal/version"
 	"abacad-linux/internal/x11"
 )
@@ -38,23 +39,23 @@ func main() {
 	}
 
 	var flagURL, flagToken string
+	var flagGUI bool
 	flag.StringVar(&flagURL, "server-url", "", "relay device URL, wss://host/device[?token=…]")
 	flag.StringVar(&flagToken, "token", "", "device token (alternative to ?token= in the URL)")
+	flag.BoolVar(&flagGUI, "gui", false, "run the GTK4/libadwaita desktop client instead of the headless daemon")
 	flag.Parse()
 
 	cfg := loadConfigFile()
 	serverURL := firstNonEmpty(flagURL, os.Getenv("ABACAD_SERVER_URL"), cfg["server_url"])
 	token := firstNonEmpty(flagToken, os.Getenv("ABACAD_TOKEN"), cfg["token"])
-	if serverURL == "" {
-		log.Fatal("no server URL — set --server-url, ABACAD_SERVER_URL, or server_url in ~/.config/abacad/config")
-	}
-	if token != "" && !strings.Contains(serverURL, "token=") {
+	// Assemble the dial URL; the agent lifts ?token= into a header and leaves other
+	// query params (so ?version= rides through). For the GUI the URL may be empty —
+	// the user enters it in-app — so guard the assembly and defer the "no URL" fatal
+	// to the headless path below.
+	if serverURL != "" && token != "" && !strings.Contains(serverURL, "token=") {
 		serverURL = appendToken(serverURL, token)
 	}
-	// Advertise our version so the relay can show it in the dashboard / list_devices.
-	// The agent lifts ?token= into a header but leaves other query params, so this
-	// rides through to the server as ?version=.
-	if !strings.Contains(serverURL, "version=") {
+	if serverURL != "" && !strings.Contains(serverURL, "version=") {
 		serverURL = appendParam(serverURL, "version", version.Version)
 	}
 
@@ -71,6 +72,21 @@ func main() {
 		defer x.Close()
 		w, h := x.Size()
 		log.Printf("X11 display ready (%dx%d)", w, h)
+	}
+
+	// The GUI drives connections itself (Connect / Disconnect / Pause) and runs its
+	// own GTK main loop, returning when the window closes. Only in `-tags gui`
+	// builds is this the real libadwaita window; otherwise gui.Run reports that the
+	// binary has no GUI.
+	if flagGUI {
+		if err := gui.Run(serverURL, x); err != nil {
+			log.Fatalf("gui: %v", err)
+		}
+		return
+	}
+
+	if serverURL == "" {
+		log.Fatal("no server URL — set --server-url, ABACAD_SERVER_URL, or server_url in ~/.config/abacad/config (or run with --gui)")
 	}
 
 	a, err := agent.New(serverURL, x)

@@ -1,0 +1,22 @@
+# abacad relay connection, as a systemd *user* service.
+#
+# Keeps the device connected to the relay in the background using the saved
+# config (~/.config/abacad/config), so control survives closing the GUI window —
+# the window (abacad --gui) is just the front-end. Enable once with:
+#
+#   systemctl --user enable --now abacad.service
+#
+# The headless daemon here (no --gui) is cgo-free; the GUI app is launched
+# separately from the applications menu.
+[Unit]
+Description=abacad device agent (relay connection)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/abacad
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

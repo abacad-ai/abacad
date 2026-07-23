@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=abacad
+GenericName=Device agent
+Comment=Let an AI agent see and control this device — with a local pause & disconnect
+Exec=abacad --gui
+Icon=abacad
+Terminal=false
+Categories=Utility;Network;RemoteAccess;
+Keywords=agent;remote;automation;abacad;
+StartupNotify=true
