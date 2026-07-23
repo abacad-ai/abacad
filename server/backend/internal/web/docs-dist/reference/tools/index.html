@@ -1,0 +1,354 @@
+<!DOCTYPE html><html lang="en" dir="ltr" data-theme="dark" data-has-toc data-has-sidebar class="astro-bguv2lll"> <head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Tool reference | abacad docs</title><link rel="canonical" href="https://abacad.ai/docs/reference/tools/"/><link rel="sitemap" href="/docs/sitemap-index.xml"/><link rel="shortcut icon" href="/docs/favicon.svg" type="image/svg+xml"/><meta name="generator" content="Astro v5.18.2"/><meta name="generator" content="Starlight v0.30.6"/><meta property="og:title" content="Tool reference"/><meta property="og:type" content="article"/><meta property="og:url" content="https://abacad.ai/docs/reference/tools/"/><meta property="og:locale" content="en"/><meta property="og:description" content="Every operation abacad exposes to an agent on a connected device — screenshot, tap, swipe, type, run_command, execute, push_file/pull_file — split by form factor, with an honest per-platform status for each."/><meta property="og:site_name" content="abacad docs"/><meta name="twitter:card" content="summary_large_image"/><meta name="description" content="Every operation abacad exposes to an agent on a connected device — screenshot, tap, swipe, type, run_command, execute, push_file/pull_file — split by form factor, with an honest per-platform status for each."/><script>
+	window.StarlightThemeProvider = (() => {
+		const storedTheme =
+			typeof localStorage !== 'undefined' && localStorage.getItem('starlight-theme');
+		const theme =
+			storedTheme ||
+			(window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+		document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+		return {
+			updatePickers(theme = storedTheme || 'auto') {
+				document.querySelectorAll('starlight-theme-select').forEach((picker) => {
+					const select = picker.querySelector('select');
+					if (select) select.value = theme;
+					/** @type {HTMLTemplateElement | null} */
+					const tmpl = document.querySelector(`#theme-icons`);
+					const newIcon = tmpl && tmpl.content.querySelector('.' + theme);
+					if (newIcon) {
+						const oldIcon = picker.querySelector('svg.label-icon');
+						if (oldIcon) {
+							oldIcon.replaceChildren(...newIcon.cloneNode(true).childNodes);
+						}
+					}
+				});
+			},
+		};
+	})();
+</script><template id="theme-icons"><svg aria-hidden="true" class="light astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M5 12a1 1 0 0 0-1-1H3a1 1 0 0 0 0 2h1a1 1 0 0 0 1-1Zm.64 5-.71.71a1 1 0 0 0 0 1.41 1 1 0 0 0 1.41 0l.71-.71A1 1 0 0 0 5.64 17ZM12 5a1 1 0 0 0 1-1V3a1 1 0 0 0-2 0v1a1 1 0 0 0 1 1Zm5.66 2.34a1 1 0 0 0 .7-.29l.71-.71a1 1 0 1 0-1.41-1.41l-.66.71a1 1 0 0 0 0 1.41 1 1 0 0 0 .66.29Zm-12-.29a1 1 0 0 0 1.41 0 1 1 0 0 0 0-1.41l-.71-.71a1.004 1.004 0 1 0-1.43 1.41l.73.71ZM21 11h-1a1 1 0 0 0 0 2h1a1 1 0 0 0 0-2Zm-2.64 6A1 1 0 0 0 17 18.36l.71.71a1 1 0 0 0 1.41 0 1 1 0 0 0 0-1.41l-.76-.66ZM12 6.5a5.5 5.5 0 1 0 5.5 5.5A5.51 5.51 0 0 0 12 6.5Zm0 9a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Zm0 3.5a1 1 0 0 0-1 1v1a1 1 0 0 0 2 0v-1a1 1 0 0 0-1-1Z"/></svg> <svg aria-hidden="true" class="dark astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21.64 13a1 1 0 0 0-1.05-.14 8.049 8.049 0 0 1-3.37.73 8.15 8.15 0 0 1-8.14-8.1 8.59 8.59 0 0 1 .25-2A1 1 0 0 0 8 2.36a10.14 10.14 0 1 0 14 11.69 1 1 0 0 0-.36-1.05Zm-9.5 6.69A8.14 8.14 0 0 1 7.08 5.22v.27a10.15 10.15 0 0 0 10.14 10.14 9.784 9.784 0 0 0 2.1-.22 8.11 8.11 0 0 1-7.18 4.32v-.04Z"/></svg> <svg aria-hidden="true" class="auto astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg> </template><link rel="stylesheet" href="/docs/_astro/index.DYRNms0e.css"><script type="module" src="/docs/_astro/page.B1D-nYk3.js"></script></head> <body class="astro-bguv2lll"> <a href="#_top" class="astro-7q3lir66">Skip to content</a>  <div class="page sl-flex astro-vrdttmbt"> <header class="header astro-vrdttmbt"><div class="header sl-flex astro-kmkmnagf"> <div class="title-wrapper sl-flex astro-kmkmnagf"> <a href="/docs/" class="site-title sl-flex astro-m46x6ez3">  <img class="astro-m46x6ez3" alt="abacad" src="/docs/_astro/mark.Bos4knUP.svg" width="512" height="512">  <span class="astro-m46x6ez3" translate="no"> abacad docs </span> </a>  </div> <div class="sl-flex astro-kmkmnagf"> <site-search class="astro-kmkmnagf astro-v37mnknz" data-translations="{&#34;placeholder&#34;:&#34;Search&#34;}"> <button data-open-modal disabled aria-label="Search" aria-keyshortcuts="Control+K" class="astro-v37mnknz"> <svg aria-hidden="true" class="astro-v37mnknz astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21.71 20.29 18 16.61A9 9 0 1 0 16.61 18l3.68 3.68a.999.999 0 0 0 1.42 0 1 1 0 0 0 0-1.39ZM11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z"/></svg>  <span class="sl-hidden md:sl-block astro-v37mnknz" aria-hidden="true">Search</span> <kbd class="sl-hidden md:sl-flex astro-v37mnknz" style="display: none;"> <kbd class="astro-v37mnknz">Ctrl</kbd><kbd class="astro-v37mnknz">K</kbd> </kbd> </button> <dialog style="padding:0" aria-label="Search" class="astro-v37mnknz"> <div class="dialog-frame sl-flex astro-v37mnknz">  <button data-close-modal class="sl-flex md:sl-hidden astro-v37mnknz"> Cancel </button> <div class="search-container astro-v37mnknz"> <div id="starlight__search" class="astro-v37mnknz"></div> </div> </div> </dialog> </site-search>  <script>
+	(() => {
+		const openBtn = document.querySelector('button[data-open-modal]');
+		const shortcut = openBtn?.querySelector('kbd');
+		if (!openBtn || !(shortcut instanceof HTMLElement)) return;
+		const platformKey = shortcut.querySelector('kbd');
+		if (platformKey && /(Mac|iPhone|iPod|iPad)/i.test(navigator.platform)) {
+			platformKey.textContent = '⌘';
+			openBtn.setAttribute('aria-keyshortcuts', 'Meta+K');
+		}
+		shortcut.style.display = '';
+	})();
+</script> <script type="module" src="/docs/_astro/Search.astro_astro_type_script_index_0_lang.DZ3718RE.js"></script>   </div> <div class="sl-hidden md:sl-flex right-group astro-kmkmnagf"> <div class="sl-flex social-icons astro-kmkmnagf">  </div> <starlight-theme-select>  <label style="--sl-select-width: 6.25em" class="astro-4yphtoen"> <span class="sr-only astro-4yphtoen">Select theme</span> <svg aria-hidden="true" class="icon label-icon astro-4yphtoen astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg>  <select value="auto" autocomplete="off" class="astro-4yphtoen"> <option value="dark" class="astro-4yphtoen">Dark</option><option value="light" class="astro-4yphtoen">Light</option><option value="auto" selected class="astro-4yphtoen">Auto</option> </select> <svg aria-hidden="true" class="icon caret astro-4yphtoen astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg>  </label>  </starlight-theme-select>  <script>
+	StarlightThemeProvider.updatePickers();
+</script> <script type="module">const r="starlight-theme",o=e=>e==="auto"||e==="dark"||e==="light"?e:"auto",c=()=>o(typeof localStorage<"u"&&localStorage.getItem(r));function n(e){typeof localStorage<"u"&&localStorage.setItem(r,e==="light"||e==="dark"?e:"")}const l=()=>matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";function t(e){StarlightThemeProvider.updatePickers(e),document.documentElement.dataset.theme=e==="auto"?l():e,n(e)}matchMedia("(prefers-color-scheme: light)").addEventListener("change",()=>{c()==="auto"&&t("auto")});class s extends HTMLElement{constructor(){super(),t(c()),this.querySelector("select")?.addEventListener("change",a=>{a.currentTarget instanceof HTMLSelectElement&&t(o(a.currentTarget.value))})}}customElements.define("starlight-theme-select",s);</script> <script type="module">class s extends HTMLElement{constructor(){super();const e=this.querySelector("select");e&&(e.addEventListener("change",t=>{t.currentTarget instanceof HTMLSelectElement&&(window.location.pathname=t.currentTarget.value)}),window.addEventListener("pageshow",t=>{if(!t.persisted)return;const n=e.querySelector("option[selected]")?.index;n!==e.selectedIndex&&(e.selectedIndex=n??0)}))}}customElements.define("starlight-lang-select",s);</script> </div> </div> </header> <nav class="sidebar astro-vrdttmbt" aria-label="Main"> <starlight-menu-button class="astro-jif73yzw"> <button aria-expanded="false" aria-label="Menu" aria-controls="starlight__sidebar" class="sl-flex md:sl-hidden astro-jif73yzw"> <svg aria-hidden="true" class="astro-jif73yzw astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M3 8h18a1 1 0 1 0 0-2H3a1 1 0 0 0 0 2Zm18 8H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2Zm0-5H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2Z"/></svg>  </button> </starlight-menu-button> <script type="module">class s extends HTMLElement{constructor(){super(),this.btn=this.querySelector("button"),this.btn.addEventListener("click",()=>this.toggleExpanded());const t=this.closest("nav");t&&t.addEventListener("keyup",e=>this.closeOnEscape(e))}setExpanded(t){this.setAttribute("aria-expanded",String(t)),document.body.toggleAttribute("data-mobile-menu-expanded",t)}toggleExpanded(){this.setExpanded(this.getAttribute("aria-expanded")!=="true")}closeOnEscape(t){t.code==="Escape"&&(this.setExpanded(!1),this.btn.focus())}}customElements.define("starlight-menu-button",s);</script>   <div id="starlight__sidebar" class="sidebar-pane astro-vrdttmbt"> <div class="sidebar-content sl-flex astro-vrdttmbt"> <sl-sidebar-state-persist data-hash="0gqr90y" class="astro-kku4brbg"> <script aria-hidden="true">
+		(() => {
+			try {
+				if (!matchMedia('(min-width: 50em)').matches) return;
+				/** @type {HTMLElement | null} */
+				const target = document.querySelector('sl-sidebar-state-persist');
+				const state = JSON.parse(sessionStorage.getItem('sl-sidebar-state') || '0');
+				if (!target || !state || target.dataset.hash !== state.hash) return;
+				window._starlightScrollRestore = state.scroll;
+				customElements.define(
+					'sl-sidebar-restore',
+					class SidebarRestore extends HTMLElement {
+						connectedCallback() {
+							try {
+								const idx = parseInt(this.dataset.index || '');
+								const details = this.closest('details');
+								if (details && typeof state.open[idx] === 'boolean') details.open = state.open[idx];
+							} catch {}
+						}
+					}
+				);
+			} catch {}
+		})();
+	</script>  <ul class="top-level astro-3ii7xxms"> <li class="astro-3ii7xxms"> <a href="/docs/" aria-current="false" class="large astro-3ii7xxms"> <span class="astro-3ii7xxms">What abacad is</span>  </a> </li><li class="astro-3ii7xxms"> <details open class="astro-3ii7xxms"> <sl-sidebar-restore data-index="0"></sl-sidebar-restore> <summary class="astro-3ii7xxms"> <div class="group-label astro-3ii7xxms"> <span class="large astro-3ii7xxms">Reference</span>  </div> <svg aria-hidden="true" class="caret astro-3ii7xxms astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg>  </summary> <ul class="astro-3ii7xxms"> <li class="astro-3ii7xxms"> <a href="/docs/reference/tools/" aria-current="page" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Tool reference</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/docs/reference/status-markers/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Reading status markers</span>  </a> </li> </ul>  </details> </li><li class="astro-3ii7xxms"> <details open class="astro-3ii7xxms"> <sl-sidebar-restore data-index="1"></sl-sidebar-restore> <summary class="astro-3ii7xxms"> <div class="group-label astro-3ii7xxms"> <span class="large astro-3ii7xxms">Guides</span>  </div> <svg aria-hidden="true" class="caret astro-3ii7xxms astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg>  </summary> <ul class="astro-3ii7xxms"> <li class="astro-3ii7xxms"> <a href="/docs/guides/ssh/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">SSH access</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/docs/guides/running-hands-off/" aria-current="false" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Running a phone hands-off</span>  </a> </li> </ul>  </details> </li> </ul>   <script aria-hidden="true">
+		(() => {
+			const scroller = document.getElementById('starlight__sidebar');
+			if (!window._starlightScrollRestore || !scroller) return;
+			scroller.scrollTop = window._starlightScrollRestore;
+			delete window._starlightScrollRestore;
+		})();
+	</script> </sl-sidebar-state-persist>  <div class="md:sl-hidden"> <div class="mobile-preferences sl-flex astro-wu23bvmt"> <div class="sl-flex social-icons astro-wu23bvmt">  </div> <starlight-theme-select>  <label style="--sl-select-width: 6.25em" class="astro-4yphtoen"> <span class="sr-only astro-4yphtoen">Select theme</span> <svg aria-hidden="true" class="icon label-icon astro-4yphtoen astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg>  <select value="auto" autocomplete="off" class="astro-4yphtoen"> <option value="dark" class="astro-4yphtoen">Dark</option><option value="light" class="astro-4yphtoen">Light</option><option value="auto" selected class="astro-4yphtoen">Auto</option> </select> <svg aria-hidden="true" class="icon caret astro-4yphtoen astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg>  </label>  </starlight-theme-select>  <script>
+	StarlightThemeProvider.updatePickers();
+</script>   </div>  </div> </div> </div> </nav> <div class="main-frame astro-vrdttmbt">  <script type="module">const a=document.getElementById("starlight__sidebar"),n=a?.querySelector("sl-sidebar-state-persist"),o="sl-sidebar-state",i=()=>{let t=[];const e=n?.dataset.hash||"";try{const s=sessionStorage.getItem(o),r=JSON.parse(s||"{}");Array.isArray(r.open)&&r.hash===e&&(t=r.open)}catch{}return{hash:e,open:t,scroll:a?.scrollTop||0}},c=t=>{try{sessionStorage.setItem(o,JSON.stringify(t))}catch{}},d=()=>c(i()),l=(t,e)=>{const s=i();s.open[e]=t,c(s)};n?.addEventListener("click",t=>{if(!(t.target instanceof Element))return;const e=t.target.closest("summary")?.closest("details");if(!e)return;const s=e.querySelector("sl-sidebar-restore"),r=parseInt(s?.dataset.index||"");isNaN(r)||l(!e.open,r)});addEventListener("visibilitychange",()=>{document.visibilityState==="hidden"&&d()});addEventListener("pageHide",d);</script> <div class="lg:sl-flex astro-67yu43on"> <aside class="right-sidebar-container astro-67yu43on"> <div class="right-sidebar astro-67yu43on"> <script type="module" src="/docs/_astro/MobileTableOfContents.astro_astro_type_script_index_0_lang.C181hMzK.js"></script><script type="module" src="/docs/_astro/TableOfContents.astro_astro_type_script_index_0_lang.CKWWgpjV.js"></script><div class="lg:sl-hidden astro-pb3aqygn"><mobile-starlight-toc data-min-h="2" data-max-h="3" class="astro-doynk5tl"><nav aria-labelledby="starlight__on-this-page--mobile" class="astro-doynk5tl"><details id="starlight__mobile-toc" class="astro-doynk5tl"><summary id="starlight__on-this-page--mobile" class="sl-flex astro-doynk5tl"><div class="toggle sl-flex astro-doynk5tl">On this page<svg aria-hidden="true" class="caret astro-doynk5tl astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg> </div><span class="display-current astro-doynk5tl"></span></summary><div class="dropdown astro-doynk5tl"><ul class="isMobile astro-g2bywc46" style="--depth: 0;"> <li class="astro-g2bywc46" style="--depth: 0;"> <a href="#_top" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Overview</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#how-to-read-this" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">How to read this</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#exposed-to-the-agent" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Exposed to the agent</span> </a> <ul class="isMobile astro-g2bywc46" style="--depth: 1;"> <li class="astro-g2bywc46" style="--depth: 1;"> <a href="#mobile" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Mobile</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#desktop" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Desktop</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#browser" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Browser</span> </a>  </li> </ul>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#not-exposed-to-the-agent" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Not exposed to the agent</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#not-supported" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Not supported</span> </a>  </li> </ul> </div></details></nav></mobile-starlight-toc></div><div class="right-sidebar-panel sl-hidden lg:sl-block astro-pb3aqygn"><div class="sl-container astro-pb3aqygn"><starlight-toc data-min-h="2" data-max-h="3"><nav aria-labelledby="starlight__on-this-page"><h2 id="starlight__on-this-page">On this page</h2><ul class="astro-g2bywc46" style="--depth: 0;"> <li class="astro-g2bywc46" style="--depth: 0;"> <a href="#_top" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Overview</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#how-to-read-this" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">How to read this</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#exposed-to-the-agent" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Exposed to the agent</span> </a> <ul class="astro-g2bywc46" style="--depth: 1;"> <li class="astro-g2bywc46" style="--depth: 1;"> <a href="#mobile" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Mobile</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#desktop" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Desktop</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 1;"> <a href="#browser" class="astro-g2bywc46" style="--depth: 1;"> <span class="astro-g2bywc46" style="--depth: 1;">Browser</span> </a>  </li> </ul>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#not-exposed-to-the-agent" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Not exposed to the agent</span> </a>  </li><li class="astro-g2bywc46" style="--depth: 0;"> <a href="#not-supported" class="astro-g2bywc46" style="--depth: 0;"> <span class="astro-g2bywc46" style="--depth: 0;">Not supported</span> </a>  </li> </ul> </nav></starlight-toc></div></div> </div> </aside> <div class="main-pane astro-67yu43on">  <main data-pagefind-body class="astro-bguv2lll" lang="en" dir="ltr">    <div class="content-panel astro-7nkwcw3z"> <div class="sl-container astro-7nkwcw3z"> <h1 id="_top" class="astro-j6tvhyss">Tool reference</h1>  </div> </div>  <div class="content-panel astro-7nkwcw3z"> <div class="sl-container astro-7nkwcw3z"> <div class="sl-markdown-content"> <p>Every operation abacad exposes to an agent on a connected device, and which platforms
+support it — plus what we deliberately <em>don’t</em> expose or support. Each marker is
+per-platform; see <a href="/docs/reference/status-markers/">reading status markers</a>.</p>
+<h2 id="how-to-read-this">How to read this</h2>
+<p>Capabilities sit on a <strong>rung</strong> of the <a href="/docs/#the-control-surface-ladder">control-surface ladder</a>.
+A good agent stays as high as the task allows and only drops down when it must. abacad’s
+leverage is the <strong>semantic</strong> rungs (the accessibility tree); pixel/coordinate operations
+are the escape hatch for when structure runs out (canvas, WebView, games).</p>
+<h2 id="exposed-to-the-agent">Exposed to the agent</h2>
+<p>The tool surface an agent drives, split by form factor.</p>
+<h3 id="mobile">Mobile</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Capability</th><th>Rung</th><th>Description</th><th>Status</th></tr></thead><tbody><tr><td><code dir="auto">screenshot</code></td><td>accessibility / pixels</td><td>One frame (JPEG) plus the accessibility UI tree by default (<code dir="auto">include_ui_tree</code>, default true) — foreground app + nodes with class, text, id, clickable flag, bounds. The tree is the semantic layer to reason over; set the param false for canvas/game screens.</td><td>Android ✅ · iOS 🔮</td></tr><tr><td><code dir="auto">tap</code></td><td>pixels</td><td>Tap at absolute pixel coordinates — the center of a target node’s bounds.</td><td>Android ✅ · iOS 🔮</td></tr><tr><td><code dir="auto">long_press</code></td><td>pixels</td><td>Press and hold at coordinates (default 600 ms) — context menus, drag handles.</td><td>Android ✅ · iOS 🔮</td></tr><tr><td><code dir="auto">swipe</code></td><td>pixels</td><td>Swipe / fling gesture between two points — scroll a feed, navigate.</td><td>Android ✅ · iOS 🔮</td></tr><tr><td><code dir="auto">input_text</code></td><td>accessibility</td><td>Set the focused field’s contents. Tap the field to focus it first, then call.</td><td>Android ✅ · iOS 🔮</td></tr><tr><td><code dir="auto">press_keys</code></td><td>accessibility / pixels</td><td>Navigation keys (Back, Home, Recents) plus text keys.</td><td>Android ✅ · iOS 🔮</td></tr><tr><td><code dir="auto">composite</code></td><td>accessibility / pixels</td><td>Run an ordered sequence of steps in one call — taps, <code dir="auto">long_press</code>, <code dir="auto">swipe</code>, text, key presses, <code dir="auto">wait(ms)</code>, and <code dir="auto">screenshot</code>s — executed on-device with real timing. Two wins: batch several actions plus a final screenshot into one round-trip, and express fine-grained input the flat verbs can’t (multiple pointers run <strong>concurrently</strong> for multi-touch — pinch, rotate, path gestures). The primitive the named verbs are sugar over.</td><td>Android 🟡 · iOS 🔮</td></tr><tr><td>Clipboard get / set</td><td>API</td><td>Read and write the device clipboard, both directions.</td><td>Android 🔮</td></tr><tr><td>TCP tunnel (<code dir="auto">/connect</code>)</td><td>API</td><td>Raw TCP stream to a <code dir="auto">host:port</code> reachable from the device.</td><td>Android ✅</td></tr><tr><td><code dir="auto">push_file</code> / <code dir="auto">pull_file</code></td><td>API</td><td>Read / write files on the device by path, over the <code dir="auto">/blobs</code> data plane. Missing parent dirs are created automatically. Under scoped storage, writes are confined to the app’s own external dir until the user opts in to <strong>Files &#x26; media access</strong> (All-files access, one toggle in the Setup checklist), which unlocks arbitrary shared-storage paths like <code dir="auto">/sdcard/Pictures/…</code>; pushed media is media-scanned so it appears in the gallery. Shell-only paths (<code dir="auto">/data/local/tmp</code>) stay adb-only — no app permission reaches them.</td><td>Android 🟡</td></tr><tr><td>File transfer (<code dir="auto">/blobs</code>)</td><td>API</td><td>Generic HTTP upload / download of binary payloads by blob id.</td><td>Android ✅</td></tr></tbody></table>
+<h3 id="desktop">Desktop</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Capability</th><th>Rung</th><th>Description</th><th>Status</th></tr></thead><tbody><tr><td><code dir="auto">screenshot</code></td><td>accessibility / pixels</td><td>One frame plus the accessibility UI tree by default (<code dir="auto">include_ui_tree</code>) via AXUIElement + ScreenCaptureKit — windows/controls with role, text, id, bounds. Set the param false for canvas screens.</td><td>macOS 🟡 · Windows 🔮 · Linux 🟡</td></tr><tr><td><code dir="auto">click</code></td><td>pixels</td><td>Left click at absolute pixel coordinates, with optional modifier keys held.</td><td>macOS 🟡 · Windows 🔮 · Linux 🟡</td></tr><tr><td><code dir="auto">right_click</code></td><td>pixels</td><td>Right / secondary click to open a context menu.</td><td>macOS 🟡 · Windows 🔮 · Linux 🟡</td></tr><tr><td><code dir="auto">drag</code></td><td>pixels</td><td>Press, move, and release between two points — move a window, select a range, drag-and-drop.</td><td>macOS 🟡 · Windows 🔮 · Linux 🟡</td></tr><tr><td><code dir="auto">scroll</code></td><td>pixels</td><td>Wheel / two-finger scroll by a delta at a point.</td><td>macOS 🟡 · Windows 🔮 · Linux 🟡</td></tr><tr><td><code dir="auto">input_text</code></td><td>accessibility</td><td>Set the focused field’s contents. Click the field to focus it first, then call.</td><td>macOS 🟡 · Windows 🔮 · Linux 🟡</td></tr><tr><td><code dir="auto">press_keys</code></td><td>accessibility / pixels</td><td>Full keyboard and modifier chords (⌘-C, ⌘-Tab, Esc).</td><td>macOS 🟡 · Windows 🔮 · Linux 🟡</td></tr><tr><td><code dir="auto">composite</code></td><td>accessibility / pixels</td><td>Run an ordered sequence of steps in one call — <code dir="auto">click</code>/<code dir="auto">right_click</code>, <code dir="auto">drag</code>, <code dir="auto">scroll</code>, text, key presses (incl. modifier-held clicks like ⌘-click), <code dir="auto">wait(ms)</code>, and <code dir="auto">screenshot</code>s — executed on-device with real timing. The primitive the named verbs are sugar over.</td><td>macOS 🟡 · Windows 🔮 · Linux 🟡</td></tr><tr><td>Clipboard get / set</td><td>API</td><td>Read and write the device clipboard, both directions.</td><td>macOS 🟡 · Windows 🔮 · Linux 🔮</td></tr><tr><td>TCP tunnel (<code dir="auto">/connect</code>)</td><td>API</td><td>Raw TCP stream to a <code dir="auto">host:port</code> reachable from the device — ssh, rsync, a DB client.</td><td>macOS 🟡 · Windows 🔮 · Linux 🟡</td></tr><tr><td><code dir="auto">push_file</code> / <code dir="auto">pull_file</code></td><td>API</td><td>Read and write files on the device’s filesystem by absolute path. The bytes ride the <code dir="auto">/blobs</code> data plane over HTTP (the device fetches/posts with its own token), never the command socket, so multi-GB files are fine; the MCP layer stages the upload and inlines small text pulls so the agent never leaves the tool surface. Works headless (no display needed).</td><td>macOS 🟡 · Windows 🔮 · Linux ✅</td></tr><tr><td>File transfer (<code dir="auto">/blobs</code>)</td><td>API</td><td>The generic data plane the file verbs (and screenshots) move bytes over: HTTP upload / download of binary payloads by blob id, account-scoped.</td><td>Any ✅</td></tr></tbody></table>
+<p>On <strong>Linux</strong> the input + pixel rungs above are live (X11 capture, XTEST input), but
+<code dir="auto">screenshot</code> returns an <strong>empty</strong> UI tree for now — the AT-SPI semantic tree is the next
+Linux build. So a Linux device is currently pixel-driven; prefer coordinates from the
+screenshot over the (empty) tree. <code dir="auto">input_text</code> types into the focused element rather than
+replacing its contents, and Wayland sessions need XWayland.</p>
+<h3 id="browser">Browser</h3>
+<p>A browser tab acting as a device (open <code dir="auto">&#x3C;device-id>.abacad.ai</code>; the id in the Host is
+the connection key). The tab <em>is</em> the surface — one document, no iframe — driven by the
+semantic verbs plus <code dir="auto">execute</code>, the JavaScript escape hatch.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Capability</th><th>Rung</th><th>Description</th><th>Status</th></tr></thead><tbody><tr><td><code dir="auto">execute</code></td><td>API</td><td>Evaluate JavaScript in the device page and return the JSON result — the browser’s power verb. Runs as an async function body (<code dir="auto">return</code>, <code dir="auto">await</code>), so it reads page state, acts by selector, and builds content in place (<code dir="auto">document.body.innerHTML = …</code>). <strong>A top-level navigation (<code dir="auto">location.href = …</code>, or a link/submit that unloads the page) unloads the device client and drops the device offline until it is reopened.</strong> The top rung of the ladder, for the one platform where the native automation API <em>is</em> JavaScript.</td><td>Browser ✅</td></tr><tr><td><code dir="auto">screenshot</code></td><td>accessibility / pixels</td><td>One frame (html2canvas, JPEG) plus a DOM-derived tree by default — elements with tag/role, text, id, clickable flag, and bounds. The page is its own surface, so pixels and tree are always available same-origin.</td><td>Browser ✅</td></tr><tr><td><code dir="auto">click</code> / <code dir="auto">scroll</code> / <code dir="auto">input_text</code></td><td>pixels / accessibility</td><td>The uniform cross-platform verbs, dispatched as synthetic DOM events into the page. Prefer <code dir="auto">execute</code> for anything structured.</td><td>Browser ✅</td></tr><tr><td>File transfer (<code dir="auto">/blobs</code>)</td><td>API</td><td>Generic HTTP upload / download of binary payloads by blob id.</td><td>Any ✅</td></tr></tbody></table>
+<p>Deliberately <strong>not</strong> on a browser device: the nav keys (<code dir="auto">back</code>/<code dir="auto">home</code>/<code dir="auto">recents</code>) and the
+desktop OS verbs — a tab has no OS shell to drive, so it rejects them as unknown methods.</p>
+<p><strong>Trust note:</strong> a browser device can’t touch the host machine (sandboxed), but <code dir="auto">execute</code>
+is <em>maximal</em> power over the surface’s origin — it can read same-origin cookies/storage and
+act as the logged-in user. Low risk to the machine, high power over the page: gate
+<code dir="auto">execute</code> accordingly.</p>
+<h2 id="not-exposed-to-the-agent">Not exposed to the agent</h2>
+<p>Behaviors and infrastructure that exist but are not agent tools.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th></th><th>Description</th><th>Platforms</th></tr></thead><tbody><tr><td>Auto-wake on command</td><td>The device lights its own screen before acting and manages its own display timeout — power is the device’s affair, not an agent tool. (The protocol intentionally has no <code dir="auto">wake</code>/<code dir="auto">sleep</code> methods.)</td><td>Android ✅ · macOS 🟡</td></tr><tr><td>Per-device auth</td><td>Each device dials in with its own hashed token; the agent authenticates separately with a per-account MCP bearer.</td><td>All ✅</td></tr></tbody></table>
+<h2 id="not-supported">Not supported</h2>
+<p>The human remote-desktop surface (a live VNC/RustDesk-style mirror) is deliberately out
+of scope — abacad is one screenshot + tree per step for an agent, not a real-time mirror
+for a person.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th></th><th>Why not</th></tr></thead><tbody><tr><td>Live framebuffer / video stream</td><td>Continuous real-time screen mirror. The core loop is per-step, not a live feed.</td></tr><tr><td>Cursor shape / position</td><td>Only meaningful alongside a live video stream, which we don’t provide.</td></tr><tr><td>Audio stream</td><td>Device audio to a human. Not agent-facing; out of scope.</td></tr><tr><td>Human take-over (live driving)</td><td>A human dropping into a live stream to drive in real time. Supervision happens through the per-step loop, not a live mirror.</td></tr><tr><td>Privacy mode (blank local screen)</td><td>Blacking out the physical display during a session. Out of scope.</td></tr></tbody></table> </div> <footer class="sl-flex astro-3yyafb3n"> <div class="meta sl-flex astro-3yyafb3n">   </div> <div class="pagination-links astro-u2l5gyhi" dir="ltr"> <a href="/docs/" rel="prev" class="astro-u2l5gyhi"> <svg aria-hidden="true" class="astro-u2l5gyhi astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17 11H9.41l3.3-3.29a1.004 1.004 0 1 0-1.42-1.42l-5 5a1 1 0 0 0-.21.33 1 1 0 0 0 0 .76 1 1 0 0 0 .21.33l5 5a1.002 1.002 0 0 0 1.639-.325 1 1 0 0 0-.219-1.095L9.41 13H17a1 1 0 0 0 0-2Z"/></svg>  <span class="astro-u2l5gyhi"> Previous <br class="astro-u2l5gyhi"> <span class="link-title astro-u2l5gyhi">What abacad is</span> </span> </a> <a href="/docs/reference/status-markers/" rel="next" class="astro-u2l5gyhi"> <svg aria-hidden="true" class="astro-u2l5gyhi astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17.92 11.62a1.001 1.001 0 0 0-.21-.33l-5-5a1.003 1.003 0 1 0-1.42 1.42l3.3 3.29H7a1 1 0 0 0 0 2h7.59l-3.3 3.29a1.002 1.002 0 0 0 .325 1.639 1 1 0 0 0 1.095-.219l5-5a1 1 0 0 0 .21-.33 1 1 0 0 0 0-.76Z"/></svg>  <span class="astro-u2l5gyhi"> Next <br class="astro-u2l5gyhi"> <span class="link-title astro-u2l5gyhi">Reading status markers</span> </span> </a> </div>   </footer>  </div> </div>   </main> </div> </div>  </div> </div>  </body></html>

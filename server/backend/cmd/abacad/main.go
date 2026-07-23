@@ -279,6 +279,11 @@ func main() {
 		web.WriteRobots(w, deviceHostID(r.Host) == "", cfg.BaseDomain)
 	})
 	mux.Handle("GET /sitemap.xml", web.Sitemap(cfg.BaseDomain))
+	mux.Handle("GET /og-image.png", web.OGImage())
+	// Public docs site (static Astro build, embedded). The trailing-slash subtree
+	// pattern dominates the SPA catch-all under Go 1.22 precedence and auto-redirects
+	// /docs → /docs/.
+	mux.Handle("GET /docs/", web.Docs())
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"ok":true,"devices_online":%d}`, len(hub.OnlineIDs()))

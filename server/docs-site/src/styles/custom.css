@@ -1,0 +1,27 @@
+/* abacad brand overrides for Starlight. Charcoal canvas, light-gray ink, a single
+   green "alive" accent (#30d158) — matches the app and the marketing site. */
+:root {
+  --sl-color-accent-low: #0f2a19;
+  --sl-color-accent: #28b84c;
+  --sl-color-accent-high: #7ce89a;
+  --sl-font: "Inter var", ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --sl-font-mono: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, monospace;
+}
+
+/* Dark theme (the site defaults to dark, like the product). */
+:root[data-theme="dark"] {
+  --sl-color-bg: #0b0b0d;
+  --sl-color-bg-nav: #0e0e11;
+  --sl-color-bg-sidebar: #0e0e11;
+  --sl-color-hairline: #2a2a2e;
+  --sl-color-gray-1: #f2f2f4;
+  --sl-color-gray-2: #c9c9ce;
+  --sl-color-gray-3: #9a9aa0;
+  --sl-color-text-accent: #7ce89a;
+}
+
+/* The status markers (✅ 🟡 🔮 —) carry meaning across every reference table;
+   keep them from being shrunk by emoji font fallback. */
+.sl-markdown-content td:last-child {
+  white-space: nowrap;
+}

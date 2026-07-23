@@ -17,6 +17,14 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
+# --- docs: build the static Astro docs site (arch-independent) ---
+FROM --platform=$BUILDPLATFORM node:24-alpine AS docs
+WORKDIR /app/docs-site
+COPY docs-site/package.json docs-site/package-lock.json ./
+RUN npm ci
+COPY docs-site/ ./
+RUN npm run build
+
 # --- backend: embed dist + build the static binary ---
 FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS backend
 WORKDIR /app/backend
@@ -25,6 +33,7 @@ RUN go mod download
 COPY backend/ ./
 # embed can't reach outside the module; drop the fresh dist where //go:embed expects it.
 COPY --from=frontend /app/frontend/dist ./internal/web/dist
+COPY --from=docs /app/docs-site/dist ./internal/web/docs-dist
 ARG TARGETOS TARGETARCH
 # Stamp the monorepo version (repo-root VERSION) into the binary. The build
 # context is server/, so VERSION isn't reachable here — the deploy passes it in:

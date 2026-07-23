@@ -1,0 +1,6 @@
+# Astro / docs build artifacts. The built site is copied to
+# server/backend/internal/web/docs-dist (committed) for the Go embed; this
+# source dir's own outputs stay ignored.
+dist/
+.astro/
+node_modules/

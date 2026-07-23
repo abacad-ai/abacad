@@ -1,0 +1,19 @@
+{
+  "name": "abacad-docs",
+  "type": "module",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Public documentation site for abacad, served at abacad.ai/docs.",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check"
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "^3.2.1",
+    "@astrojs/starlight": "^0.30.3",
+    "astro": "^5.1.5",
+    "sharp": "^0.33.5"
+  }
+}

@@ -22,6 +22,15 @@ echo "== embedding dist into backend =="
 rm -rf "$here/backend/internal/web/dist"
 cp -r "$here/frontend/dist" "$here/backend/internal/web/dist"
 
+echo "== building docs site =="
+cd "$here/docs-site"
+npm install
+npm run build
+
+echo "== embedding docs into backend =="
+rm -rf "$here/backend/internal/web/docs-dist"
+cp -r "$here/docs-site/dist" "$here/backend/internal/web/docs-dist"
+
 echo "== building backend (v$version) =="
 cd "$here/backend"
 go build -ldflags "-X abacad/internal/version.Version=$version" -o abacad ./cmd/abacad
