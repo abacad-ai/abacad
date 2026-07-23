@@ -105,6 +105,10 @@ jobs:
       JAVA_HOME: /opt/homebrew/opt/openjdk@17
     steps:
       - uses: actions/checkout@v4
+        with:
+          # LibVNCServer (the in-app RFB server) is a submodule under
+          # android/app/src/main/cpp/ — the APK build won't compile without it.
+          submodules: recursive
       - name: Assemble signed release APK
         run: |
           export ANDROID_HOME="$HOME/Library/Android/sdk"
