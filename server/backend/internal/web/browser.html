@@ -16,12 +16,29 @@
   #ready { display: grid; place-items: center; height: 100vh; text-align: center; }
   #ready h1 { margin: 0 0 .3em; }
   #ready p { color: #888; }
-  #dot {
-    position: fixed; top: 8px; right: 8px; width: 10px; height: 10px; border-radius: 50%;
-    background: #c33; box-shadow: 0 0 0 2px rgba(0,0,0,.35); pointer-events: none; z-index: 2147483647;
-    transition: background .2s;
-  }
-  #dot.on { background: #3c6; }
+
+  /* The abacad UI (awareness badge + first-connect toast) lives in its own
+     container so it can be re-attached whenever the agent wipes document.body —
+     it is the consent surface for whoever is looking at this tab, so it must
+     survive content rewrites. High z-index, its own stacking context. */
+  #abacad-ui { position: fixed; inset: 0; pointer-events: none; z-index: 2147483647;
+    font: 12px/1.4 system-ui; }
+  #abacad-ui > * { pointer-events: auto; }
+  .abacad-badge { position: fixed; top: 8px; right: 8px; display: flex; align-items: center;
+    gap: 8px; background: rgba(11,11,13,.92); color: #f2f2f4; border-radius: 999px;
+    padding: 5px 8px 5px 11px; box-shadow: 0 4px 14px rgba(0,0,0,.35); }
+  .abacad-dot { width: 9px; height: 9px; border-radius: 50%; background: #ff9f0a;
+    box-shadow: 0 0 0 3px rgba(48,209,88,.18); transition: background .2s; }
+  .abacad-badge b { font-weight: 600; }
+  .abacad-btn { border: none; cursor: pointer; font: 600 11px system-ui; color: #f2f2f4;
+    background: rgba(255,255,255,.12); border-radius: 999px; padding: 3px 9px; }
+  .abacad-btn:hover { background: rgba(255,255,255,.2); }
+  .abacad-danger { background: #ff453a; color: #fff; }
+  .abacad-danger:hover { background: #e0342b; }
+  .abacad-toast { position: fixed; left: 8px; bottom: 8px; max-width: 300px;
+    background: rgba(11,11,13,.94); color: #f2f2f4; border-radius: 10px; padding: 10px 12px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.4); display: none; }
+  .abacad-toast a { color: #ff8a80; font-weight: 600; text-decoration: none; }
 </style>
 <!-- Pixel capture. The DOM tree (below) is the primary semantic layer; this is
      the escape hatch for pixels. Served same-origin (vendored, not a CDN) so it
@@ -30,8 +47,7 @@
 </head>
 <body>
 <div id="ready"><h1>abacad browser device</h1>
-<p>Connected. This page can now be viewed and controlled remotely by an agent.</p></div>
-<div id="dot" title="abacad relay connection"></div>
+<p>Connected. An agent can now build and drive content here.</p></div>
 <script>
 (() => {
   "use strict";
@@ -41,18 +57,80 @@
   const wsProto = location.protocol === "https:" ? "wss" : "ws";
   const wsURL = wsProto + "://" + location.host + "/device";
 
-  const dot = document.getElementById("dot");
+  // --- awareness UI (built in JS so it survives document.body rewrites) ---
+  // The badge shows connection + a distinct "controlling now" state; the two
+  // buttons are the on-device stop: Pause (soft-kill — stay connected, reject
+  // commands locally) and Disconnect (drop the socket for good). None of this is
+  // in the served HTML, so a full content rewrite can't remove the consent
+  // surface — ensureUI() re-attaches it.
+  let paused = false, closed = false, controlling = false, ctrlTimer = 0, toastShown = false;
 
-  // The relay lives in this closure (WebSocket + handlers), not in the DOM, so it
-  // survives the agent wiping document.body.innerHTML. Only a top-level navigation
-  // or document.open()/write() tears it down. The connection dot does live in the
-  // DOM, so re-attach it whenever a content rewrite removed it.
-  function ensureDot() {
-    if (!dot.isConnected && document.body) document.body.appendChild(dot);
+  const ui = document.createElement("div"); ui.id = "abacad-ui";
+  const badge = document.createElement("div"); badge.className = "abacad-badge";
+  const dot = document.createElement("span"); dot.className = "abacad-dot";
+  const label = document.createElement("b"); label.textContent = "abacad";
+  const pauseBtn = document.createElement("button"); pauseBtn.className = "abacad-btn"; pauseBtn.textContent = "Pause";
+  const discBtn = document.createElement("button"); discBtn.className = "abacad-btn abacad-danger"; discBtn.textContent = "Disconnect";
+  badge.append(dot, label, pauseBtn, discBtn);
+  const toast = document.createElement("div"); toast.className = "abacad-toast";
+  ui.append(badge, toast);
+
+  pauseBtn.addEventListener("click", () => { paused = !paused; render(); });
+  discBtn.addEventListener("click", () => disconnect());
+
+  function disconnect() {
+    closed = true;
+    try { if (ws) ws.close(); } catch (e) { /* ignore */ }
+    toast.style.display = "none";
+    render();
+  }
+
+  function ensureUI() {
+    if (!ui.isConnected && document.body) document.body.appendChild(ui);
+  }
+
+  function render() {
+    ensureUI();
+    const open = ws && ws.readyState === 1 && !closed;
+    let state, color;
+    if (closed) { state = "disconnected"; color = "#66666c"; }
+    else if (!open) { state = "connecting"; color = "#ff9f0a"; }
+    else if (paused) { state = "paused"; color = "#ff9f0a"; }
+    else if (controlling) { state = "controlling"; color = "#30d158"; }
+    else { state = "idle"; color = "#30d158"; }
+    dot.style.background = color;
+    label.textContent = "abacad · " + state;
+    pauseBtn.textContent = paused ? "Resume" : "Pause";
+    pauseBtn.style.display = closed ? "none" : "";
+    discBtn.style.display = closed ? "none" : "";
+  }
+
+  // First-connect heads-up for whoever is at the tab: an agent can now drive it,
+  // and here's how to stop it. Auto-dismisses; shown once.
+  function showToast() {
+    if (toastShown) return;
+    toastShown = true;
+    toast.textContent = "An agent is connected and can see and control this tab. ";
+    const a = document.createElement("a");
+    a.href = "#"; a.textContent = "Disconnect";
+    a.addEventListener("click", (e) => { e.preventDefault(); disconnect(); });
+    toast.append(a);
+    toast.style.display = "block";
+    setTimeout(() => { toast.style.display = "none"; }, 8000);
+  }
+
+  // "Controlling now" lights up on each command and decays a few seconds later.
+  function noteCommand() {
+    controlling = true;
+    render();
+    clearTimeout(ctrlTimer);
+    ctrlTimer = setTimeout(() => { controlling = false; render(); }, 6000);
   }
 
   function vw() { return document.documentElement.clientWidth; }
   function vh() { return document.documentElement.clientHeight; }
+
+  const inAbacadUI = (el) => el.id === "abacad-ui" || (el.closest && el.closest("#abacad-ui"));
 
   // --- screenshot: pixels (best-effort) + DOM-derived accessibility tree. ---
   async function capture(includeTree) {
@@ -63,7 +141,7 @@
         const canvas = await window.html2canvas(document.documentElement, {
           logging: false, useCORS: true, backgroundColor: "#fff",
           width: w, height: h, windowWidth: w, windowHeight: h,
-          ignoreElements: (el) => el.id === "dot", // the relay indicator isn't part of the surface
+          ignoreElements: (el) => inAbacadUI(el), // the awareness UI isn't part of the surface
         });
         res.w = canvas.width; res.h = canvas.height;
         res.png_base64 = canvas.toDataURL("image/jpeg", 0.7).split(",")[1] || "";
@@ -80,7 +158,7 @@
     const w = vw(), h = vh();
     const nodes = [];
     document.querySelectorAll(sel).forEach((el) => {
-      if (el.id === "dot") return; // relay indicator, not surface content
+      if (inAbacadUI(el)) return; // the awareness UI, not surface content
       const r = el.getBoundingClientRect();
       if (r.width <= 0 || r.height <= 0) return;
       if (r.bottom < 0 || r.right < 0 || r.top > h || r.left > w) return;
@@ -148,17 +226,26 @@
   };
 
   // --- relay connection: dial, dispatch commands, reply, reconnect. ---
+  let ws = null;
   function connect() {
-    const ws = new WebSocket(wsURL);
-    ws.addEventListener("open", () => { ensureDot(); dot.classList.add("on"); });
-    ws.addEventListener("close", () => { dot.classList.remove("on"); setTimeout(connect, 1000); });
+    if (closed) return;
+    ws = new WebSocket(wsURL);
+    ws.addEventListener("open", () => { render(); showToast(); });
+    ws.addEventListener("close", () => { render(); if (!closed) setTimeout(connect, 1000); });
     ws.addEventListener("error", () => {});
     ws.addEventListener("message", async (ev) => {
       let cmd;
       try { cmd = JSON.parse(ev.data); } catch (e) { return; }
-      ensureDot(); // a prior content rewrite may have removed it
+      ensureUI(); // a prior content rewrite may have removed it
+      // Soft-kill: while paused, reject every command locally. The agent sees an
+      // error; only the badge's Resume clears it.
+      if (paused) {
+        ws.send(JSON.stringify({ id: cmd.id, ok: false, error: "paused by device operator" }));
+        return;
+      }
       const fn = handlers[cmd.method];
       if (!fn) { ws.send(JSON.stringify({ id: cmd.id, ok: false, error: "unknown method " + cmd.method })); return; }
+      noteCommand();
       try {
         const result = await fn(cmd.params || {});
         ws.send(JSON.stringify({ id: cmd.id, ok: true, result }));
@@ -168,6 +255,7 @@
     });
   }
 
+  render();
   connect();
 })();
 </script>
