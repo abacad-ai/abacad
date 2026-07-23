@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { api, type DeviceView } from "@/lib/api";
 import { groupDevices, platformInfo, NEW_DEVICE_PLATFORMS, type FormFactor } from "@/lib/devices";
-import { cn } from "@/lib/utils";
+import { cn, untilTime } from "@/lib/utils";
 import { DeviceFrame, DeviceScreen, ScreenPlaceholder } from "@/components/DeviceScreen";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -346,6 +346,11 @@ function DeviceCard({ device, factor }: { device: DeviceView; factor: FormFactor
       >
         {device.name}
       </h3>
+      {device.expires_at && (
+        <p className="-mt-2 text-center text-[11px] font-medium text-ink-subtle">
+          expires {untilTime(device.expires_at)}
+        </p>
+      )}
     </Link>
   );
 }

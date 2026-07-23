@@ -12,7 +12,8 @@ export interface DeviceView {
   created_at: string;
   ssh_host?: string; // ssh <ssh_host> reaches this device via the jump host
   screenshot_at?: number; // unix seconds of the last stored screenshot; absent if none
-  humanize: boolean; // inject human-like pointer motion on this device (default on)
+  humanize: boolean; // smooth pointer motion on this device; default off, opt-in with attestation
+  expires_at?: string; // enrollment expiry (ISO); absent = permanent (never expires)
 }
 
 export interface SshKey {
@@ -184,8 +185,15 @@ export const api = {
     req<NewDevice>("/api/devices", { method: "POST", body: JSON.stringify({ name, platform }) }),
   renameDevice: (id: string, name: string) =>
     req<void>(`/api/devices/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
-  setDeviceHumanize: (id: string, humanize: boolean) =>
-    req<void>(`/api/devices/${id}`, { method: "PATCH", body: JSON.stringify({ humanize }) }),
+  // Enabling humanize requires attested=true (operator authorization); disabling does not.
+  setDeviceHumanize: (id: string, humanize: boolean, attested?: boolean) =>
+    req<void>(`/api/devices/${id}`, { method: "PATCH", body: JSON.stringify({ humanize, attested }) }),
+  // Reset enrollment expiry to now + TTL (hosted service only).
+  extendDevice: (id: string) =>
+    req<void>(`/api/devices/${id}`, { method: "PATCH", body: JSON.stringify({ extend: true }) }),
+  // Remove enrollment expiry; requires attested=true (operator authorization).
+  setDevicePermanent: (id: string, attested: boolean) =>
+    req<void>(`/api/devices/${id}`, { method: "PATCH", body: JSON.stringify({ permanent: true, attested }) }),
   deleteDevice: (id: string) => req<void>(`/api/devices/${id}`, { method: "DELETE" }),
   rotateDeviceToken: (id: string) =>
     req<{ device_token: string; wss_url: string }>(`/api/devices/${id}/rotate-token`, { method: "POST" }),
@@ -204,10 +212,11 @@ export const api = {
   // Device-authorization pairing (`abacad connect`). Look up a pending code to
   // show what it authorizes, then approve it into the signed-in account.
   pairLookup: (code: string) => req<PairInfo>(`/api/devices/pair?code=${encodeURIComponent(code)}`),
-  pairApprove: (user_code: string, name: string, platform?: string) =>
+  // accepted must be true: the operator acknowledges what pairing authorizes.
+  pairApprove: (user_code: string, name: string, platform: string | undefined, accepted: boolean) =>
     req<{ status: string }>("/api/devices/pair", {
       method: "POST",
-      body: JSON.stringify({ user_code, name, platform }),
+      body: JSON.stringify({ user_code, name, platform, accepted }),
     }),
 
   activities: (q: ActivityQuery = {}) => {

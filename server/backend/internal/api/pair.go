@@ -71,7 +71,7 @@ func (a *API) pairPoll(w http.ResponseWriter, r *http.Request) {
 	case p.Status == store.PairingDenied:
 		writeErr(w, http.StatusForbidden, "pairing denied")
 	case p.Status == store.PairingApproved:
-		d, token, err := a.Store.ConsumePairing(p.DeviceCode)
+		d, token, err := a.Store.ConsumePairing(p.DeviceCode, a.enrollmentExpiry())
 		if errors.Is(err, store.ErrNotFound) {
 			// Lost a race to a concurrent poll that already consumed it.
 			writeErr(w, http.StatusGone, "pairing already used")
@@ -125,8 +125,16 @@ func (a *API) pairApprove(w http.ResponseWriter, r *http.Request) {
 		UserCode string `json:"user_code"`
 		Name     string `json:"name"`
 		Platform string `json:"platform"`
+		// Accepted must be true: the operator acknowledges that approving lets an
+		// agent see, control, and transfer files on the device, and confirms they
+		// are authorized to operate it.
+		Accepted *bool `json:"accepted"`
 	}
 	if !decode(w, r, &body) {
+		return
+	}
+	if body.Accepted == nil || !*body.Accepted {
+		writeErr(w, http.StatusUnprocessableEntity, "approval requires acknowledging what pairing authorizes")
 		return
 	}
 	code := normalizeUserCode(body.UserCode)
@@ -147,6 +155,7 @@ func (a *API) pairApprove(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not approve pairing")
 		return
 	}
+	a.record(account(r).ID, store.Activity{Kind: activity.KindConsent, Method: "enrollment.accepted", Detail: name})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "approved"})
 }
 

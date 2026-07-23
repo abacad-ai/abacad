@@ -53,7 +53,8 @@ type Device struct {
 	CreatedAt int64
 	LastSeen  int64
 	Version   string // last version the client reported on connect; "" if never
-	Humanize  bool   // inject human-like pointer motion on this device (default on)
+	Humanize  bool   // smooth pointer motion on this device; default OFF, opt-in with attestation
+	ExpiresAt int64  // enrollment expiry, unix seconds; 0 = permanent (never expires)
 }
 
 // Open opens (creating if needed) the SQLite database at path and runs
@@ -253,12 +254,14 @@ func (s *Store) DeleteSession(sessionID string) error {
 
 // CreateDevice adds a device to an account and returns it along with the
 // plaintext device token (shown once; only its hash is stored). platform is a
-// free-form tag (e.g. "android", "macos"); "" leaves it unset.
-func (s *Store) CreateDevice(accountID, name, platform string) (Device, string, error) {
+// free-form tag (e.g. "android", "macos"); "" leaves it unset. expiresAt is the
+// enrollment expiry in unix seconds (0 = permanent); the API layer derives it
+// from the configured enrollment TTL.
+func (s *Store) CreateDevice(accountID, name, platform string, expiresAt int64) (Device, string, error) {
 	token := auth.NewSecret(deviceTokenPrefix)
-	d := Device{ID: auth.NewDeviceID(), AccountID: accountID, Name: name, Platform: platform, CreatedAt: now(), Humanize: true}
-	_, err := s.db.Exec(`INSERT INTO devices(id,account_id,name,token_hash,platform,created_at,last_seen)
-		VALUES(?,?,?,?,?,?,0)`, d.ID, d.AccountID, d.Name, auth.HashToken(token), d.Platform, d.CreatedAt)
+	d := Device{ID: auth.NewDeviceID(), AccountID: accountID, Name: name, Platform: platform, CreatedAt: now(), Humanize: false, ExpiresAt: expiresAt}
+	_, err := s.db.Exec(`INSERT INTO devices(id,account_id,name,token_hash,platform,created_at,last_seen,expires_at)
+		VALUES(?,?,?,?,?,?,0,?)`, d.ID, d.AccountID, d.Name, auth.HashToken(token), d.Platform, d.CreatedAt, d.ExpiresAt)
 	if err != nil {
 		return Device{}, "", err
 	}
@@ -266,9 +269,12 @@ func (s *Store) CreateDevice(accountID, name, platform string) (Device, string, 
 }
 
 // DeviceByTokenHash resolves a device token (already hashed) to its device.
+// Expired enrollments (expires_at != 0 and in the past) do not resolve, so an
+// expired device cannot (re)connect — the gate for auto-expiry.
 func (s *Store) DeviceByTokenHash(tokenHash string) (Device, error) {
 	return s.scanDevice(s.db.QueryRow(
-		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize FROM devices WHERE token_hash=?`, tokenHash))
+		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at FROM devices
+		  WHERE token_hash=? AND (expires_at=0 OR expires_at>?)`, tokenHash, now()))
 }
 
 // DeviceByID resolves a device by its (non-secret) id alone. Used by the browser
@@ -277,20 +283,24 @@ func (s *Store) DeviceByTokenHash(tokenHash string) (Device, error) {
 // that rely on it (only the Host router) must intend exactly that.
 func (s *Store) DeviceByID(deviceID string) (Device, error) {
 	return s.scanDevice(s.db.QueryRow(
-		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize FROM devices WHERE id=?`, deviceID))
+		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at FROM devices
+		  WHERE id=? AND (expires_at=0 OR expires_at>?)`, deviceID, now()))
 }
 
-// DeviceOwnedBy returns a device only if it belongs to accountID.
+// DeviceOwnedBy returns a device only if it belongs to accountID. It does NOT
+// filter on expiry: the owner must still see an expired/dormant device to extend
+// or delete it from the dashboard.
 func (s *Store) DeviceOwnedBy(deviceID, accountID string) (Device, error) {
 	return s.scanDevice(s.db.QueryRow(
-		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize FROM devices WHERE id=? AND account_id=?`,
+		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at FROM devices WHERE id=? AND account_id=?`,
 		deviceID, accountID))
 }
 
-// DevicesByAccount lists an account's devices, most-recently-active first.
+// DevicesByAccount lists an account's devices, most-recently-active first. Like
+// DeviceOwnedBy it does not filter on expiry — dormant devices remain listed.
 func (s *Store) DevicesByAccount(accountID string) ([]Device, error) {
 	rows, err := s.db.Query(
-		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize FROM devices
+		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at FROM devices
 		  WHERE account_id=? ORDER BY last_seen DESC, created_at DESC`, accountID)
 	if err != nil {
 		return nil, err
@@ -299,7 +309,7 @@ func (s *Store) DevicesByAccount(accountID string) ([]Device, error) {
 	var out []Device
 	for rows.Next() {
 		var d Device
-		if err := rows.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen, &d.Version, &d.Humanize); err != nil {
+		if err := rows.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen, &d.Version, &d.Humanize, &d.ExpiresAt); err != nil {
 			return nil, err
 		}
 		out = append(out, d)
@@ -314,6 +324,43 @@ func (s *Store) RenameDevice(deviceID, accountID, name string) error {
 // SetDeviceHumanize toggles human-like pointer motion for a device.
 func (s *Store) SetDeviceHumanize(deviceID, accountID string, v bool) error {
 	return s.affect(s.db.Exec(`UPDATE devices SET humanize=? WHERE id=? AND account_id=?`, v, deviceID, accountID))
+}
+
+// SetDeviceExpiry sets a device's enrollment expiry (unix seconds; 0 = permanent).
+// Used by "extend" (now+TTL) and "make permanent" (0).
+func (s *Store) SetDeviceExpiry(deviceID, accountID string, expiresAt int64) error {
+	return s.affect(s.db.Exec(`UPDATE devices SET expires_at=? WHERE id=? AND account_id=?`, expiresAt, deviceID, accountID))
+}
+
+// ExpiredDeviceIDs returns the ids of devices whose enrollment has expired as of
+// asOf (unix seconds). Permanent devices (expires_at=0) are never returned. The
+// sweeper uses this to kick live connections; the lookup filter blocks reconnect.
+func (s *Store) ExpiredDeviceIDs(asOf int64) ([]string, error) {
+	rows, err := s.db.Query(`SELECT id FROM devices WHERE expires_at!=0 AND expires_at<=?`, asOf)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// DeleteDevicesExpiredBefore hard-deletes devices that expired at or before
+// cutoff (unix seconds), reclaiming dormant rows past the grace window. Permanent
+// devices (expires_at=0) are never deleted. Returns how many were removed.
+func (s *Store) DeleteDevicesExpiredBefore(cutoff int64) (int64, error) {
+	res, err := s.db.Exec(`DELETE FROM devices WHERE expires_at!=0 AND expires_at<=?`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 func (s *Store) DeleteDevice(deviceID, accountID string) error {
@@ -347,7 +394,7 @@ func (s *Store) SetDeviceVersion(deviceID, version string) {
 
 func (s *Store) scanDevice(row *sql.Row) (Device, error) {
 	var d Device
-	err := row.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen, &d.Version, &d.Humanize)
+	err := row.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen, &d.Version, &d.Humanize, &d.ExpiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Device{}, ErrNotFound
 	}
@@ -435,7 +482,7 @@ func (s *Store) ApprovePairing(userCode, accountID, name, platform string) error
 // (approved -> consumed) so a double-poll can't mint two devices, then mints the
 // device via the normal CreateDevice path and returns its one-time token. Any
 // non-approved / already-consumed / expired state yields ErrNotFound.
-func (s *Store) ConsumePairing(deviceCode string) (Device, string, error) {
+func (s *Store) ConsumePairing(deviceCode string, expiresAt int64) (Device, string, error) {
 	if err := s.affect(s.db.Exec(
 		`UPDATE device_pairings SET consumed=1
 		   WHERE device_code=? AND status=? AND consumed=0 AND expires_at > ?`,
@@ -446,7 +493,7 @@ func (s *Store) ConsumePairing(deviceCode string) (Device, string, error) {
 	if err != nil {
 		return Device{}, "", err
 	}
-	return s.CreateDevice(p.AccountID, p.Name, p.Platform)
+	return s.CreateDevice(p.AccountID, p.Name, p.Platform, expiresAt)
 }
 
 func (s *Store) scanPairing(row *sql.Row) (Pairing, error) {
@@ -740,6 +787,33 @@ func (s *Store) BlobByID(id string) (Blob, error) {
 		return Blob{}, ErrNotFound
 	}
 	return b, err
+}
+
+// BlobsOlderThan lists blobs created at or before ts (unix seconds). Used by the
+// retention sweep, which needs each id to delete its bytes before its row.
+func (s *Store) BlobsOlderThan(ts int64) ([]Blob, error) {
+	rows, err := s.db.Query(
+		`SELECT id,account_id,content_type,size,sha256,created_at FROM blobs WHERE created_at<=?`, ts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Blob
+	for rows.Next() {
+		var b Blob
+		if err := rows.Scan(&b.ID, &b.AccountID, &b.ContentType, &b.Size, &b.SHA256, &b.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
+// DeleteBlob removes a blob's metadata row. The caller removes the bytes on disk
+// (see blob.Service.Delete). Deleting a missing id is not an error.
+func (s *Store) DeleteBlob(id string) error {
+	_, err := s.db.Exec(`DELETE FROM blobs WHERE id=?`, id)
+	return err
 }
 
 // --- SSH keys (authorize the jump server) ---

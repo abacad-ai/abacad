@@ -40,6 +40,11 @@ type API struct {
 	BaseDomain string             // domain devices are addressed under, for the ssh_host hint
 	VNC        *vnc.Manager       // live VNC session manager (screen_recording live channel)
 
+	// EnrollmentTTL is how long a newly enrolled device stays valid before it must
+	// be extended or made permanent. 0 disables expiry (self-host default); the
+	// hosted service sets it (e.g. 24h) so devices are ephemeral by default.
+	EnrollmentTTL time.Duration
+
 	// DownloadsDir is the directory of published client builds served at
 	// /downloads/; GET /api/downloads lists what it holds. See downloads.go.
 	DownloadsDir string
@@ -235,7 +240,8 @@ type deviceView struct {
 	CreatedAt    string `json:"created_at"`
 	SSHHost      string `json:"ssh_host,omitempty"`      // ssh <ssh_host> reaches this device via the jump
 	ScreenshotAt int64  `json:"screenshot_at,omitempty"` // unix seconds of the last stored screenshot; 0/absent if none
-	Humanize     bool   `json:"humanize"`                // inject human-like pointer motion (default on)
+	Humanize     bool   `json:"humanize"`                // smooth pointer motion; default off, opt-in with attestation
+	ExpiresAt    string `json:"expires_at,omitempty"`    // enrollment expiry (RFC3339); absent = permanent
 }
 
 func (a *API) listDevices(w http.ResponseWriter, r *http.Request) {
@@ -276,7 +282,7 @@ func (a *API) createDevice(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = "New device"
 	}
-	d, token, err := a.Store.CreateDevice(account(r).ID, name, strings.TrimSpace(body.Platform))
+	d, token, err := a.Store.CreateDevice(account(r).ID, name, strings.TrimSpace(body.Platform), a.enrollmentExpiry())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "could not create device")
 		return
@@ -304,6 +310,15 @@ func (a *API) updateDevice(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name     *string `json:"name"`
 		Humanize *bool   `json:"humanize"`
+		// Attested must be true to ENABLE humanize or to make enrollment permanent:
+		// the operator attests they own or are authorized to automate this device
+		// and that the automation does not violate the target platform's terms.
+		Attested *bool `json:"attested"`
+		// Extend resets enrollment expiry to now + TTL (keep-alive another window).
+		Extend *bool `json:"extend"`
+		// Permanent removes enrollment expiry (0). Requires Attested; discloses that
+		// a permanently reachable device carries the standing-exposure risk.
+		Permanent *bool `json:"permanent"`
 	}
 	if !decode(w, r, &body) {
 		return
@@ -324,6 +339,12 @@ func (a *API) updateDevice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if body.Humanize != nil {
+		// Enabling humanize requires an explicit attestation of authorization.
+		// Disabling never does.
+		if *body.Humanize && (body.Attested == nil || !*body.Attested) {
+			writeErr(w, http.StatusUnprocessableEntity, "enabling humanize requires attestation of authorization")
+			return
+		}
 		if err := a.Store.SetDeviceHumanize(id, accID, *body.Humanize); err != nil {
 			if errors.Is(err, store.ErrNotFound) {
 				writeErr(w, http.StatusNotFound, "device not found")
@@ -332,9 +353,53 @@ func (a *API) updateDevice(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
+		if *body.Humanize {
+			a.record(accID, store.Activity{Kind: activity.KindConsent, DeviceID: id, Method: "humanize.enable"})
+		}
+	}
+
+	// Extend enrollment: reset expiry to now + TTL. Only meaningful when the
+	// service runs with a TTL (hosted); a no-TTL instance has nothing to extend.
+	if body.Extend != nil && *body.Extend {
+		if a.EnrollmentTTL <= 0 {
+			writeErr(w, http.StatusBadRequest, "enrollment does not expire on this server")
+			return
+		}
+		if err := a.setExpiryOr404(w, id, accID, a.enrollmentExpiry()); err != nil {
+			return
+		}
+	}
+
+	// Make enrollment permanent: drop expiry (0). Higher-friction — requires the
+	// same authorization attestation as enabling humanize.
+	if body.Permanent != nil && *body.Permanent {
+		if body.Attested == nil || !*body.Attested {
+			writeErr(w, http.StatusUnprocessableEntity, "making a device permanent requires attestation of authorization")
+			return
+		}
+		if err := a.setExpiryOr404(w, id, accID, 0); err != nil {
+			return
+		}
+		a.record(accID, store.Activity{Kind: activity.KindConsent, DeviceID: id, Method: "enrollment.permanent"})
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// setExpiryOr404 applies an expiry change and writes the appropriate error
+// response on failure; it returns a non-nil error exactly when it has written a
+// response, so the caller returns immediately.
+func (a *API) setExpiryOr404(w http.ResponseWriter, id, accID string, expiresAt int64) error {
+	err := a.Store.SetDeviceExpiry(id, accID, expiresAt)
+	if errors.Is(err, store.ErrNotFound) {
+		writeErr(w, http.StatusNotFound, "device not found")
+		return err
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not update enrollment")
+		return err
+	}
+	return nil
 }
 
 func (a *API) deleteDevice(w http.ResponseWriter, r *http.Request) {
@@ -779,6 +844,15 @@ func (a *API) clearCookie(r *http.Request) *http.Cookie {
 	}
 }
 
+// enrollmentExpiry returns the absolute expiry (unix seconds) for a device
+// enrolled now, or 0 (permanent) when enrollment TTL is disabled.
+func (a *API) enrollmentExpiry() int64 {
+	if a.EnrollmentTTL <= 0 {
+		return 0
+	}
+	return time.Now().Add(a.EnrollmentTTL).Unix()
+}
+
 func (a *API) viewDevice(d store.Device) deviceView {
 	v := deviceView{
 		ID:        d.ID,
@@ -788,6 +862,9 @@ func (a *API) viewDevice(d store.Device) deviceView {
 		Version:   d.Version,
 		Humanize:  d.Humanize,
 		CreatedAt: time.Unix(d.CreatedAt, 0).UTC().Format(time.RFC3339),
+	}
+	if d.ExpiresAt > 0 {
+		v.ExpiresAt = time.Unix(d.ExpiresAt, 0).UTC().Format(time.RFC3339)
 	}
 	if act, ok := a.Hub.Activity(d.ID); ok {
 		v.Activity = string(act)

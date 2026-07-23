@@ -115,3 +115,47 @@ func (s *Store) Delete(deviceID string) {
 	delete(s.at, deviceID)
 	s.mu.Unlock()
 }
+
+// screenshotGCInterval bounds how often the retention sweep runs. Kept short so a
+// small TTL (hours) is honored reasonably promptly.
+const screenshotGCInterval = 15 * time.Minute
+
+// StartGC launches a background sweep that deletes cached screenshots older than
+// ttl. ttl <= 0 disables it. Call once at startup. A cached frame is a screen
+// capture at rest; it must not linger past its retention window.
+func (s *Store) StartGC(ttl time.Duration) {
+	if ttl <= 0 {
+		return
+	}
+	go func() {
+		for {
+			s.sweep(ttl)
+			time.Sleep(screenshotGCInterval)
+		}
+	}()
+}
+
+// sweep removes screenshot files whose mod time is older than ttl and prunes
+// their in-memory timestamps. Returns the number removed (for tests).
+func (s *Store) sweep(ttl time.Duration) int {
+	cutoff := time.Now().Add(-ttl)
+	entries, _ := os.ReadDir(s.dir)
+	removed := 0
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".jpg" {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || !info.ModTime().Before(cutoff) {
+			continue
+		}
+		id := strings.TrimSuffix(e.Name(), ".jpg")
+		if os.Remove(filepath.Join(s.dir, e.Name())) == nil {
+			s.mu.Lock()
+			delete(s.at, id)
+			s.mu.Unlock()
+			removed++
+		}
+	}
+	return removed
+}

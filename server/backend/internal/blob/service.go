@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -12,6 +13,10 @@ import (
 	"abacad/internal/auth"
 	"abacad/internal/store"
 )
+
+// blobGCInterval is how often the retention sweep runs. Retention windows are
+// days, so an hourly sweep bounds over-retention to well under the window.
+const blobGCInterval = time.Hour
 
 // ErrTooLarge is returned by Put when the input exceeds the configured cap. The
 // HTTP handler maps it (and net/http's own *MaxBytesError) to 413; in-process
@@ -122,4 +127,51 @@ func (s *Service) OpenByID(id string) (*os.File, store.Blob, error) {
 		return nil, store.Blob{}, err
 	}
 	return f, b, nil
+}
+
+// Delete removes a blob's bytes and metadata. A missing file is not an error, so
+// the row is still dropped (self-heals a prior partial delete).
+func (s *Service) Delete(id string) error {
+	if err := os.Remove(filepath.Join(s.Dir, id)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return s.Store.DeleteBlob(id)
+}
+
+// PruneOlderThan deletes every blob created at or before cutoff (unix seconds)
+// and returns how many were removed. Data minimization: transferred files and
+// screen recordings must not accumulate on disk indefinitely.
+func (s *Service) PruneOlderThan(cutoff int64) (int, error) {
+	old, err := s.Store.BlobsOlderThan(cutoff)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, b := range old {
+		if err := s.Delete(b.ID); err != nil {
+			log.Printf("[blob] delete %s failed: %v", b.ID, err)
+			continue
+		}
+		n++
+	}
+	return n, nil
+}
+
+// StartGC launches a background sweep that deletes blobs past retention.
+// retention <= 0 disables it. Call once at startup.
+func (s *Service) StartGC(retention time.Duration) {
+	if retention <= 0 {
+		return
+	}
+	go func() {
+		for {
+			cutoff := time.Now().Add(-retention).Unix()
+			if n, err := s.PruneOlderThan(cutoff); err != nil {
+				log.Printf("[blob] prune failed: %v", err)
+			} else if n > 0 {
+				log.Printf("[blob] pruned %d blobs past retention", n)
+			}
+			time.Sleep(blobGCInterval)
+		}
+	}()
 }

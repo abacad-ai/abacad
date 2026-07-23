@@ -46,6 +46,18 @@ func (h *Hub) Remove(dc *DeviceConn) {
 	h.mu.Unlock()
 }
 
+// Kick force-closes a device's live connection, if any, and reports whether one
+// was closed. Used by the enrollment-expiry sweeper: an in-flight socket bypasses
+// the connect-time token check, so expiry has to actively drop it; the lookup
+// filter then blocks any reconnect. The closed conn's ReadPump calls Remove.
+func (h *Hub) Kick(deviceID string) bool {
+	dc, ok := h.Get(deviceID)
+	if ok {
+		dc.Close()
+	}
+	return ok
+}
+
 // Get returns the live connection for a device id, if any.
 func (h *Hub) Get(deviceID string) (*DeviceConn, bool) {
 	h.mu.Lock()

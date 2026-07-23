@@ -55,7 +55,7 @@ func TestDevicesAndTokens(t *testing.T) {
 	a, _ := s.CreateAccount("d@e.com", "h")
 	other, _ := s.CreateAccount("x@y.com", "h")
 
-	d1, tok1, err := s.CreateDevice(a.ID, "Pixel", "android")
+	d1, tok1, err := s.CreateDevice(a.ID, "Pixel", "android", 0)
 	if err != nil {
 		t.Fatalf("create device: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestDevicesAndTokens(t *testing.T) {
 	}
 
 	// last_seen ordering: create d2, touch it, expect it first.
-	d2, _, _ := s.CreateDevice(a.ID, "Old", "")
+	d2, _, _ := s.CreateDevice(a.ID, "Old", "", 0)
 	s.TouchDevice(d2.ID)
 	list, err := s.DevicesByAccount(a.ID)
 	if err != nil || len(list) != 2 {
@@ -118,8 +118,8 @@ func TestKeyScopeAllows(t *testing.T) {
 func TestAPIKeys(t *testing.T) {
 	s := openTemp(t)
 	a, _ := s.CreateAccount("m@n.com", "h")
-	d1, _, _ := s.CreateDevice(a.ID, "phone", "android")
-	d2, _, _ := s.CreateDevice(a.ID, "mac", "macos")
+	d1, _, _ := s.CreateDevice(a.ID, "phone", "android", 0)
+	d2, _, _ := s.CreateDevice(a.ID, "mac", "macos", 0)
 
 	// A key scoped to one device + one method, no tunnel.
 	scope := KeyScope{DeviceIDs: []string{d1.ID}, Methods: []string{"screenshot"}}
@@ -160,7 +160,7 @@ func TestAPIKeys(t *testing.T) {
 		t.Fatalf("update: %v", err)
 	}
 	_, got2, _ := s.APIKeyScopeByTokenHash(auth.HashToken(tok))
-	d3, _, _ := s.CreateDevice(a.ID, "later", "browser") // created AFTER the key
+	d3, _, _ := s.CreateDevice(a.ID, "later", "browser", 0) // created AFTER the key
 	if !got2.AllDevices || !got2.AllowsDevice(d3.ID) || !got2.AllowsTunnel() {
 		t.Fatalf("all-devices wildcard should cover future devices: %+v", got2)
 	}

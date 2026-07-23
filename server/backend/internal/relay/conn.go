@@ -108,7 +108,7 @@ type DeviceConn struct {
 
 	// humanize mirrors the device record's humanize setting, refreshed on each
 	// Resolve. Read when building pointer commands so the client knows whether to
-	// synthesize human-like motion. Defaults on.
+	// synthesize human-like motion. Defaults OFF; opt-in per device.
 	humanize atomic.Bool
 
 	// activity holds the device's last-reported power state (protocol.Activity).
@@ -146,7 +146,7 @@ func NewDeviceConn(deviceID string, ws *websocket.Conn) *DeviceConn {
 		closed:   make(chan struct{}),
 	}
 	c.activity.Store(protocol.ActivityActive) // assume awake until told otherwise
-	c.humanize.Store(true)                    // on unless the device record says otherwise
+	c.humanize.Store(false)                   // off unless the device record opts in
 	c.pingInterval = pingInterval
 	c.pongTimeout = pongTimeout
 	return c

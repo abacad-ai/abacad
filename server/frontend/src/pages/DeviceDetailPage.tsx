@@ -3,8 +3,10 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import {
   Cable,
+  CalendarClock,
   Download,
   Globe,
+  Infinity as InfinityIcon,
   KeyRound,
   LoaderCircle,
   MousePointer2,
@@ -16,7 +18,7 @@ import {
   Unplug,
 } from "lucide-react";
 import { ApiError, api, type ActivityItem, type DeviceView } from "@/lib/api";
-import { clockTime, cn, relativeTime } from "@/lib/utils";
+import { clockTime, cn, relativeTime, untilTime } from "@/lib/utils";
 import { clientDownload, resolvePlatform, type PlatformInfo } from "@/lib/devices";
 import { DeviceFrame, DeviceScreen } from "@/components/DeviceScreen";
 import { LiveView } from "@/components/LiveView";
@@ -205,6 +207,7 @@ export function DeviceDetailPage() {
             </MetaRow>
             <MetaRow label="Added">{relativeTime(device.created_at)}</MetaRow>
           </dl>
+          <EnrollmentSection device={device} />
           <HumanizeToggle device={device} />
           <DeleteDevice device={device} />
         </Column>
@@ -312,6 +315,11 @@ function ConnectionUrl({ deviceId }: { deviceId: string }) {
           <p className="mt-2 text-xs leading-5 text-ink-subtle">
             Paste this into the app or scan the QR on the device. Shown once — it embeds the new device token.
           </p>
+          <p className="mt-2 text-xs leading-5 text-ink-subtle">
+            Connecting a device lets an agent see its screen, read on-screen text, inject input,
+            transfer files, and record the screen. Only connect devices you're authorized to
+            operate, and make sure anyone who uses one knows it can be controlled remotely.
+          </p>
         </>
       ) : confirming ? (
         <>
@@ -345,36 +353,140 @@ function ConnectionUrl({ deviceId }: { deviceId: string }) {
   );
 }
 
+// Enrollment expiry. On the hosted service a device is ephemeral by default and
+// shows a countdown + "Extend"; making it permanent is a higher-friction consent
+// gate (mirrors DeleteDevice) whose copy discloses the standing-exposure risk.
+// A device with no expires_at is permanent (or the server runs with no TTL, e.g.
+// self-host) — the section then just shows "Permanent" with no actions.
+function EnrollmentSection({ device }: { device: DeviceView }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  useEffect(() => {
+    setConfirming(false);
+    setFailed(null);
+  }, [device.id, device.expires_at]);
+
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    setFailed(null);
+    try {
+      await fn();
+      // The 5s device poll re-syncs expires_at; no optimistic local state needed.
+    } catch (err) {
+      setFailed((err as Error).message);
+    } finally {
+      setBusy(false);
+      setConfirming(false);
+    }
+  };
+
+  if (!device.expires_at) {
+    return (
+      <div className="mt-5 flex items-center gap-2 border-t border-border pt-4 text-sm text-ink-muted">
+        <InfinityIcon size={14} /> Enrollment: <span className="font-medium text-ink">Permanent</span>
+      </div>
+    );
+  }
+
+  const remaining = untilTime(device.expires_at);
+  const soon = Date.parse(device.expires_at) - Date.now() < 2 * 60 * 60 * 1000;
+
+  return (
+    <div className="mt-5 border-t border-border pt-4">
+      <div className="flex items-center gap-2 text-sm">
+        <CalendarClock size={14} className={soon ? "text-danger" : "text-ink-muted"} />
+        <span className="text-ink-muted">Enrollment expires</span>
+        <span className={cn("font-medium", soon ? "text-danger" : "text-ink")}>{remaining}</span>
+      </div>
+      {soon && (
+        <p className="mt-2 text-xs leading-5 text-danger">
+          This device stops being reachable when enrollment expires. Extend it to keep it connected.
+        </p>
+      )}
+
+      {confirming ? (
+        <div className="mt-3 rounded-md border border-border bg-surface-2 p-3 text-sm leading-6">
+          <p className="text-ink-muted">
+            Keep <span className="font-semibold text-ink">{device.name}</span> permanently reachable? It
+            will stay connectable through our servers indefinitely. If our service is ever compromised, its
+            screen and control could be exposed — don’t leave a permanent device signed into sensitive
+            accounts (banking, email). You confirm you’re authorized to operate it.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              variant="destructive"
+              disabled={busy}
+              onClick={() => void run(() => api.setDevicePermanent(device.id, true))}
+            >
+              {busy && <LoaderCircle size={16} className="animate-spin" />}
+              Make permanent
+            </Button>
+            <Button variant="ghost" disabled={busy} onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button variant="outline" disabled={busy} onClick={() => void run(() => api.extendDevice(device.id))}>
+            {busy && <LoaderCircle size={16} className="animate-spin" />}
+            <RefreshCw size={16} />
+            Extend
+          </Button>
+          <Button variant="ghost" disabled={busy} onClick={() => setConfirming(true)}>
+            <InfinityIcon size={16} />
+            Make permanent
+          </Button>
+        </div>
+      )}
+      {failed && <p className="mt-2 text-xs leading-5 text-danger">{failed}</p>}
+    </div>
+  );
+}
+
 // Removing a device revokes its token and drops whatever client is connected —
 // unrecoverable, so it sits last in the Setup card behind an inline confirm that
 // spells out the consequence. On success the device no longer exists, so there's
-// Human-like input toggle. On by default; off makes the device inject exact,
-// instant pointer motion (faster, but reads as a bot to behavioral detectors).
-// Persists immediately and optimistically; the 5s device poll re-syncs the
-// canonical value, and a failed write reverts the checkbox.
+// Smooth-input toggle. OFF by default; enabling smooths pointer motion (curved
+// path, varied timing) for reliability on UIs sensitive to mechanical input.
+// Because enabling requires the operator to attest authorization, turning it ON
+// opens an inline attestation gate; turning it OFF applies immediately. Persists
+// optimistically; the 5s device poll re-syncs and a failed write reverts.
 function HumanizeToggle({ device }: { device: DeviceView }) {
   const [on, setOn] = useState(device.humanize);
+  const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
 
   // Re-sync when a different device loads or the poll brings a new value.
   useEffect(() => {
     setOn(device.humanize);
+    setConfirming(false);
     setFailed(null);
   }, [device.id, device.humanize]);
 
-  const toggle = async () => {
-    const next = !on;
+  const apply = async (next: boolean, attested?: boolean) => {
     setOn(next);
+    setConfirming(false);
     setBusy(true);
     setFailed(null);
     try {
-      await api.setDeviceHumanize(device.id, next);
+      await api.setDeviceHumanize(device.id, next, attested);
     } catch (err) {
       setOn(!next); // revert on failure
       setFailed((err as Error).message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const onChange = () => {
+    if (on) {
+      void apply(false); // disabling never needs attestation
+    } else {
+      setConfirming(true); // enabling: open the attestation gate
     }
   };
 
@@ -385,19 +497,44 @@ function HumanizeToggle({ device }: { device: DeviceView }) {
           type="checkbox"
           checked={on}
           disabled={busy}
-          onChange={() => void toggle()}
+          onChange={onChange}
           className="mt-1 h-4 w-4 shrink-0 accent-brand"
         />
         <span className="text-sm leading-6">
           <span className="flex items-center gap-1.5 font-medium text-ink">
-            <MousePointer2 size={14} /> Human-like input
+            <MousePointer2 size={14} /> Smooth input
           </span>
           <span className="text-ink-muted">
-            Move the cursor along a curved path with jittered timing so agent input isn’t flagged as a
-            bot. On by default; turn off for exact, instant motion.
+            Off by default. When enabled, moves the pointer along a curved path with varied timing
+            for reliability on UIs sensitive to exact, instant input. Requires attestation.
           </span>
         </span>
       </label>
+      {confirming && (
+        <div className="mt-3 rounded-md border border-border bg-surface-2 p-3 text-sm leading-6">
+          <p className="text-ink-muted">
+            I own or am authorized to automate this device, and this automation does not violate
+            the target platform’s terms of service.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void apply(true, true)}
+              className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+            >
+              I attest — enable
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirming(false)}
+              className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-ink-muted"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
       {failed && <p className="mt-2 text-xs leading-5 text-danger">{failed}</p>}
     </div>
   );

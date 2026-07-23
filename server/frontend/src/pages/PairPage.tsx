@@ -36,6 +36,7 @@ export function PairPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [approved, setApproved] = useState(false);
+  const [accepted, setAccepted] = useState(false);
 
   // Look a code up (from the URL or the manual field) to confirm it's pending and
   // learn the platform the CLI reported.
@@ -70,11 +71,11 @@ export function PairPage() {
 
   const approve = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!pairing) return;
+    if (!pairing || !accepted) return;
     setBusy(true);
     setError(null);
     try {
-      await api.pairApprove(pairing.user_code, name.trim() || "New device", pairing.platform);
+      await api.pairApprove(pairing.user_code, name.trim() || "New device", pairing.platform, accepted);
       setApproved(true);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not approve this device");
@@ -137,12 +138,37 @@ export function PairPage() {
                   placeholder="New device"
                 />
               </div>
+              <div className="rounded-md border border-border bg-surface-2 p-3 text-sm leading-6 text-ink-muted">
+                Approving lets an agent you direct <strong>see this device's screen, read its
+                on-screen text, inject taps and keystrokes, transfer files, and record the
+                screen</strong>. Only connect a device you own or are authorized to operate, and
+                make sure anyone who uses it knows it can be controlled remotely.
+              </div>
+              <label className="flex cursor-pointer items-start gap-3 text-sm leading-6">
+                <input
+                  type="checkbox"
+                  checked={accepted}
+                  onChange={(event) => setAccepted(event.target.checked)}
+                  className="mt-1 h-4 w-4 shrink-0 accent-brand"
+                />
+                <span className="text-ink-muted">
+                  I am authorized to operate this device and agree to the{" "}
+                  <a href="/terms" target="_blank" rel="noopener" className="text-brand underline">
+                    Terms
+                  </a>{" "}
+                  and{" "}
+                  <a href="/privacy" target="_blank" rel="noopener" className="text-brand underline">
+                    Privacy Policy
+                  </a>
+                  .
+                </span>
+              </label>
               {error && (
                 <p role="alert" className="text-sm text-danger">
                   {error}
                 </p>
               )}
-              <Button type="submit" disabled={busy} className="w-full">
+              <Button type="submit" disabled={busy || !accepted} className="w-full">
                 {busy && <LoaderCircle size={16} className="animate-spin" />}
                 Approve &amp; connect
               </Button>

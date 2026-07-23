@@ -42,7 +42,7 @@
 <main>
   <p class="eyebrow">abacad</p>
   <h1>Privacy Policy</h1>
-  <p class="updated">Last updated: 20 July 2026</p>
+  <p class="updated">Last updated: 23 July 2026</p>
 
   <p>
     abacad ("abacad", "we", "us") is a device-relay console: it lets you pair your
@@ -72,7 +72,23 @@
     <li><strong>On-demand screenshots.</strong> When you or your agent request a
       screen capture from a paired device, the most recent frame is cached to
       display it in the dashboard.</li>
+    <li><strong>Screen, on-screen text, and files in transit.</strong> To carry
+      out your agent's actions, screen captures, the device's on-screen text
+      (accessibility tree), screen recordings, and any files you transfer pass
+      through our relay. Binary payloads (screenshots, recordings, files) are
+      streamed through a temporary blob store; on-screen text is relayed to the
+      requester and is <strong>not</strong> written to durable storage, and command
+      parameters (such as typed text or tap coordinates) are <strong>not</strong>
+      recorded in the activity trail.</li>
   </ul>
+
+  <div class="card">
+    <strong>What a paired device exposes.</strong> Pairing a device grants an agent
+    you direct the ability to see its screen, read its on-screen text, inject input
+    (taps, clicks, keystrokes), transfer files, and record the screen. Only pair
+    devices you own or are authorized to operate, and make sure anyone who uses a
+    paired device knows it can be viewed and controlled remotely.
+  </div>
 
   <h2>How we use your information</h2>
   <ul>
@@ -101,8 +117,10 @@
   <p>
     We retain account and device data for as long as your account is active.
     Activity-trail entries are pruned automatically after a retention window.
-    Cached screenshots are overwritten by newer captures and deleted when the
-    device is removed.
+    Cached screenshots are overwritten by newer captures, expire automatically
+    after a short window (by default 24 hours), and are deleted when the device is
+    removed. Transferred files and screen recordings held in the blob store are
+    deleted automatically after a retention window (by default 7 days).
   </p>
 
   <h2>Your choices</h2>

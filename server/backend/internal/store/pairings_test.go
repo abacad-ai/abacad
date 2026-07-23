@@ -30,7 +30,7 @@ func TestPairingLifecycle(t *testing.T) {
 	}
 
 	// Consuming a not-yet-approved pairing must not mint a device.
-	if _, _, err := s.ConsumePairing(deviceCode); err != ErrNotFound {
+	if _, _, err := s.ConsumePairing(deviceCode, 0); err != ErrNotFound {
 		t.Fatalf("consume-before-approve want ErrNotFound, got %v", err)
 	}
 
@@ -41,7 +41,7 @@ func TestPairingLifecycle(t *testing.T) {
 	}
 
 	// The CLI's next poll consumes it and mints exactly one device.
-	d, token, err := s.ConsumePairing(deviceCode)
+	d, token, err := s.ConsumePairing(deviceCode, 0)
 	if err != nil {
 		t.Fatalf("consume: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestPairingLifecycle(t *testing.T) {
 	}
 
 	// A second poll must not mint a second device (idempotency / race guard).
-	if _, _, err := s.ConsumePairing(deviceCode); err != ErrNotFound {
+	if _, _, err := s.ConsumePairing(deviceCode, 0); err != ErrNotFound {
 		t.Fatalf("double-consume want ErrNotFound, got %v", err)
 	}
 	if ds, _ := s.DevicesByAccount(acc.ID); len(ds) != 1 {
@@ -76,7 +76,7 @@ func TestPairingApproveRejects(t *testing.T) {
 	if err := s.ApprovePairing(uc, acc.ID, "n", "linux"); err != ErrNotFound {
 		t.Fatalf("expired approve want ErrNotFound, got %v", err)
 	}
-	if _, _, err := s.ConsumePairing(dc); err != ErrNotFound {
+	if _, _, err := s.ConsumePairing(dc, 0); err != ErrNotFound {
 		t.Fatalf("expired consume want ErrNotFound, got %v", err)
 	}
 }

@@ -30,6 +30,7 @@ import (
 	"abacad/internal/config"
 	"abacad/internal/connect"
 	"abacad/internal/device"
+	"abacad/internal/devicegc"
 	"abacad/internal/events"
 	"abacad/internal/mcp"
 	"abacad/internal/protocol"
@@ -61,6 +62,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("screenshot dir %q: %v", cfg.ScreenshotDir, err)
 	}
+	shots.StartGC(time.Duration(cfg.ScreenshotRetentionHours) * time.Hour)
 
 	if cfg.Seed {
 		seed(st)
@@ -69,6 +71,10 @@ func main() {
 	hub := relay.NewHub()
 	evlog := events.NewLog()
 	trail := activity.New(st, time.Duration(cfg.ActivityRetentionDays)*24*time.Hour)
+	// Device-enrollment expiry (hosted only; TTL 0 = disabled, e.g. self-host).
+	if cfg.DeviceEnrollmentTTLHours > 0 {
+		devicegc.Start(st, hub, time.Duration(cfg.DeviceDormantDeleteDays)*24*time.Hour)
+	}
 	factory := &resolver.Factory{Store: st, Hub: hub}
 
 	// /device: authenticate the device by its token, register under its real
@@ -124,6 +130,7 @@ func main() {
 	// (send_file / get_file) hand back to the agent, so the agent only ever deals
 	// in URLs and no bytes cross the MCP surface.
 	blobSvc := &blob.Service{Store: st, Dir: cfg.BlobDir, MaxBytes: cfg.MaxBlobBytes}
+	blobSvc.StartGC(time.Duration(cfg.BlobRetentionDays) * 24 * time.Hour)
 	blobSigner := blob.NewSigner(blobSigningKey(cfg), publicBaseURL(cfg))
 
 	// /mcp: authenticate the agent by its bearer API key -> account + scope ->
@@ -186,6 +193,7 @@ func main() {
 	apiHandler := (&api.API{
 		Store: st, Hub: hub, Events: evlog, Activity: trail, Shots: shots, BaseDomain: cfg.BaseDomain,
 		VNC:            vncMgr,
+		EnrollmentTTL:  time.Duration(cfg.DeviceEnrollmentTTLHours) * time.Hour,
 		DownloadsDir:   cfg.DownloadsDir,
 		GoogleClientID: cfg.GoogleClientID, GoogleClientSecret: cfg.GoogleClientSecret, GoogleRedirectURL: cfg.GoogleRedirectURL,
 	}).Handler()
@@ -400,7 +408,7 @@ func seed(st *store.Store) {
 	if err != nil {
 		log.Fatalf("seed: %v", err)
 	}
-	_, devToken, err := st.CreateDevice(acc.ID, "Seed device", "")
+	_, devToken, err := st.CreateDevice(acc.ID, "Seed device", "", 0)
 	if err != nil {
 		log.Fatalf("seed device: %v", err)
 	}

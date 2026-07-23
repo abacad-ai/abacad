@@ -17,7 +17,16 @@ type Config struct {
 	DevCORS       bool   // permissive CORS for local dev (Vite / smoke.mjs hitting Go directly)
 	Seed          bool   // create a dev account/device/tokens on boot
 
-	ActivityRetentionDays int // prune activity-trail rows older than this (0 = keep forever)
+	ActivityRetentionDays    int // prune activity-trail rows older than this (0 = keep forever)
+	BlobRetentionDays        int // delete data-plane blobs (files, recordings) older than this (0 = keep forever)
+	ScreenshotRetentionHours int // delete cached per-device screenshots older than this (0 = keep forever)
+
+	// Device enrollment expiry. On the hosted service this makes devices ephemeral
+	// by default, bounding the blast radius of a relay compromise; self-hosted
+	// instances leave the TTL at 0 (never expire). The TTL knob IS the hosted-vs-
+	// self-host differentiator — no separate flag.
+	DeviceEnrollmentTTLHours int // new devices expire this many hours after enrollment (0 = never)
+	DeviceDormantDeleteDays  int // hard-delete devices this many days after they expire (0 = keep dormant forever)
 
 	// SSH jump host (ssh <device>.<base-domain> via ProxyJump). Disabled when
 	// SSHAddr is empty, so local dev and tests opt in explicitly.
@@ -61,6 +70,10 @@ func Load() Config {
 	flag.BoolVar(&c.DevCORS, "dev-cors", os.Getenv("ABACAD_DEV_CORS") == "1", "enable permissive CORS for local dev")
 	flag.BoolVar(&c.Seed, "seed", false, "seed a dev account/device/tokens on boot and print them")
 	flag.IntVar(&c.ActivityRetentionDays, "activity-retention-days", int(envOrInt64("ABACAD_ACTIVITY_RETENTION_DAYS", 90)), "prune activity-trail rows older than this many days (0 keeps them forever)")
+	flag.IntVar(&c.BlobRetentionDays, "blob-retention-days", int(envOrInt64("ABACAD_BLOB_RETENTION_DAYS", 7)), "delete data-plane blobs (transferred files, screen recordings) older than this many days (0 keeps them forever)")
+	flag.IntVar(&c.ScreenshotRetentionHours, "screenshot-retention-hours", int(envOrInt64("ABACAD_SCREENSHOT_RETENTION_HOURS", 24)), "delete cached per-device screenshots older than this many hours (0 keeps them forever)")
+	flag.IntVar(&c.DeviceEnrollmentTTLHours, "device-enrollment-ttl-hours", int(envOrInt64("ABACAD_DEVICE_ENROLLMENT_TTL_HOURS", 0)), "new devices expire this many hours after enrollment (0 = never expire; set on the hosted service, leave 0 to self-host)")
+	flag.IntVar(&c.DeviceDormantDeleteDays, "device-dormant-delete-days", int(envOrInt64("ABACAD_DEVICE_DORMANT_DELETE_DAYS", 7)), "hard-delete devices this many days after they expire (0 = keep dormant forever)")
 	flag.StringVar(&c.SSHAddr, "ssh-addr", envOr("ABACAD_SSH_ADDR", ""), "SSH jump host listen address(es), comma-separated e.g. :22,:443 (empty disables it)")
 	flag.StringVar(&c.SSHHostKey, "ssh-host-key", envOr("ABACAD_SSH_HOST_KEY", "ssh_host_ed25519_key"), "path to the SSH jump host key (created if absent)")
 	flag.StringVar(&c.BaseDomain, "base-domain", envOr("ABACAD_BASE_DOMAIN", "abacad.ai"), "domain devices are addressed under (ssh <device>.<base-domain>)")

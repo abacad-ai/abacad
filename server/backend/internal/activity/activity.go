@@ -29,6 +29,7 @@ const (
 	KindDeviceToken  = "device.token_rotated"
 	KindConnected    = "device.connected"
 	KindDisconnected = "device.disconnected"
+	KindConsent      = "consent.attested" // operator attested authorization (enrollment / humanize opt-in)
 	KindMCPToken     = "mcp.token_rotated" // legacy; retained for old trail rows
 	KindAPIKeyCreate = "apikey.created"
 	KindAPIKeyUpdate = "apikey.updated"
