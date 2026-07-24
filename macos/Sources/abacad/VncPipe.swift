@@ -83,16 +83,28 @@ final class VncBridge: @unchecked Sendable {
             guard let self else { return }
             switch result {
             case .success(let message):
+                // URLSessionWebSocketTask.receive delivers a *normal* (going-away)
+                // close as a .success, not a .failure. If we blindly re-armed we'd
+                // spin receive() forever against a dead socket, pinning a core and
+                // starving the process. Stop when the peer has closed — the same
+                // rule the Linux (any ws.Read error returns) and Android
+                // (if (n <= 0) break) bridges follow.
+                if self.ws.closeCode != .invalid { self.end(); return }
                 let data: Data
                 switch message {
                 case .data(let d): data = d
                 case .string(let s): data = Data(s.utf8)
                 @unknown default: data = Data()
                 }
-                if !data.isEmpty {
-                    self.tcp.send(content: data, completion: .contentProcessed { _ in })
-                }
-                self.pumpWSToTCP()
+                guard !data.isEmpty else { self.pumpWSToTCP(); return }
+                // Backpressure: only re-arm the WS receive once this chunk has been
+                // handed to TCP, so a slow local VNC socket can't let inbound frames
+                // pile up unbounded (the memory half of the wedge).
+                self.tcp.send(content: data, completion: .contentProcessed { [weak self] error in
+                    guard let self else { return }
+                    if error != nil { self.end(); return }
+                    self.pumpWSToTCP()
+                })
             case .failure:
                 self.end()
             }
