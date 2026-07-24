@@ -28,6 +28,10 @@ object RfbNative {
      *  plane); [rowStride] may exceed width*4. */
     external fun nativePushFrame(handle: Long, buf: ByteBuffer, width: Int, height: Int, rowStride: Int)
 
+    /** Re-mark the current framebuffer dirty (no new capture) so a static screen
+     *  still refreshes a late-joining viewer. */
+    external fun nativeRefresh(handle: Long)
+
     /** Stop the server and free it. No [nativePushFrame] may run concurrently. */
     external fun nativeStop(handle: Long)
 }

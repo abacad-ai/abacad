@@ -59,10 +59,34 @@ class VncServer(private val service: AbacadAccessibilityService) {
     private var virtualDisplay: VirtualDisplay? = null
     private var projection: MediaProjection? = null
     private var frameThread: HandlerThread? = null
+    private var frames = 0L // captured frames this session (first-frame / flow logging)
+
+    // MediaProjection requires a registered callback before createVirtualDisplay on
+    // API 34+; without it capture can silently deliver nothing (a black view). The
+    // recorder registers one too — keep parity.
+    private val projectionCallback = object : MediaProjection.Callback() {
+        override fun onStop() { stop() }
+    }
+
+    // A static screen produces no ImageReader callbacks, so a viewer that connects
+    // after the last real frame would see the stale/black initial framebuffer forever.
+    // Re-mark the current framebuffer dirty on a light cadence so late joiners and
+    // motionless screens still paint. Runs on the frame thread.
+    private val refresh = object : Runnable {
+        override fun run() {
+            synchronized(frameLock) {
+                if (running && handle != 0L) RfbNative.nativeRefresh(handle)
+            }
+            frameThread?.let { Handler(it.looper).postDelayed(this, REFRESH_INTERVAL_MS) }
+        }
+    }
 
     companion object {
         // Must match RFB_PORT in rfb_jni.c.
         private const val LOCAL_PORT = 5901
+        // Keep-alive re-mark cadence for static screens (ms). Cheap: LibVNCServer only
+        // sends changed pixels, so a truly static screen costs ~nothing on the wire.
+        private const val REFRESH_INTERVAL_MS = 1_000L
     }
 
     fun handle(params: JSONObject): JSONObject = when (params.optString("action")) {
@@ -113,6 +137,7 @@ class VncServer(private val service: AbacadAccessibilityService) {
             val mpm = service.getSystemService(MediaProjectionManager::class.java)
             val mp = mpm.getMediaProjection(resultCode, data)
                 ?: throw IllegalStateException("null MediaProjection")
+            mp.registerCallback(projectionCallback, main)
             projection = mp
 
             handle = RfbNative.nativeStart(w, h)
@@ -122,6 +147,7 @@ class VncServer(private val service: AbacadAccessibilityService) {
             // main looper.
             val ht = HandlerThread("abacad-vnc-frames").apply { start() }
             frameThread = ht
+            frames = 0
             val reader = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
             reader.setOnImageAvailableListener({ r ->
                 val img = try { r.acquireLatestImage() } catch (_: Exception) { null } ?: return@setOnImageAvailableListener
@@ -130,6 +156,8 @@ class VncServer(private val service: AbacadAccessibilityService) {
                         if (running && handle != 0L) {
                             val plane = img.planes[0]
                             RfbNative.nativePushFrame(handle, plane.buffer, w, h, plane.rowStride)
+                            if (frames == 0L) Log.i(AbacadAccessibilityService.TAG, "vnc first frame captured ${w}x$h")
+                            frames++
                         }
                     }
                 } catch (_: Exception) {
@@ -144,6 +172,9 @@ class VncServer(private val service: AbacadAccessibilityService) {
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 reader.surface, null, null,
             )
+
+            // Keep-alive refresh so a static screen / late-joining viewer still paints.
+            Handler(ht.looper).postDelayed(refresh, REFRESH_INTERVAL_MS)
 
             // Bridge the reverse-connect WS to the localhost RFB server.
             Thread {
@@ -183,6 +214,7 @@ class VncServer(private val service: AbacadAccessibilityService) {
         }
         try { frameThread?.quitSafely() } catch (_: Exception) {}
         frameThread = null
+        try { projection?.unregisterCallback(projectionCallback) } catch (_: Exception) {}
         try { projection?.stop() } catch (_: Exception) {}
         projection = null
         // Only release the foreground promotion this session actually took, so a

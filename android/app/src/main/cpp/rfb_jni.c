@@ -106,6 +106,31 @@ Java_ai_abacad_android_RfbNative_nativePushFrame(JNIEnv *env, jobject thiz,
         }
     }
     rfbMarkRectAsModified(screen, 0, 0, width, height);
+
+    // Frame-flow instrumentation: prove capture is actually delivering pixels (the
+    // black-screen bug looked like a live view but was really a never-updated
+    // framebuffer). Log the first frame — with a cheap non-black sanity sample so a
+    // solid-black capture is distinguishable from a genuine screen — then rarely.
+    static unsigned long frames = 0;
+    if (frames == 0 || (frames % 300) == 0) {
+        // Sample the centre pixel so an all-zero (black) capture is visible in logs.
+        const uint8_t *px = dst + ((size_t)(height / 2) * rowBytes) + ((size_t)(width / 2) * 4);
+        __android_log_print(ANDROID_LOG_INFO, TAG,
+                            "pushFrame #%lu %dx%d stride=%d centre=rgb(%u,%u,%u)",
+                            frames, width, height, rowStride, px[0], px[1], px[2]);
+    }
+    frames++;
+}
+
+// Re-mark the whole framebuffer dirty without a new capture. VncServer calls this on
+// a light timer so a STATIC screen (no ImageReader callbacks) still gets its current
+// contents pushed to a viewer that connected after the last real frame — otherwise a
+// motionless screen shows the stale/black initial framebuffer forever.
+JNIEXPORT void JNICALL
+Java_ai_abacad_android_RfbNative_nativeRefresh(JNIEnv *env, jobject thiz, jlong handle) {
+    rfbScreenInfoPtr screen = (rfbScreenInfoPtr)(intptr_t)handle;
+    if (!screen || !screen->frameBuffer) return;
+    rfbMarkRectAsModified(screen, 0, 0, screen->width, screen->height);
 }
 
 // Stop the server and free everything. The caller must guarantee no nativePushFrame
