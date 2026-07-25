@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Network
 
 // Process entry point. `abacad connect` runs the device-authorization pairing
 // flow as a plain CLI and exits, before any menu-bar/SwiftUI init; a bare launch
@@ -67,18 +68,86 @@ final class Agent: ObservableObject {
     private let tunnel = Tunnel()
     private var controlGen = 0
 
+    // Power/network watchers. A sleeping Mac can't answer the relay's liveness
+    // pings, so the socket dies during sleep no matter what we do — what matters
+    // is coming back the moment it wakes instead of waiting for URLSession to
+    // notice a connection that's been dead for hours. asleep also drives the
+    // presence frames below.
+    private let pathMonitor = NWPathMonitor()
+    private var powerObservers: [NSObjectProtocol] = []
+    // Written by the power observers (main), read from the socket's queue when a
+    // reconnect re-reports presence — so it needs a lock, small as it is.
+    private let asleepLock = NSLock()
+    private var asleepFlag = false
+    private var asleep: Bool {
+        get { asleepLock.lock(); defer { asleepLock.unlock() }; return asleepFlag }
+        set { asleepLock.lock(); asleepFlag = newValue; asleepLock.unlock() }
+    }
+
     init() {
         dispatcher.blobClient = BlobClient.fromServerURL(serverURL)
         tunnel.sendFrame = { [weak self] data in self?.ws.send(data: data) }
         ws.onStateChange = { [weak self] up in
+            guard let self else { return }
+            // A fresh socket starts out assumed active server-side, so re-report
+            // our real power state on every (re)connect.
+            if up { self.sendPresence(self.asleep ? "asleep" : "active") }
             DispatchQueue.main.async {
-                self?.connected = up
-                self?.event(up ? "• connected" : "• disconnected")
+                self.connected = up
+                self.event(up ? "• connected" : "• disconnected")
             }
         }
         ws.onText = { [weak self] text in self?.handle(text: text) }
         ws.onBinary = { [weak self] data in self?.tunnel.handle(data) }
+        observeSystemEvents()
         if !serverURL.isEmpty { ws.connect(urlString: serverURL) }
+    }
+
+    deinit {
+        pathMonitor.cancel()
+        for o in powerObservers { NSWorkspace.shared.notificationCenter.removeObserver(o) }
+    }
+
+    // Sleep/wake and network-path changes, the desktop counterpart to the
+    // Android service's SCREEN_ON / USER_PRESENT / network-available receivers
+    // (AbacadAccessibilityService.systemReceiver). Wake and a returning network
+    // path both force an immediate redial; sleep reports the device asleep so the
+    // dashboard can tell "asleep" from "gone" for as long as the socket lasts.
+    private func observeSystemEvents() {
+        let nc = NSWorkspace.shared.notificationCenter
+        func on(_ name: NSNotification.Name, _ body: @escaping () -> Void) {
+            powerObservers.append(nc.addObserver(forName: name, object: nil, queue: nil) { _ in body() })
+        }
+        on(NSWorkspace.willSleepNotification) { [weak self] in self?.setAsleep(true) }
+        on(NSWorkspace.screensDidSleepNotification) { [weak self] in self?.setAsleep(true) }
+        on(NSWorkspace.didWakeNotification) { [weak self] in self?.setAsleep(false) }
+        on(NSWorkspace.screensDidWakeNotification) { [weak self] in self?.setAsleep(false) }
+        on(NSWorkspace.sessionDidBecomeActiveNotification) { [weak self] in self?.setAsleep(false) }
+
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            guard path.status == .satisfied else { return }
+            self?.ws.forceReconnect()
+        }
+        pathMonitor.start(queue: DispatchQueue(label: "abacad.net.path"))
+    }
+
+    private func setAsleep(_ v: Bool) {
+        guard asleep != v else { return }
+        asleep = v
+        if v {
+            // Best-effort: the send may not make it out before the machine freezes.
+            sendPresence("asleep")
+        } else {
+            ws.forceReconnect() // no-op if the socket survived the nap
+            sendPresence("active")
+        }
+        event(v ? "• display/system asleep" : "• awake")
+    }
+
+    // Unsolicited power-state frame; the relay records it as a display signal and
+    // keeps routing commands either way (relay.DeviceConn.setActivity).
+    private func sendPresence(_ state: String) {
+        ws.send(text: Json.string(["type": "presence", "state": state]))
     }
 
     func connect() {

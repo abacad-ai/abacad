@@ -52,6 +52,13 @@ Two hard facts constrain the whole space:
 - **Reconnect triggers.** If the socket does die (deep Doze, a network blip, an OEM freeze), the
   client force-reconnects immediately on **screen-on**, **unlock**, and **network-regained** —
   instead of waiting out the backoff — so the device is reachable again the moment it's touched.
+  The desktop client does the same on **wake from sleep** and when the network path returns.
+- **Server-side grace.** The relay probes each device every 30s and needs a pong within 10s, but
+  tolerates **three consecutive misses (~100s worst case)** before dropping the socket. A single
+  miss is normal — a Doze maintenance gap, a Mac nap, a handover — and dropping on the first one
+  turned every idle stretch into a disconnect/reconnect pair. The trade is that "offline" can lag
+  reality by that much. The clients apply the same idea in the other direction: 20s pings, a 10s
+  pong deadline, three misses and they redial.
 - **Automatic wake-on-command.** When a command arrives on a dark or locked phone, the service
   holds a brief CPU wakelock and launches `WakerActivity`, which powers the display on, shows
   over the keyguard, and dismisses a *non-secure* keyguard — then the command runs. This is

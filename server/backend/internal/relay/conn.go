@@ -71,14 +71,28 @@ const DefaultTimeout = 15 * time.Second
 // socket (the phone froze in Doze, the radio dropped, a NAT rebinding) leaves
 // the server's Read blocked with no error — so without our own probe a gone
 // device lingers as "online" (worse, as "asleep") until TCP eventually breaks.
-// We ping the device on an interval and require a pong within a deadline; a miss
-// closes the socket, which drops it from the hub → honestly offline. This is
-// what makes "asleep" (still answering) mean something different from "offline"
-// (not answering). The interval sits above the client's 20s so the two don't
-// beat against each other.
+// We ping the device on an interval and require a pong within a deadline; enough
+// consecutive misses closes the socket, which drops it from the hub → honestly
+// offline. This is what makes "asleep" (still answering) mean something
+// different from "offline" (not answering). The interval sits above the client's
+// 20s so the two don't beat against each other.
+//
+// One miss is NOT enough. A real device freezes for reasons that aren't death:
+// a Mac naps, an Android Doze window suspends the radio, a handover moves the
+// socket, or a multi-MB screenshot write holds the library's write lock past the
+// probe's deadline. Dropping on the first miss made every one of those a
+// disconnect + reconnect, so an idle device churned all night. We ride out
+// pongMissBudget probes before giving up; the cost is that "offline" can lag
+// reality by ~100s.
+//
+// The write-lock case is only covered while the ping is waiting to ACQUIRE the
+// lock. If it gets the lock and the write itself stalls (the peer's receive
+// window is shut), coder/websocket's own 5s write timeout force-closes the
+// connection out from under us — no miss budget can ride that out.
 const (
-	pingInterval = 30 * time.Second
-	pongTimeout  = 10 * time.Second
+	pingInterval   = 30 * time.Second
+	pongTimeout    = 10 * time.Second
+	pongMissBudget = 3
 )
 
 // DeviceConn is one live device WebSocket. All exported methods are safe for
@@ -117,10 +131,17 @@ type DeviceConn struct {
 	// command routing.
 	activity atomic.Value
 
-	// Liveness probe cadence; defaulted from pingInterval/pongTimeout in
-	// NewDeviceConn. Fields (not the consts directly) so tests can shrink them.
-	pingInterval time.Duration
-	pongTimeout  time.Duration
+	// Liveness probe cadence; defaulted from pingInterval/pongTimeout/
+	// pongMissBudget in NewDeviceConn. Fields (not the consts directly) so tests
+	// can shrink them.
+	pingInterval   time.Duration
+	pongTimeout    time.Duration
+	pongMissBudget int
+
+	// missedPongs counts every unanswered probe over the connection's life
+	// (not just the consecutive run that ends it). Lets a test prove it actually
+	// exercised a miss rather than passing on timing luck.
+	missedPongs atomic.Int64
 
 	reasonMu    sync.Mutex
 	closeReason string // why ReadPump exited; read after the pump returns
@@ -149,6 +170,7 @@ func NewDeviceConn(deviceID string, ws *websocket.Conn) *DeviceConn {
 	c.humanize.Store(false)                   // off unless the device record opts in
 	c.pingInterval = pingInterval
 	c.pongTimeout = pongTimeout
+	c.pongMissBudget = pongMissBudget
 	return c
 }
 
@@ -399,14 +421,21 @@ func (c *DeviceConn) ReadPump(ctx context.Context) {
 }
 
 // pingLoop probes the device on an interval and requires a pong within
-// pongTimeout. A miss (the peer is frozen or gone, not merely idle) records the
-// reason and closes the socket, which unblocks ReadPump and drops the device
-// from the hub. It exits when the socket closes for any reason. coder/websocket
-// requires Ping run concurrently with the reader (ReadPump), which it always is,
-// and Ping serializes its own control-frame write, so it's safe alongside Send.
+// pongTimeout. A single miss is tolerated (see the pongMissBudget comment); only
+// pongMissBudget *consecutive* misses record the reason and close the socket,
+// which unblocks ReadPump and drops the device from the hub. Any answered ping
+// resets the count, so a device that skips one probe and comes back stays
+// connected. It exits when the socket closes for any reason.
+//
+// coder/websocket requires Ping run concurrently with the reader (ReadPump),
+// which it always is, and Ping serializes its own control-frame write, so it's
+// safe alongside Send. Ping does not close the connection when its context
+// expires — it just returns the error — which is what lets us ride out a miss.
 func (c *DeviceConn) pingLoop(ctx context.Context) {
 	t := time.NewTicker(c.pingInterval)
 	defer t.Stop()
+	misses := 0
+	var firstMiss time.Time
 	for {
 		select {
 		case <-c.closed:
@@ -417,27 +446,56 @@ func (c *DeviceConn) pingLoop(ctx context.Context) {
 			pctx, cancel := context.WithTimeout(ctx, c.pongTimeout)
 			err := c.ws.Ping(pctx)
 			cancel()
-			if err != nil {
-				select {
-				case <-c.closed:
-					return // already closing; the real reason is set elsewhere
-				default:
+			if err == nil {
+				if misses > 0 {
+					log.Printf("[device] device=%s pong resumed after %d missed probe(s)", c.DeviceID, misses)
 				}
-				c.setCloseReason(fmt.Errorf("no pong within %s", c.pongTimeout))
-				c.close()
-				return
+				misses = 0
+				continue
 			}
+			select {
+			case <-c.closed:
+				return // already closing; the real reason is set elsewhere
+			default:
+			}
+			misses++
+			c.missedPongs.Add(1)
+			if misses == 1 {
+				firstMiss = time.Now()
+			}
+			if misses < c.pongMissBudget {
+				log.Printf("[device] device=%s missed pong (%d/%d)", c.DeviceID, misses, c.pongMissBudget)
+				continue
+			}
+			c.setCloseReason(fmt.Errorf("no pong across %d probes over %s",
+				misses, time.Since(firstMiss).Round(time.Second)))
+			// The peer is by definition not answering, so don't spend the close
+			// handshake's 5s waiting for its close frame — that delay lands in the
+			// disconnect's logged uptime and helps nobody.
+			c.closeWith(true)
+			return
 		}
 	}
 }
 
 // close is idempotent: it closes the socket, signals closed, and fails all
 // pending waiters and live streams.
-func (c *DeviceConn) close() {
+func (c *DeviceConn) close() { c.closeWith(false) }
+
+// closeWith is close with a choice of goodbye. now=false sends a close frame and
+// waits (up to 5s, inside coder/websocket) for the peer's reply — the polite
+// path, used for eviction and operator kicks, where the client is listening and
+// should see a clean 1000. now=true tears the socket down immediately, for a
+// peer that has stopped answering and would only make us wait out that timeout.
+func (c *DeviceConn) closeWith(now bool) {
 	c.closeOnce.Do(func() {
 		close(c.closed)
 		if c.ws != nil {
-			_ = c.ws.Close(websocket.StatusNormalClosure, "bye")
+			if now {
+				_ = c.ws.CloseNow()
+			} else {
+				_ = c.ws.Close(websocket.StatusNormalClosure, "bye")
+			}
 		}
 		// Pending command waiters observe c.closed via their select. Streams have
 		// their own close signal, so tear each down explicitly.

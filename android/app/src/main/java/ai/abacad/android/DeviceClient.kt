@@ -35,6 +35,12 @@ class DeviceClient(
     // screen state); null means "always report active".
     private val currentActivity: (() -> String)? = null,
 ) {
+    private companion object {
+        /** How long a dial may sit in flight before we give up on it and retry. Comfortably past
+         *  OkHttp's 10s connect timeout, so this only fires for an upgrade that truly hangs. */
+        const val DIAL_TIMEOUT_MS = 20_000L
+    }
+
     private val tag = AbacadAccessibilityService.TAG
     private val client = OkHttpClient.Builder()
         .pingInterval(20, TimeUnit.SECONDS)
@@ -44,6 +50,35 @@ class DeviceClient(
     private var ws: WebSocket? = null
     private var closed = false
     private var connected = false
+
+    /** A dial is in flight — the socket exists but hasn't opened yet. Without this, every
+     *  [forceReconnect] trigger that lands during a dial (unlocking fires SCREEN_ON *and*
+     *  USER_PRESENT, and the radio coming back fires the network callback) started another
+     *  socket. The extras stayed open — their listener callbacks early-return once superseded,
+     *  so nothing ever closed them — and the relay evicted them one by one, which is what filled
+     *  the activity log with same-second connect/disconnect rows.
+     *
+     *  Because this flag makes forceReconnect stand down, a dial that never resolves would wedge
+     *  us offline for good — and only OkHttp's *connect* timeout is bounded here (readTimeout is 0
+     *  for the long-lived socket, so a stalled TLS or upgrade response hangs forever). Hence
+     *  [dialWatchdog]. */
+    private var connecting = false
+
+    /** Backstop for a dial that neither opens nor fails (captive portal, stalled middlebox on a
+     *  radio that just came back — exactly the wake path this client cares about). Drops the
+     *  hung socket and retries on the normal backoff. */
+    private val dialWatchdog = Runnable {
+        if (!closed && connecting) {
+            Log.w(tag, "ws dial stalled after ${DIAL_TIMEOUT_MS}ms — retrying")
+            AbacadStatus.event("connection stalled — retrying")
+            connecting = false
+            connected = false
+            val stuck = ws
+            ws = null
+            stuck?.let { try { it.cancel() } catch (_: Exception) {} }
+            scheduleReconnect()
+        }
+    }
     private val reconnectRunnable = Runnable { open() }
     private var backoffMs = 1000L
 
@@ -81,20 +116,30 @@ class DeviceClient(
     /**
      * Bring the socket back *now* if it isn't up — called on screen-on / network-regained so a
      * socket that died during idle doesn't wait out the backoff. Resets the backoff and, if we're
-     * not currently connected, cancels any pending delayed reconnect and dials immediately. A
-     * no-op while the socket is healthy.
+     * neither connected nor mid-dial, cancels any pending delayed reconnect and dials immediately.
+     * A no-op while the socket is healthy or already on its way up.
      */
     fun forceReconnect() {
-        if (closed || connected) return
+        if (closed || connected || connecting) return
         backoffMs = 1000L
-        handler.removeCallbacks(reconnectRunnable)
         open()
+    }
+
+    /**
+     * Idempotent "make sure we're connected", for a Connect tap or a service rebind on an
+     * unchanged URL: resumes a client the operator had disconnected, and otherwise behaves like
+     * [forceReconnect] — a no-op while the socket is healthy, an immediate dial when it isn't.
+     */
+    fun ensureConnected() {
+        if (closed) connect() else forceReconnect()
     }
 
     fun close() {
         closed = true
         connected = false
+        connecting = false
         handler.removeCallbacks(reconnectRunnable)
+        handler.removeCallbacks(dialWatchdog)
         try { ws?.close(1000, "bye") } catch (_: Exception) {}
         ws = null
         AbacadStatus.setState(AbacadStatus.State.DISCONNECTED, "disconnected")
@@ -142,10 +187,22 @@ class DeviceClient(
             AbacadStatus.setState(AbacadStatus.State.DISCONNECTED, "refused plaintext ws:// — use wss://")
             return
         }
+        // Whatever we're replacing goes away *here*, not whenever it happens to notice: an
+        // abandoned socket stays open on the relay until a newer connection evicts it. Clear the
+        // field before cancelling so the old socket's callbacks land after it is already stale
+        // and take the `webSocket !== ws` early-return.
+        handler.removeCallbacks(reconnectRunnable)
+        handler.removeCallbacks(dialWatchdog)
+        val previous = ws
+        ws = null
+        previous?.let { try { it.cancel() } catch (_: Exception) {} }
         Log.i(tag, "ws connecting: $safeUrl")
         AbacadStatus.setState(AbacadStatus.State.CONNECTING, "connecting to $safeUrl")
         val req = Request.Builder().url(connectUrl)
         token?.let { req.header("Authorization", "Bearer $it") }
+        connecting = true
+        connected = false
+        handler.postDelayed(dialWatchdog, DIAL_TIMEOUT_MS)
         ws = client.newWebSocket(req.build(), listener)
     }
 
@@ -160,15 +217,23 @@ class DeviceClient(
     }
 
     private val listener = object : WebSocketListener() {
+        // Connection-state callbacks arrive on OkHttp's dispatcher thread, but ws/connected/
+        // connecting are owned by the main looper (that's where open/close/forceReconnect run),
+        // so hop before touching them — otherwise the "am I still the current socket?" check
+        // races the very reassignment it's guarding against.
         override fun onOpen(webSocket: WebSocket, response: Response) {
-            if (webSocket !== ws) return // stale socket (superseded by a forceReconnect)
-            Log.i(tag, "ws open -> $safeUrl")
-            connected = true
-            AbacadStatus.setState(AbacadStatus.State.CONNECTED, "connected to $safeUrl")
-            backoffMs = 1000L
-            // Tell the server our current power state up front, so a device that
-            // connects while the screen is already off shows as asleep, not active.
-            currentActivity?.let { webSocket.send(presenceFrame(it())) }
+            handler.post {
+                if (webSocket !== ws) return@post // stale socket (superseded by a forceReconnect)
+                Log.i(tag, "ws open -> $safeUrl")
+                handler.removeCallbacks(dialWatchdog)
+                connecting = false
+                connected = true
+                AbacadStatus.setState(AbacadStatus.State.CONNECTED, "connected to $safeUrl")
+                backoffMs = 1000L
+                // Tell the server our current power state up front, so a device that
+                // connects while the screen is already off shows as asleep, not active.
+                currentActivity?.let { webSocket.send(presenceFrame(it())) }
+            }
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
@@ -217,20 +282,55 @@ class DeviceClient(
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-            if (webSocket !== ws) return // stale socket; a newer one is already live/connecting
-            connected = false
             val reason = t.message ?: t.javaClass.simpleName
-            Log.w(tag, "ws failure: $reason")
-            AbacadStatus.event("connection failed: $reason")
-            scheduleReconnect()
+            handler.post {
+                if (webSocket !== ws) return@post // stale socket; a newer one is already live/connecting
+                handler.removeCallbacks(dialWatchdog)
+                connecting = false
+                connected = false
+                Log.w(tag, "ws failure: $reason")
+                AbacadStatus.event("connection failed: $reason")
+                scheduleReconnect()
+            }
+        }
+
+        /**
+         * The peer started a graceful close (the relay evicting a superseded socket, an operator
+         * kick, an expired enrollment). OkHttp does NOT close our side for us — without this
+         * override it calls only [onClosing], the socket stays half-closed, `connected` stays
+         * true, and forceReconnect keeps no-opping until the 20s ping task finally fails it.
+         * Complete the handshake and treat it as the drop it is.
+         */
+        override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            handler.post {
+                if (webSocket !== ws) return@post
+                handler.removeCallbacks(dialWatchdog)
+                connecting = false
+                connected = false
+                ws = null // onClosed will now early-return; we've already handled it here
+                // Reply with 1000 rather than echoing the peer's code: a close frame with an
+                // empty payload surfaces here as 1005, which close() rejects outright — leaving
+                // us having sent no reply, holding no reference, and orphaning the socket until
+                // the OS reaps it. RFC 6455 doesn't ask us to mirror the code. Cancel if the
+                // reply can't be enqueued at all, so nothing is left half-closed.
+                val replied = try { webSocket.close(1000, null) } catch (_: Exception) { false }
+                if (!replied) { try { webSocket.cancel() } catch (_: Exception) {} }
+                Log.i(tag, "ws closing: $code $reason")
+                AbacadStatus.event("connection closed: $code ${reason.ifEmpty { "(no reason)" }}")
+                scheduleReconnect()
+            }
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-            if (webSocket !== ws) return
-            connected = false
-            Log.i(tag, "ws closed: $code $reason")
-            AbacadStatus.event("connection closed: $code ${reason.ifEmpty { "(no reason)" }}")
-            scheduleReconnect()
+            handler.post {
+                if (webSocket !== ws) return@post
+                handler.removeCallbacks(dialWatchdog)
+                connecting = false
+                connected = false
+                Log.i(tag, "ws closed: $code $reason")
+                AbacadStatus.event("connection closed: $code ${reason.ifEmpty { "(no reason)" }}")
+                scheduleReconnect()
+            }
         }
     }
 }

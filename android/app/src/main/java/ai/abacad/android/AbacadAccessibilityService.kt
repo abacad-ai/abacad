@@ -87,6 +87,9 @@ class AbacadAccessibilityService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var device: DeviceClient? = null
+    /** URL [device] was built for, so [connectFromPrefs] can tell a real URL change from a
+     *  re-entry with the same one and avoid rebuilding a perfectly good client. */
+    private var connectedUrl: String? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
     /** Backs push_file / pull_file over the /blobs data plane; rebuilt with the
@@ -210,6 +213,7 @@ class AbacadAccessibilityService : AccessibilityService() {
         stopForegroundConnection()
         device?.close()
         device = null
+        connectedUrl = null
         return super.onUnbind(intent)
     }
 
@@ -222,9 +226,19 @@ class AbacadAccessibilityService : AccessibilityService() {
     private fun connectFromPrefs() {
         val url = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(KEY_SERVER_URL, "")?.trim().orEmpty()
+        // Re-entering with the same URL (a repeated Connect tap, a service rebind) shouldn't tear
+        // a healthy socket down and dial a new one — that's a gratuitous disconnect/reconnect pair
+        // in the device's activity log. Nudge the existing client instead; it no-ops if it's up.
+        if (url.isNotEmpty() && url == connectedUrl && device != null) {
+            device?.ensureConnected()
+            startForegroundConnection()
+            updateSessionWakeLock()
+            return
+        }
         device?.close()
         device = null
         blobClient = null
+        connectedUrl = url
         if (url.isEmpty()) {
             Log.w(TAG, "no server URL set — open the app and enter ws://<host>:8848/device")
             AbacadStatus.setState(AbacadStatus.State.DISCONNECTED, "no server URL set — open the app to connect")
