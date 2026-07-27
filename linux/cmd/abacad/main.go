@@ -60,7 +60,13 @@ func main() {
 		e, err := ensureEnrolled(ctx, cfg, flagRelay)
 		stop()
 		switch {
-		case err != nil && ctx.Err() == nil:
+		case ctx.Err() != nil:
+			// Interrupted while waiting to be claimed. Exit quietly — falling
+			// through would print the "no server URL" guidance below, which is
+			// about headless boxes and would be nonsense here.
+			log.Printf("enrollment cancelled")
+			return
+		case err != nil:
 			log.Fatalf("enrollment: %v", err)
 		case e != nil:
 			serverURL, token = e.deviceURL, e.token

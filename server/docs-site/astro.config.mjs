@@ -50,6 +50,7 @@ export default defineConfig({
           items: [
             { label: "SSH access", slug: "guides/ssh" },
             { label: "Running a phone hands-off", slug: "guides/running-hands-off" },
+            { label: "Run your own relay", slug: "guides/self-hosting" },
           ],
         },
         {

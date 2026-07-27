@@ -143,21 +143,36 @@ var errRestartEnrollment = errors.New("credentials rejected; re-enrollment requi
 // things a human needs to read off this machine, and where to type them.
 func printClaimPrompt(st *enroll.Status, deviceID, relay string) {
 	id := firstNonEmpty(st.DeviceID, deviceID)
-	claimAt := strings.TrimRight(relay, "/") + "/claim"
+	base := strings.TrimRight(relay, "/")
 	fmt.Fprintf(os.Stderr, `
   ┌─ Add this device ─────────────────────────────
   │
   │   Device ID    %s
   │   Claim code   %s
   │
-  │   Open %s
+  │   Open %s/claim
   │   and enter both to add this device to your account.
   │
   │   The code changes every few minutes; anyone who can
   │   read both lines can claim this device.
-  └───────────────────────────────────────────────
+  │
+  │   Relay: %s
+%s  └───────────────────────────────────────────────
 
-`, id, st.ClaimCode, claimAt)
+`, id, st.ClaimCode, base, base, selfHostHint(relay))
+}
+
+// selfHostHint nudges toward a self-hosted relay, but only when the device is
+// actually on the default one — telling someone already running their own relay
+// to run their own relay is noise. Framed as latency and control, not security:
+// a relay behind a home NAT can be *worse* reachable than the hosted one, so
+// "better connectivity" would be an overclaim.
+func selfHostHint(relay string) string {
+	if strings.TrimRight(strings.TrimSpace(relay), "/") != enroll.DefaultRelay {
+		return ""
+	}
+	return "  │   On the same network as your agent? Your own relay is\n" +
+		"  │   lower latency — abacad.ai/docs/guides/self-hosting/\n"
 }
 
 // persist rewrites the config with the self-enrollment keys. Empty values clear
