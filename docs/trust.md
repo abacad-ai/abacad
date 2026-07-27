@@ -29,6 +29,7 @@ destination, and this table as how far along the road we are.
 | Surfaced audit trail + kill switch | ○ planned (P1) |
 | Dashboard MFA; cookie `Secure` unconditional | ○ planned (P1) |
 | Runtime verification (installed app vs a live server) | ○ not done — compiles on all three platforms; not yet exercised end-to-end |
+| **Device-first self-enrollment** (register → claim) | ◐ server shipped, clients pending — inverts the bootstrap below; see [Two enrollment directions](#two-enrollment-directions) |
 
 Net: today's build closes the most exploitable holes (LAN cleartext MITM, the
 tunnel SSRF pivot, token-in-URL leakage, login brute force). It does **not** yet
@@ -211,6 +212,86 @@ crosses an **in-person, out-of-band** channel, and the code binds *this* key to
 **Reboot self-heal is preserved.** The device key lives in the hardware keystore and
 the pin persists on disk, so a power-cut reboot reconnects with zero user
 interaction, exactly as before. Mutual auth doesn't touch the zero-click story.
+
+---
+
+## Two enrollment directions
+
+The bootstrap above is **dashboard-first**: the human is authenticated *before* the
+device exists, and the QR is what carries the server's pin across an in-person hop.
+A second direction now exists, and it inverts that.
+
+**Device-first (self-enrollment).** A freshly installed GUI client registers itself
+with its configured relay, receives an id and token, and displays that id plus a
+short-lived **claim code** on its own screen. A human with physical possession reads
+both off the device and binds it to their account at `/claim`. Nothing is pasted into
+the client; the relay URL is ordinary config.
+
+Which one applies:
+
+| Case | Direction | Why |
+|---|---|---|
+| GUI client, hosted relay | device-first | no account needed before the device works |
+| Headless box (`linux-headless`) | dashboard-first (`/pair`) | no screen to display a code on |
+| LAN / self-signed / bare-IP relay | dashboard-first (`/pair`) | the QR is the only out-of-band pin channel |
+
+### What the claim code proves — and what it doesn't
+
+In the dashboard-first flow the code travels **server → device**, minted inside an
+authenticated session, so holding it proves *"an authenticated human authorized
+this."* Device-first reverses that: the code is minted **before any account exists**
+and travels **device → human → server**, so holding it proves only *"whoever holds
+this was recently at the device's screen."*
+
+The security property survives, but for different reasons, and these are the new
+invariants:
+
+- The code is short-lived (5 minutes), single-use, and rotates — on restart, after a
+  successful claim, and after repeated wrong guesses.
+- It is **useless without the 16-letter device id**, which appears nowhere but that
+  same screen. Two independent secrets, one channel: physical sight of the device.
+- **Nothing can be done with the device until it is claimed.** An unclaimed device
+  is not a row in `devices` and never dials `/device`, so it is not merely
+  *unauthorized* — it is unreachable, structurally, by every account-scoped path.
+
+### The pin gap, stated plainly
+
+trust.md's bootstrap rests on the pin crossing an out-of-band hop. **Device-first has
+no such hop** — the client learns its relay from a compiled-in default. It is
+therefore on trust-on-first-use over public-CA TLS, which is the same ◐ row already
+in the status table above. This does not make today worse (there is no pin today),
+but it **forecloses the documented path to fixing it**, so recovery is per-mode:
+
+- **Hosted (`abacad.ai`)** — the default relay is compiled into every client, so its
+  pin can ship in the signed binary. This is *stronger* than the QR flow, not weaker:
+  a pin in a code-signed artifact beats a pin in a scanned image.
+- **Self-hosted with a real hostname and cert** — CA validation already authenticates
+  the server. No pin field needed.
+- **LAN / self-signed / bare IP** — genuinely no out-of-band channel. Use `/pair`
+  (whose QR carries the pin), or an explicit pin flag, or TOFU-on-first-registration
+  with the fingerprint shown next to the claim code so the human can compare it
+  against the one `/claim` displays.
+
+**Fail closed.** If server-identity verification fails, refuse the connection. Do not
+fall back to an unauthenticated or unencrypted channel with a warning — that is the
+failure mode that makes a pin decorative, and it is a live weakness in comparable
+products.
+
+### The new attack: shoulder-surfing
+
+Dashboard-first can say *"a malicious QR can't hurt you."* Device-first has no QR, but
+gains something that flow does not have: **anyone who can see the screen can claim the
+device.** Read the id and code off an unattended laptop in a café and it binds to the
+reader's account, first-come-first-served.
+
+Mitigations, all required rather than optional:
+
+- Short code lifetime and force-rotation after repeated failed attempts, which both
+  bounds guessing and makes an attack *visible* — the code on screen changes.
+- **Post-claim disclosure on the device**: the client shows which account claimed it,
+  with a one-action "that wasn't me — disconnect and re-register." Without this a
+  successful shoulder-surf is completely silent to the victim.
+- Consider suppressing the claim screen while the display is mirrored or presented.
 
 ---
 

@@ -49,6 +49,25 @@ be controlled remotely, and enrollments **auto-expire after 24 hours** unless
 explicitly renewed — so a device that's abandoned or forgotten stops being reachable
 on its own.
 
+All three still hold when a device enrols itself (see
+[`trust.md`](trust.md#two-enrollment-directions)), but two of them work differently:
+
+- **Physical possession is stronger, not weaker.** Claiming a self-registered device
+  requires reading its id *and* a rotating claim code off the device's own screen.
+  Neither appears anywhere else.
+- **Disclosure moves to the device.** It used to live only in the dashboard's approval
+  dialog. The human with physical possession is now standing at the *device*, so the
+  device states what claiming will permit, before the claim — and the dashboard keeps
+  its acknowledgement too. Both, not either.
+- **The 24-hour clock starts at the claim**, not at install, so it still measures how
+  long an *account* has been responsible for the device.
+
+**One risk this adds:** anyone who can see the screen can claim the device to their
+own account. If someone claimed a device of yours this way, the device itself shows
+which account holds it and offers a one-action disconnect — and you can tell us at
+<abuse@abacad.ai>. If you are setting up a device in a public place, treat the claim
+code like a password on screen: claim it before you walk away.
+
 ## If you are in danger
 
 If you think a device is being used to monitor or control you and you may be at risk,
