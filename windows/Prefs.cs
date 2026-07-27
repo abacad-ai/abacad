@@ -11,31 +11,71 @@ static class Prefs
 {
     static string Dir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "abacad");
-    static string FilePath => Path.Combine(Dir, "server_url");
 
+    /// <summary>
+    /// The full dial URL (wss://…?token=…). Written by `abacad connect` and by a
+    /// human pasting into the window. Self-enrollment leaves this empty and uses
+    /// RelayUrl + DeviceToken instead, so an existing install keeps behaving
+    /// exactly as before.
+    /// </summary>
     public static string ServerUrl
     {
-        get
+        get => Read("server_url");
+        set => Write("server_url", value);
+    }
+
+    // Self-enrollment credentials. The token is a bearer secret, so it gets the
+    // same DPAPI treatment as the server URL rather than sitting in plaintext.
+    public static string RelayUrl
+    {
+        get => Read("relay_url");
+        set => Write("relay_url", value);
+    }
+
+    public static string DeviceId
+    {
+        get => Read("device_id");
+        set => Write("device_id", value);
+    }
+
+    public static string DeviceToken
+    {
+        get => Read("device_token");
+        set => Write("device_token", value);
+    }
+
+    /// <summary>
+    /// Drop the self-enrollment credential, keeping the relay so a re-register
+    /// goes back to the same server. Used when the relay stops recognizing us.
+    /// </summary>
+    public static void ClearEnrollment()
+    {
+        DeviceId = "";
+        DeviceToken = "";
+    }
+
+    static string Read(string name)
+    {
+        try
         {
-            try
-            {
-                if (!File.Exists(FilePath)) return "";
-                var enc = File.ReadAllBytes(FilePath);
-                var dec = ProtectedData.Unprotect(enc, null, DataProtectionScope.CurrentUser);
-                return Encoding.UTF8.GetString(dec);
-            }
-            catch { return ""; }
+            var path = Path.Combine(Dir, name);
+            if (!File.Exists(path)) return "";
+            var dec = ProtectedData.Unprotect(
+                File.ReadAllBytes(path), null, DataProtectionScope.CurrentUser);
+            return Encoding.UTF8.GetString(dec);
         }
-        set
+        catch { return ""; }
+    }
+
+    static void Write(string name, string? value)
+    {
+        try
         {
-            try
-            {
-                Directory.CreateDirectory(Dir);
-                var enc = ProtectedData.Protect(
-                    Encoding.UTF8.GetBytes(value ?? ""), null, DataProtectionScope.CurrentUser);
-                File.WriteAllBytes(FilePath, enc);
-            }
-            catch { /* best effort; a missing store just means "reconnect next launch" */ }
+            Directory.CreateDirectory(Dir);
+            var enc = ProtectedData.Protect(
+                Encoding.UTF8.GetBytes(value ?? ""), null, DataProtectionScope.CurrentUser);
+            File.WriteAllBytes(Path.Combine(Dir, name), enc);
         }
+        catch { /* best effort; a missing store just means "reconnect next launch" */ }
     }
 }

@@ -25,11 +25,43 @@
                 <!-- "screen being watched" / "recording" flags -->
                 <StackPanel x:Name="Flags" Orientation="Horizontal" Spacing="8" />
 
-                <!-- setup, shown while disconnected -->
+                <!-- setup, shown while disconnected. Self-enrollment leads: this PC
+                     shows its own ID and claim code, so nothing secret travels
+                     toward it. The connection-URL route moves into "Advanced". -->
                 <StackPanel x:Name="SetupPanel" Spacing="6">
-                    <TextBlock Text="Server URL" FontSize="12" Foreground="{ThemeResource InkMutedBrush}" />
-                    <TextBox x:Name="UrlBox" PlaceholderText="wss://host/device?token=…" />
-                    <Button x:Name="ConnectBtn" Content="Connect" Click="OnConnect" />
+                    <StackPanel x:Name="ClaimPanel" Spacing="4">
+                        <TextBlock Text="Add this PC" FontSize="12" Foreground="{ThemeResource InkMutedBrush}" />
+                        <TextBlock Text="Device ID" FontSize="11" Foreground="{ThemeResource InkMutedBrush}" />
+                        <TextBlock x:Name="DeviceIdText" FontFamily="Consolas" FontSize="15" IsTextSelectionEnabled="True" />
+                        <TextBlock Text="Claim code" FontSize="11" Foreground="{ThemeResource InkMutedBrush}" />
+                        <TextBlock x:Name="ClaimCodeText" FontFamily="Consolas" FontSize="22" FontWeight="Bold" IsTextSelectionEnabled="True" />
+                        <TextBlock x:Name="ClaimHintText" FontSize="12" Foreground="{ThemeResource InkMutedBrush}" TextWrapping="Wrap" />
+                        <TextBlock
+                            FontSize="11" Foreground="{ThemeResource InkMutedBrush}" TextWrapping="Wrap"
+                            Text="The code changes every few minutes. Anyone who can read these two lines can add this PC to their account." />
+                    </StackPanel>
+
+                    <TextBlock x:Name="EnrollErrorText" FontSize="12" Foreground="Red" TextWrapping="Wrap" />
+
+                    <!-- who holds this device, once claimed -->
+                    <StackPanel x:Name="ClaimedPanel" Spacing="4">
+                        <TextBlock x:Name="ClaimedByText" FontSize="12" TextWrapping="Wrap" />
+                        <Button Content="That wasn't me — disconnect" Click="OnForget" />
+                    </StackPanel>
+
+                    <Expander Header="Relay &amp; advanced" HorizontalAlignment="Stretch">
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Relay" FontSize="12" Foreground="{ThemeResource InkMutedBrush}" />
+                            <TextBox x:Name="RelayBox" PlaceholderText="https://abacad.ai" />
+                            <Button Content="Switch relay" Click="OnChangeRelay" />
+                            <TextBlock x:Name="SelfHostHint"
+                                FontSize="11" Foreground="{ThemeResource InkMutedBrush}" TextWrapping="Wrap"
+                                Text="On the same network as your agent? Your own relay is lower latency — abacad.ai/docs/guides/self-hosting/" />
+                            <TextBlock Text="Connection URL" FontSize="12" Foreground="{ThemeResource InkMutedBrush}" />
+                            <TextBox x:Name="UrlBox" PlaceholderText="wss://host/device?token=…" />
+                            <Button x:Name="ConnectBtn" Content="Connect" Click="OnConnect" />
+                        </StackPanel>
+                    </Expander>
                 </StackPanel>
 
                 <!-- recent actions, shown while connected -->

@@ -39,8 +39,10 @@ public sealed partial class MainWindow : Window
         AppWindow.Closing += (_, e) => { e.Cancel = true; AppWindow.Hide(); };
 
         UrlBox.Text = _agent.ServerUrl;
+        RelayBox.Text = _agent.RelayUrl;
 
         _agent.StatusChanged += OnStatus;
+        _agent.EnrollmentChanged += OnStatus;
         _tick = DispatcherQueue.CreateTimer();
         _tick.Interval = TimeSpan.FromSeconds(1); // let "Controlling now" decay
         _tick.Tick += (_, _) => Render();
@@ -63,6 +65,15 @@ public sealed partial class MainWindow : Window
     {
         var u = UrlBox.Text.Trim();
         if (u.Length > 0) _agent.Connect(u);
+    }
+
+    void OnForget(object sender, RoutedEventArgs e) { _agent.ForgetEnrollment(); Render(); }
+
+    void OnChangeRelay(object sender, RoutedEventArgs e)
+    {
+        var r = RelayBox.Text.Trim();
+        if (r.Length > 0) _agent.ChangeRelay(r);
+        Render();
     }
 
     void Render()
@@ -92,6 +103,27 @@ public sealed partial class MainWindow : Window
         // setup while disconnected; the recent-actions tail while connected
         SetupPanel.Visibility = connected ? Visibility.Collapsed : Visibility.Visible;
         ActionsPanel.Visibility = connected ? Visibility.Visible : Visibility.Collapsed;
+
+        // Self-enrollment: show the two lines a human reads off this PC while a
+        // claim code is live, and who claimed it once one has.
+        var relay = Enrollment.Normalize(_agent.RelayUrl);
+        bool showClaim = _agent.ClaimCode.Length > 0;
+        ClaimPanel.Visibility = showClaim ? Visibility.Visible : Visibility.Collapsed;
+        if (showClaim)
+        {
+            DeviceIdText.Text = _agent.DeviceId;
+            ClaimCodeText.Text = _agent.ClaimCode;
+            ClaimHintText.Text = $"Open {relay}/claim and enter both.";
+        }
+        EnrollErrorText.Text = _agent.EnrollError ?? "";
+        EnrollErrorText.Visibility =
+            _agent.EnrollError == null ? Visibility.Collapsed : Visibility.Visible;
+        ClaimedPanel.Visibility =
+            _agent.ClaimedBy.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        ClaimedByText.Text = $"Claimed by {_agent.ClaimedBy}";
+        // Telling someone already on their own relay to run their own relay is noise.
+        SelfHostHint.Visibility =
+            relay == Enrollment.DefaultRelay ? Visibility.Visible : Visibility.Collapsed;
 
         var lines = _agent.Lines;
         if (lines.Count == 0)
