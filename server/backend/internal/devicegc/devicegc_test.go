@@ -44,3 +44,49 @@ func TestSweepReapsPastGrace(t *testing.T) {
 		t.Fatalf("permanent device must survive: %v", err)
 	}
 }
+
+// TestSweepReapsPreEnrollment covers steps 3 and 4: unclaimed registrations that
+// stopped heartbeating are reaped while live ones keep their id, and expired
+// pairings are cleaned up.
+func TestSweepReapsPreEnrollment(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	live, _, err := st.CreateRegistration("linux", "live", "", "", 5*time.Minute)
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	idle, _, _ := st.CreateRegistration("linux", "idle", "", "", 5*time.Minute)
+	// Stop `idle` heartbeating well past registrationIdleTTL.
+	if _, err := st.TouchRegistrationAt(idle.ID, time.Now().Add(-3*time.Hour).Unix()); err != nil {
+		t.Fatalf("backdate: %v", err)
+	}
+
+	if _, _, err := st.CreatePairing("linux", -48*time.Hour); err != nil { // long expired
+		t.Fatalf("stale pairing: %v", err)
+	}
+	if _, _, err := st.CreatePairing("linux", time.Hour); err != nil { // in flight
+		t.Fatalf("fresh pairing: %v", err)
+	}
+
+	s := &Sweeper{st: st, hub: relay.NewHub(), grace: time.Hour}
+	s.sweep()
+
+	if _, err := st.RegistrationByID(live.ID); err != nil {
+		t.Fatalf("heartbeating registration must keep its id: %v", err)
+	}
+	if _, err := st.RegistrationByID(idle.ID); err != store.ErrNotFound {
+		t.Fatalf("idle registration should be reaped, got %v", err)
+	}
+
+	n, err := st.CountPairings()
+	if err != nil {
+		t.Fatalf("count pairings: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected only the in-flight pairing to survive, got %d", n)
+	}
+}

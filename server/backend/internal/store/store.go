@@ -260,8 +260,12 @@ func (s *Store) DeleteSession(sessionID string) error {
 func (s *Store) CreateDevice(accountID, name, platform string, expiresAt int64) (Device, string, error) {
 	token := auth.NewSecret(deviceTokenPrefix)
 	d := Device{ID: auth.NewDeviceID(), AccountID: accountID, Name: name, Platform: platform, CreatedAt: now(), Humanize: false, ExpiresAt: expiresAt}
-	_, err := s.db.Exec(`INSERT INTO devices(id,account_id,name,token_hash,platform,created_at,last_seen,expires_at)
-		VALUES(?,?,?,?,?,?,0,?)`, d.ID, d.AccountID, d.Name, auth.HashToken(token), d.Platform, d.CreatedAt, d.ExpiresAt)
+	// humanize is written EXPLICITLY. The column's DEFAULT is still 1 (migration
+	// 0009); 0010 flipped the product default to off but only via a one-time
+	// UPDATE, so omitting the column here would silently enrol every new device
+	// with humanize ON — bypassing the attestation gate in api.updateDevice.
+	_, err := s.db.Exec(`INSERT INTO devices(id,account_id,name,token_hash,platform,created_at,last_seen,humanize,expires_at)
+		VALUES(?,?,?,?,?,?,0,0,?)`, d.ID, d.AccountID, d.Name, auth.HashToken(token), d.Platform, d.CreatedAt, d.ExpiresAt)
 	if err != nil {
 		return Device{}, "", err
 	}
@@ -506,6 +510,256 @@ func (s *Store) scanPairing(row *sql.Row) (Pairing, error) {
 	}
 	p.Consumed = consumed == 1
 	return p, err
+}
+
+// --- Device self-registration (the pre-account holding pen; see migration 0012) ---
+
+// Registration is a device that has announced itself to the relay but has not yet
+// been claimed by any account. It already owns its final id and token, so the
+// claim graduates it into `devices` without changing either — the id the human
+// reads off the device's screen is the id they end up with.
+type Registration struct {
+	ID             string
+	ClaimCode      string
+	ClaimExpiresAt int64
+	ClaimAttempts  int
+	Name           string
+	Platform       string
+	Version        string
+	CreatedAt      int64
+	LastSeen       int64
+	RegIP          string
+}
+
+// CreateRegistration reserves a fresh device identity for a self-registering
+// client and returns it with the one-time device token (shown once; only its hash
+// is stored) and the first claim code, valid for codeTTL.
+//
+// The id must be unique across BOTH tables — a registration id becomes a devices
+// id verbatim at claim time — so the retry loop probes `devices` before
+// inserting. At 26^16 a clash is vanishingly unlikely; this is belt-and-braces,
+// mirroring CreatePairing's user_code loop.
+func (s *Store) CreateRegistration(platform, name, version, regIP string, codeTTL time.Duration) (Registration, string, error) {
+	token := auth.NewSecret(deviceTokenPrefix)
+	tokenHash := auth.HashToken(token)
+	created := now()
+	var err error
+	for attempt := 0; attempt < 5; attempt++ {
+		r := Registration{
+			ID:             auth.NewDeviceID(),
+			ClaimCode:      auth.NewUserCode(),
+			ClaimExpiresAt: time.Now().Add(codeTTL).Unix(),
+			Name:           name,
+			Platform:       platform,
+			Version:        version,
+			CreatedAt:      created,
+			LastSeen:       created,
+			RegIP:          regIP,
+		}
+		// Taken as a devices id already? Regenerate rather than collide later.
+		if _, e := s.DeviceByID(r.ID); e == nil {
+			continue
+		}
+		_, err = s.db.Exec(
+			`INSERT INTO device_registrations(id,token_hash,claim_code,claim_expires_at,claim_attempts,name,platform,version,created_at,last_seen,reg_ip)
+			 VALUES(?,?,?,?,0,?,?,?,?,?,?)`,
+			r.ID, tokenHash, r.ClaimCode, r.ClaimExpiresAt, r.Name, r.Platform, r.Version, r.CreatedAt, r.LastSeen, r.RegIP)
+		if err == nil {
+			return r, token, nil
+		}
+		if !isUniqueViolation(err) {
+			return Registration{}, "", err
+		}
+	}
+	return Registration{}, "", err
+}
+
+// RegistrationByTokenHash resolves a device token (already hashed) to its
+// unclaimed registration. The heartbeat handler tries this first, then falls back
+// to DeviceByTokenHash — a claimed device keeps the same token, so the transition
+// is invisible to the client's credential store.
+func (s *Store) RegistrationByTokenHash(tokenHash string) (Registration, error) {
+	return s.scanRegistration(s.db.QueryRow(
+		`SELECT id,claim_code,claim_expires_at,claim_attempts,name,platform,version,created_at,last_seen,reg_ip
+		   FROM device_registrations WHERE token_hash=?`, tokenHash))
+}
+
+// RegistrationByID resolves an unclaimed registration by its device id. The
+// caller must still verify the claim code — the id alone is not authorization.
+func (s *Store) RegistrationByID(deviceID string) (Registration, error) {
+	return s.scanRegistration(s.db.QueryRow(
+		`SELECT id,claim_code,claim_expires_at,claim_attempts,name,platform,version,created_at,last_seen,reg_ip
+		   FROM device_registrations WHERE id=?`, deviceID))
+}
+
+// TouchRegistration bumps last_seen on each heartbeat. last_seen drives both the
+// "online" flag in the claim preview and idle reaping, so an unclaimed client
+// that is genuinely sitting on its setup screen keeps its id.
+func (s *Store) TouchRegistration(deviceID string) error {
+	_, err := s.TouchRegistrationAt(deviceID, now())
+	return err
+}
+
+// TouchRegistrationAt sets last_seen to an explicit timestamp. Returns whether a
+// row matched, so a caller can distinguish "already reaped" from "updated".
+func (s *Store) TouchRegistrationAt(deviceID string, seenAt int64) (bool, error) {
+	res, err := s.db.Exec(`UPDATE device_registrations SET last_seen=? WHERE id=?`, seenAt, deviceID)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+// RotateClaimCode issues a fresh claim code and resets the failed-attempt counter.
+// Called when the current code is near expiry (routine rotation) and when it has
+// absorbed too many wrong guesses (defensive rotation, which also makes the attack
+// visible: the code on the device's screen changes).
+func (s *Store) RotateClaimCode(deviceID string, codeTTL time.Duration) (Registration, error) {
+	code := auth.NewUserCode()
+	if err := s.affect(s.db.Exec(
+		`UPDATE device_registrations SET claim_code=?, claim_expires_at=?, claim_attempts=0 WHERE id=?`,
+		code, time.Now().Add(codeTTL).Unix(), deviceID)); err != nil {
+		return Registration{}, err
+	}
+	return s.RegistrationByID(deviceID)
+}
+
+// NoteClaimAttempt records a failed claim/preview guess against the current code
+// and reports the running total. The caller force-rotates past its threshold.
+func (s *Store) NoteClaimAttempt(deviceID string) (int, error) {
+	if _, err := s.db.Exec(
+		`UPDATE device_registrations SET claim_attempts=claim_attempts+1 WHERE id=?`, deviceID); err != nil {
+		return 0, err
+	}
+	r, err := s.RegistrationByID(deviceID)
+	if err != nil {
+		return 0, err
+	}
+	return r.ClaimAttempts, nil
+}
+
+// ClaimRegistration graduates an unclaimed registration into a real device owned
+// by accountID, preserving BOTH the id and the token hash — the client never
+// re-keys, and the id stays the one printed on its screen.
+//
+// The code is burned first, inside the transaction, guarded on the code matching
+// and not having expired. A losing racer sees 0 rows affected and gets
+// ErrNotFound, so two concurrent claims can never both graduate the same row.
+//
+// expiresAt is evaluated by the caller at CLAIM time, not registration time, so
+// the 24h enrollment TTL that docs/abuse.md advertises is measured from when an
+// account took responsibility for the device. Do not move it earlier.
+func (s *Store) ClaimRegistration(deviceID, claimCode, accountID, name string, expiresAt int64) (Device, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return Device{}, err
+	}
+	defer tx.Rollback()
+
+	// Burn the code. Guarded so a wrong/expired/already-claimed code yields
+	// ErrNotFound without revealing which.
+	if err := affectTx(tx.Exec(
+		`UPDATE device_registrations SET claim_expires_at=0
+		   WHERE id=? AND claim_code=? AND claim_expires_at>?`, deviceID, claimCode, now())); err != nil {
+		return Device{}, err
+	}
+
+	var r Registration
+	var tokenHash string
+	if err := tx.QueryRow(
+		`SELECT id,token_hash,name,platform,version,created_at,last_seen
+		   FROM device_registrations WHERE id=?`, deviceID).Scan(
+		&r.ID, &tokenHash, &r.Name, &r.Platform, &r.Version, &r.CreatedAt, &r.LastSeen); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Device{}, ErrNotFound
+		}
+		return Device{}, err
+	}
+	if name == "" {
+		name = r.Name
+	}
+
+	d := Device{
+		ID: r.ID, AccountID: accountID, Name: name, Platform: r.Platform,
+		CreatedAt: now(), LastSeen: r.LastSeen, Version: r.Version,
+		Humanize: false, ExpiresAt: expiresAt,
+	}
+	// humanize written explicitly — see the note in CreateDevice; the column
+	// DEFAULT is 1, so omitting it would opt the device in without attestation.
+	if _, err := tx.Exec(
+		`INSERT INTO devices(id,account_id,name,token_hash,platform,created_at,last_seen,version,humanize,expires_at)
+		 VALUES(?,?,?,?,?,?,?,?,0,?)`,
+		d.ID, d.AccountID, d.Name, tokenHash, d.Platform, d.CreatedAt, d.LastSeen, d.Version, d.ExpiresAt); err != nil {
+		return Device{}, err
+	}
+	if _, err := tx.Exec(`DELETE FROM device_registrations WHERE id=?`, deviceID); err != nil {
+		return Device{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Device{}, err
+	}
+	return d, nil
+}
+
+// LiveRegistrationsByIP counts unclaimed registrations from regIP that are still
+// heartbeating (last_seen after since). Parking rows costs a spammer a live
+// client each, which is the point.
+func (s *Store) LiveRegistrationsByIP(regIP string, since int64) (int, error) {
+	var n int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM device_registrations WHERE reg_ip=? AND last_seen>?`, regIP, since).Scan(&n)
+	return n, err
+}
+
+// CountRegistrations returns the total number of live unclaimed registrations,
+// for the global soft cap.
+func (s *Store) CountRegistrations() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM device_registrations`).Scan(&n)
+	return n, err
+}
+
+// DeleteStaleRegistrations reaps unclaimed rows on two independent cutoffs: idle
+// (stopped heartbeating before idleBefore) and absolute (registered before
+// createdBefore). Idle is what does the real work — a spammer's rows never
+// heartbeat — while the absolute cap stops a client that idles on its setup
+// screen forever from holding an id indefinitely. Returns how many were removed.
+func (s *Store) DeleteStaleRegistrations(idleBefore, createdBefore int64) (int64, error) {
+	res, err := s.db.Exec(
+		`DELETE FROM device_registrations WHERE last_seen<? OR created_at<?`, idleBefore, createdBefore)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// CountPairings returns how many pairing rows exist, in any state.
+func (s *Store) CountPairings() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM device_pairings`).Scan(&n)
+	return n, err
+}
+
+// DeletePairingsExpiredBefore reaps device_pairings rows past cutoff. Pairings
+// had no GC at all before this, so every `abacad connect` leaked a row forever,
+// consumed or not.
+func (s *Store) DeletePairingsExpiredBefore(cutoff int64) (int64, error) {
+	res, err := s.db.Exec(`DELETE FROM device_pairings WHERE expires_at<?`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func (s *Store) scanRegistration(row *sql.Row) (Registration, error) {
+	var r Registration
+	err := row.Scan(&r.ID, &r.ClaimCode, &r.ClaimExpiresAt, &r.ClaimAttempts,
+		&r.Name, &r.Platform, &r.Version, &r.CreatedAt, &r.LastSeen, &r.RegIP)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Registration{}, ErrNotFound
+	}
+	return r, err
 }
 
 // --- API keys (scoped bearer credentials for /mcp and /connect) ---

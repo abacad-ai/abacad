@@ -12,6 +12,14 @@
 //
 // Rows are kept dormant after expiry (preserving the audit trail) and only hard-
 // deleted after a grace window. The sweep mirrors activity.pruneLoop.
+//
+// The same sweep also reaps the two pre-enrollment holding pens, which have no
+// audit value and no owner to preserve them for:
+//
+//   3. unclaimed device_registrations — self-registration is unauthenticated, so
+//      these are the spam surface; and
+//   4. expired device_pairings — which previously had no GC at all and leaked a
+//      row per `abacad connect` forever.
 package devicegc
 
 import (
@@ -23,6 +31,24 @@ import (
 )
 
 const sweepInterval = time.Hour
+
+// Retention for unclaimed self-registrations. Two independent cutoffs:
+//
+//   - registrationIdleTTL reaps rows that stopped heartbeating. This is what
+//     catches abuse: a spammer's rows never heartbeat at all, so they die within
+//     the hour, while a client genuinely sitting on its setup screen keeps its
+//     device id — which matters because that id is printed on its screen and
+//     renumbering it under the user would be worse than useless.
+//   - registrationMaxAge bounds the other direction, so a client left running
+//     unclaimed forever can't hold an id indefinitely.
+const (
+	registrationIdleTTL = time.Hour
+	registrationMaxAge  = 7 * 24 * time.Hour
+
+	// pairingGrace keeps resolved/expired pairings around briefly so a poll that
+	// races expiry still gets a precise 410 rather than a confusing 404.
+	pairingGrace = 24 * time.Hour
+)
 
 // Sweeper periodically kicks expired devices and reaps dormant rows past grace.
 type Sweeper struct {
@@ -45,7 +71,8 @@ func Start(st *store.Store, hub *relay.Hub, grace time.Duration) *Sweeper {
 	return s
 }
 
-// sweep runs one pass: kick expired live connections, then reap dormant rows.
+// sweep runs one pass: kick expired live connections, reap dormant device rows,
+// then reap the unclaimed/expired pre-enrollment rows.
 func (s *Sweeper) sweep() {
 	now := time.Now().Unix()
 
@@ -69,5 +96,22 @@ func (s *Sweeper) sweep() {
 		} else if n > 0 {
 			log.Printf("[devicegc] deleted %d devices dormant past grace", n)
 		}
+	}
+
+	// 3. Reap unclaimed self-registrations. No grace window and no kick step: an
+	//    unclaimed registration has no owner, no audit value, and (by design) no
+	//    connection on the hub — it never dialed /device.
+	if n, err := s.st.DeleteStaleRegistrations(now-int64(registrationIdleTTL.Seconds()),
+		now-int64(registrationMaxAge.Seconds())); err != nil {
+		log.Printf("[devicegc] delete stale registrations failed: %v", err)
+	} else if n > 0 {
+		log.Printf("[devicegc] deleted %d unclaimed registrations", n)
+	}
+
+	// 4. Reap expired pairings, which nothing else has ever cleaned up.
+	if n, err := s.st.DeletePairingsExpiredBefore(now - int64(pairingGrace.Seconds())); err != nil {
+		log.Printf("[devicegc] delete expired pairings failed: %v", err)
+	} else if n > 0 {
+		log.Printf("[devicegc] deleted %d expired pairings", n)
 	}
 }

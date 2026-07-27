@@ -48,6 +48,9 @@ type API struct {
 	GoogleRedirectURL  string
 
 	logins *loginLimiter // per-IP login throttle; initialized in Handler
+	// Self-enrollment throttles (see enroll.go), initialized in Handler.
+	registrations *quotaLimiter // per-IP cap on anonymous device registration
+	claimAttempts *quotaLimiter // per-IP / per-account cap on claim + preview
 }
 
 type ctxKey int
@@ -58,6 +61,12 @@ const accountKey ctxKey = 0
 func (a *API) Handler() http.Handler {
 	if a.logins == nil {
 		a.logins = newLoginLimiter()
+	}
+	if a.registrations == nil {
+		a.registrations = newQuotaLimiter(3, time.Hour) // burst 3, ~10/hour sustained
+	}
+	if a.claimAttempts == nil {
+		a.claimAttempts = newQuotaLimiter(30, 15*time.Minute)
 	}
 	mux := http.NewServeMux()
 
@@ -83,12 +92,22 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("POST /api/devices/pair/start", a.pairStart)
 	mux.HandleFunc("POST /api/devices/pair/poll", a.pairPoll)
 
+	// Public: device self-enrollment (see enroll.go). A freshly installed GUI
+	// client registers itself before any account exists, then polls its heartbeat
+	// until a human claims it. /claim/preview is public because holding the device
+	// id AND its claim code — both readable only off the device's own screen — is
+	// the proof; the binding step itself (POST /api/claim, below) is session-gated.
+	mux.HandleFunc("POST /api/devices/register", a.registerDevice)
+	mux.HandleFunc("POST /api/devices/self/heartbeat", a.deviceHeartbeat)
+	mux.HandleFunc("POST /api/claim/preview", a.claimPreview)
+
 	// Authenticated endpoints.
 	mux.Handle("GET /api/auth/me", a.auth(a.me))
 	mux.Handle("GET /api/devices", a.auth(a.listDevices))
 	mux.Handle("POST /api/devices", a.auth(a.createDevice))
 	mux.Handle("GET /api/devices/pair", a.auth(a.pairLookup))   // approval page: what am I authorizing?
 	mux.Handle("POST /api/devices/pair", a.auth(a.pairApprove)) // human approves a CLI pairing
+	mux.Handle("POST /api/claim", a.auth(a.claimDevice))        // human claims a self-registered device
 	mux.Handle("GET /api/devices/{id}", a.auth(a.getDevice))
 	mux.Handle("PATCH /api/devices/{id}", a.auth(a.updateDevice))
 	mux.Handle("DELETE /api/devices/{id}", a.auth(a.deleteDevice))

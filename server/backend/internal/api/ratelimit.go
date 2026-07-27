@@ -3,6 +3,7 @@ package api
 import (
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -92,6 +93,88 @@ func (l *loginLimiter) sweep(now time.Time) {
 			delete(l.byKey, k)
 		}
 	}
+}
+
+// quotaLimiter caps how often a key may perform an action that has no notion of
+// failure. loginLimiter is the wrong shape for this: it counts CONSECUTIVE
+// FAILURES, but every device self-registration succeeds — the abuse is the
+// volume, not the outcome.
+//
+// It is a token bucket: burst tokens available immediately, refilling at
+// rate-per-window. State is in-memory and resets on restart, which is acceptable
+// for the same reason loginLimiter's is — the goal is to make bulk automation
+// expensive, and a restart doesn't hand an attacker a durable window. The
+// database-backed caps (live registrations per IP, global total) are what bound
+// the damage across restarts.
+type quotaLimiter struct {
+	mu     sync.Mutex
+	byKey  map[string]*bucket
+	burst  float64       // tokens available at once
+	per    time.Duration // time to refill one full burst
+	maxIdl time.Duration // drop bucket state after this long untouched
+}
+
+type bucket struct {
+	tokens float64
+	last   time.Time
+}
+
+func newQuotaLimiter(burst int, per time.Duration) *quotaLimiter {
+	return &quotaLimiter{
+		byKey:  make(map[string]*bucket),
+		burst:  float64(burst),
+		per:    per,
+		maxIdl: 2 * per,
+	}
+}
+
+// take consumes one token for key. It reports whether the action is allowed and,
+// if not, how long until a token is available (for Retry-After).
+func (q *quotaLimiter) take(key string, now time.Time) (ok bool, retryAfter time.Duration) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.sweep(now)
+
+	b := q.byKey[key]
+	if b == nil {
+		b = &bucket{tokens: q.burst, last: now}
+		q.byKey[key] = b
+	}
+	// Refill for elapsed time, capped at burst.
+	refill := now.Sub(b.last).Seconds() / q.per.Seconds() * q.burst
+	b.tokens = min(q.burst, b.tokens+refill)
+	b.last = now
+
+	if b.tokens < 1 {
+		need := (1 - b.tokens) / q.burst * q.per.Seconds()
+		return false, time.Duration(need * float64(time.Second))
+	}
+	b.tokens--
+	return true, 0
+}
+
+// sweep drops idle buckets so the map can't grow without bound. Mirrors
+// loginLimiter.sweep: only does work once the map is non-trivially large.
+func (q *quotaLimiter) sweep(now time.Time) {
+	if len(q.byKey) < 1024 {
+		return
+	}
+	for k, b := range q.byKey {
+		if now.Sub(b.last) > q.maxIdl {
+			delete(q.byKey, k)
+		}
+	}
+}
+
+// writeThrottled rejects a request that exceeded its quota, advertising when to
+// come back so a well-behaved client backs off instead of hammering.
+func writeThrottled(w http.ResponseWriter, retryAfter time.Duration, msg string) {
+	secs := int(retryAfter.Seconds())
+	if secs < 1 {
+		secs = 1
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(secs))
+	writeErr(w, http.StatusTooManyRequests, msg)
 }
 
 // clientIP is the throttle/attribution key for a request: the left-most
