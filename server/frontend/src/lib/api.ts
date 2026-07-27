@@ -176,6 +176,18 @@ export interface PairInfo {
   status: string; // "pending" | "approved" | "denied"
 }
 
+// A self-registered device, as shown on the /claim page before it is claimed.
+// Returned only to a caller who supplied BOTH the device id and its current
+// claim code — the two secrets that appear together only on the device's screen.
+export interface ClaimPreview {
+  device_id: string;
+  name: string;
+  platform: string;
+  version: string;
+  online: boolean;
+  registered_at: string;
+}
+
 export const api = {
   me: () => req<Me>("/api/auth/me"),
   authConfig: () => req<AuthConfig>("/api/auth/config"),
@@ -235,6 +247,22 @@ export const api = {
     req<{ status: string }>("/api/devices/pair", {
       method: "POST",
       body: JSON.stringify({ user_code, name, platform, accepted }),
+    }),
+
+  // Self-enrollment claim. Preview is public — holding the device id AND its
+  // claim code is the proof, and both are readable only off the device's own
+  // screen — so a visitor can confirm which machine they're about to claim
+  // before being asked to create an account. Preview does not consume the code.
+  claimPreview: (device_id: string, claim_code: string) =>
+    req<ClaimPreview>("/api/claim/preview", {
+      method: "POST",
+      body: JSON.stringify({ device_id, claim_code }),
+    }),
+  // accepted must be true: same acknowledgement the /pair approval requires.
+  claimDevice: (device_id: string, claim_code: string, name: string, accepted: boolean) =>
+    req<{ device_id: string; name: string }>("/api/claim", {
+      method: "POST",
+      body: JSON.stringify({ device_id, claim_code, name, accepted }),
     }),
 
   activities: (q: ActivityQuery = {}) => {

@@ -31,6 +31,15 @@ export function AuthPage() {
     if (oauthError) setError(oauthError);
   }, []);
 
+  // nextPath is where to land after signing in. It only ever returns a same-site
+  // path: anything with a scheme, host, or leading "//" is discarded, so a
+  // crafted ?next= can't turn the sign-in page into an open redirect.
+  const nextPath = (): string => {
+    const raw = new URLSearchParams(window.location.search).get("next") ?? "";
+    if (!raw.startsWith("/") || raw.startsWith("//")) return "/";
+    return raw;
+  };
+
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
@@ -38,7 +47,7 @@ export function AuthPage() {
     try {
       const me = mode === "login" ? await api.login(email, password) : await api.register(email, password);
       setMe(me);
-      nav("/");
+      nav(nextPath());
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Unable to continue. Check your connection and try again.");
     } finally {
@@ -182,8 +191,12 @@ export function AuthPage() {
                 type="button"
                 onClick={() => {
                   // Full-page navigation: the OAuth flow is a browser redirect to
-                  // Google and back, not an XHR.
-                  window.location.href = "/api/auth/google/start";
+                  // Google and back, not an XHR. ?next= rides along so a claim
+                  // started before signing in survives the round trip — the
+                  // server validates it as a same-site path before honoring it.
+                  const next = nextPath();
+                  const q = next === "/" ? "" : `?next=${encodeURIComponent(next)}`;
+                  window.location.href = `/api/auth/google/start${q}`;
                 }}
                 className="flex h-11 w-full items-center justify-center gap-3 rounded-md border border-border bg-surface-raised text-[13px] font-semibold text-ink transition-colors hover:bg-canvas focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
               >

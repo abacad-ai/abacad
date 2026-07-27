@@ -1,8 +1,10 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/auth";
+import { claimPath, takePendingClaim } from "@/lib/claim";
 import { Layout } from "@/components/Layout";
 import { ActivitiesPage } from "@/pages/ActivitiesPage";
 import { AuthPage } from "@/pages/AuthPage";
+import { ClaimPage } from "@/pages/ClaimPage";
 import { DeviceDetailPage } from "@/pages/DeviceDetailPage";
 import { DevicesPage } from "@/pages/DevicesPage";
 import { DownloadsPage } from "@/pages/DownloadsPage";
@@ -39,6 +41,14 @@ function LoginRoute() {
 // While auth is still resolving, Protected renders the loading state.
 function RootRoute() {
   const { me, loading } = useAuth();
+  // A claim parked before sign-in resumes here. Google's callback redirects to a
+  // server-validated ?next= (which normally lands straight on /claim), but a
+  // browser that dropped the cookie still arrives at "/" — so we check the
+  // sessionStorage copy too and forward. Consuming it makes this single-use.
+  if (!loading && me) {
+    const pending = takePendingClaim();
+    if (pending) return <Navigate to={claimPath(pending)} replace />;
+  }
   if (!loading && !me) return <LandingPage />;
   return (
     <Protected>
@@ -57,6 +67,11 @@ export function App() {
           {/* Public: you download a client before you have an account. The
               artifacts themselves are served by Go at /downloads/<file>. */}
           <Route path="/downloads" element={<DownloadsPage />} />
+          {/* Public: a self-registered device is claimed by whoever holds its id
+              AND its claim code, both readable only off the device's own screen.
+              Preview-first, so you confirm the machine before making an account;
+              ClaimPage itself routes to /login when the claim needs a session. */}
+          <Route path="/claim" element={<ClaimPage />} />
           {/* Devices moved to "/"; keep the old path working for bookmarks. */}
           <Route path="/devices" element={<Navigate to="/" replace />} />
           <Route

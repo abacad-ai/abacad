@@ -35,6 +35,13 @@ const (
 // back. Short-lived and scoped to the callback path.
 const oauthStateCookie = "abacad_oauth_state"
 
+// oauthNextCookie carries where to land after a successful sign-in, so a flow
+// started mid-task (claiming a device) resumes instead of dumping the user on
+// the dashboard. It rides in its own cookie rather than in Google's `state`
+// parameter: state is the CSRF nonce, and stuffing a device's claim code into it
+// would write that code into Google's logs.
+const oauthNextCookie = "abacad_oauth_next"
+
 // oauthClient is used for the server-to-server token and userinfo calls; a tight
 // timeout keeps a slow Google from tying up the request.
 var oauthClient = &http.Client{Timeout: 10 * time.Second}
@@ -81,6 +88,17 @@ func (a *API) googleStart(w http.ResponseWriter, r *http.Request) {
 		Secure:   isHTTPS(r),
 		MaxAge:   600, // 10 minutes to complete consent
 	})
+	if next := safeNextPath(r.URL.Query().Get("next")); next != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name:     oauthNextCookie,
+			Value:    next,
+			Path:     "/api/auth/google",
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Secure:   isHTTPS(r),
+			MaxAge:   600,
+		})
+	}
 	q := url.Values{
 		"client_id":     {a.GoogleClientID},
 		"redirect_uri":  {a.googleRedirectURI(r)},
@@ -141,7 +159,46 @@ func (a *API) googleCallback(w http.ResponseWriter, r *http.Request) {
 		a.record(acc.ID, store.Activity{Kind: activity.KindRegister, Source: "google", Detail: acc.Email})
 	}
 	a.record(acc.ID, store.Activity{Kind: activity.KindLogin, Source: "google"})
-	http.Redirect(w, r, "/", http.StatusFound)
+	http.Redirect(w, r, a.consumeNext(w, r), http.StatusFound)
+}
+
+// consumeNext returns the post-sign-in destination and clears the cookie that
+// carried it. Falls back to "/" whenever the cookie is absent or fails the
+// same-site check, so the redirect target is always one we vouched for.
+func (a *API) consumeNext(w http.ResponseWriter, r *http.Request) string {
+	next := "/"
+	if c, err := r.Cookie(oauthNextCookie); err == nil {
+		if p := safeNextPath(c.Value); p != "" {
+			next = p
+		}
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: oauthNextCookie, Value: "", Path: "/api/auth/google",
+		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: isHTTPS(r), MaxAge: -1,
+	})
+	return next
+}
+
+// safeNextPath admits only same-site absolute paths, returning "" for anything
+// else. Without this, ?next= would be an open redirect: "//evil.example.com" is
+// a protocol-relative URL that browsers happily follow off-site, and a value
+// with a scheme is off-site outright. Control characters are rejected too, since
+// a newline in a Location header is response splitting.
+func safeNextPath(raw string) string {
+	if raw == "" || len(raw) > 512 {
+		return ""
+	}
+	if !strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "//") {
+		return ""
+	}
+	if strings.ContainsAny(raw, "\r\n") {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "" || u.Host != "" {
+		return ""
+	}
+	return raw
 }
 
 // googleIdentity exchanges the authorization code for tokens and reads the
