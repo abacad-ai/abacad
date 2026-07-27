@@ -65,6 +65,13 @@ class AbacadAccessibilityService : AccessibilityService() {
         const val TAG = "ABACAD"
         const val PREFS = "abacad"
         const val KEY_SERVER_URL = "server_url"
+
+        // Self-enrollment credentials. Kept separate from KEY_SERVER_URL so an
+        // explicitly configured URL (scanned QR, pasted, `abacad connect`) keeps
+        // winning and existing installs behave exactly as before.
+        const val KEY_RELAY_URL = "relay_url"
+        const val KEY_DEVICE_ID = "device_id"
+        const val KEY_DEVICE_TOKEN = "device_token"
         const val ACTION_RECONNECT = "ai.abacad.android.RECONNECT"
         const val ACTION_DISCONNECT = "ai.abacad.android.DISCONNECT"
 
@@ -224,8 +231,19 @@ class AbacadAccessibilityService : AccessibilityService() {
     }
 
     private fun connectFromPrefs() {
-        val url = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(KEY_SERVER_URL, "")?.trim().orEmpty()
+        val p = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        // An explicitly configured URL wins. Otherwise fall back to the
+        // self-enrollment credential, which MainActivity's enrollment flow wrote
+        // once this phone was claimed. Assembling it here (rather than storing a
+        // combined URL) keeps the token in exactly one pref.
+        var url = p.getString(KEY_SERVER_URL, "")?.trim().orEmpty()
+        if (url.isEmpty()) {
+            val token = p.getString(KEY_DEVICE_TOKEN, "")?.trim().orEmpty()
+            val relay = p.getString(KEY_RELAY_URL, "")?.trim().orEmpty()
+            if (token.isNotEmpty() && relay.isNotEmpty()) {
+                url = Enrollment.deviceUrl(relay) + "?token=" + token
+            }
+        }
         // Re-entering with the same URL (a repeated Connect tap, a service rebind) shouldn't tear
         // a healthy socket down and dial a new one — that's a gratuitous disconnect/reconnect pair
         // in the device's activity log. Nudge the existing client instead; it no-ops if it's up.
@@ -240,8 +258,8 @@ class AbacadAccessibilityService : AccessibilityService() {
         blobClient = null
         connectedUrl = url
         if (url.isEmpty()) {
-            Log.w(TAG, "no server URL set — open the app and enter ws://<host>:8848/device")
-            AbacadStatus.setState(AbacadStatus.State.DISCONNECTED, "no server URL set — open the app to connect")
+            Log.w(TAG, "not enrolled — open the app to get this device's ID and claim code")
+            AbacadStatus.setState(AbacadStatus.State.DISCONNECTED, "not added yet — open the app to finish setup")
             stopForegroundConnection()
             releaseSessionWakeLock()
             return

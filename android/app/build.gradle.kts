@@ -138,6 +138,14 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.2")
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // JVM unit tests. Enrollment is deliberately free of android.* imports so its
+    // parsing and URL logic can be tested without a device — the build machine
+    // can assemble an APK but never run one, so an untested path is an unverified
+    // path. The real org.json shadows android.jar's stub, whose methods otherwise
+    // throw "not mocked" under the JVM test runtime.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }
 
 // Without a signing config AGP would quietly emit app-release-unsigned.apk,

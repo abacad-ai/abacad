@@ -105,11 +105,26 @@ class MainActivity : ComponentActivity() {
     private var sysTick by mutableIntStateOf(0)
     private var url by mutableStateOf("")
 
+    // Self-enrollment UI state. While unclaimed the screen shows deviceId +
+    // claimCode; both come from the relay and the relay rotates the code, so we
+    // only ever display what the last heartbeat handed us.
+    private var deviceId by mutableStateOf("")
+    private var claimCode by mutableStateOf("")
+    private var relayUrl by mutableStateOf(Enrollment.DEFAULT_RELAY)
+    private var enrolling by mutableStateOf(false)
+    private var enrollError by mutableStateOf<String?>(null)
+
+    /** Guards against two enrollment loops running after a rotation/resume. */
+    @Volatile private var enrollThread: Thread? = null
+
     private val statusListener: () -> Unit = { runOnUiThread { statusTick++ } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         url = prefs.getString(AbacadAccessibilityService.KEY_SERVER_URL, "").orEmpty()
+        deviceId = prefs.getString(AbacadAccessibilityService.KEY_DEVICE_ID, "").orEmpty()
+        relayUrl = Enrollment.normalizeRelay(
+            prefs.getString(AbacadAccessibilityService.KEY_RELAY_URL, "").orEmpty())
 
         scanLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
             if (res.resultCode != Activity.RESULT_OK) return@registerForActivityResult
@@ -163,6 +178,21 @@ class MainActivity : ComponentActivity() {
                             SetupDrawer(checks, palette, startExpanded = false)
                         } else {
                             Spacer(Modifier.height(AbacadDim.spaceLg))
+                            // Self-enrollment is the primary path: this phone shows
+                            // its own ID and claim code, and nothing secret has to
+                            // travel toward it. The QR/URL route stays behind
+                            // "Other ways to connect" for browser-issued
+                            // credentials and relays this app can't reach.
+                            ClaimSection(
+                                deviceId = deviceId,
+                                claimCode = claimCode,
+                                relay = relayUrl,
+                                enrolling = enrolling,
+                                error = enrollError,
+                                palette = palette,
+                                onRetry = ::startEnrollment,
+                            )
+                            Spacer(Modifier.height(AbacadDim.spaceLg))
                             ConnectSection(
                                 url = url,
                                 onUrl = { url = it },
@@ -194,6 +224,18 @@ class MainActivity : ComponentActivity() {
         AbacadStatus.addListener(statusListener)
         statusTick++
         sysTick++
+        // Kick (or resume) enrollment whenever the setup screen is in front of
+        // someone. No-ops when a URL is configured or a loop is already running.
+        startEnrollment()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Stop polling once nobody is looking at the code. The service holds the
+        // connection after a claim; this loop only exists to drive the UI.
+        enrollThread?.interrupt()
+        enrollThread = null
+        enrolling = false
     }
 
     override fun onPause() {
@@ -208,6 +250,125 @@ class MainActivity : ComponentActivity() {
         prefs.edit().putString(AbacadAccessibilityService.KEY_SERVER_URL, clean).apply()
         // Don't echo the URL — it carries the device token.
         sendBroadcast(Intent(AbacadAccessibilityService.ACTION_RECONNECT).setPackage(packageName))
+    }
+
+    // ---- self-enrollment ----
+
+    /**
+     * Registers this phone with the relay if it has no credential yet, then polls
+     * until a human claims it and tells the service to connect.
+     *
+     * Runs on a plain background thread rather than a coroutine: the app has no
+     * coroutines dependency, and this is one long-lived poll loop, not structured
+     * concurrency. It exits on claim, on a terminal error, or when replaced.
+     */
+    private fun startEnrollment() {
+        // An explicitly configured URL wins — never override a QR/pasted setup.
+        if (prefs.getString(AbacadAccessibilityService.KEY_SERVER_URL, "").orEmpty().isNotEmpty()) return
+        if (enrollThread?.isAlive == true) return
+
+        enrolling = true
+        enrollError = null
+        val t = Thread {
+            var attempt = 0
+            // Two passes at most: the second exists only for a stored credential
+            // that turned out to be dead, so we discard it and enroll afresh
+            // rather than making someone clear app data.
+            while (attempt < 2 && !Thread.currentThread().isInterrupted) {
+                attempt++
+                val relay = Enrollment.normalizeRelay(
+                    prefs.getString(AbacadAccessibilityService.KEY_RELAY_URL, "").orEmpty())
+                var token = prefs.getString(AbacadAccessibilityService.KEY_DEVICE_TOKEN, "").orEmpty()
+
+                if (token.isEmpty()) {
+                    try {
+                        val reg = Enrollment.register(relay, "android", defaultDeviceName(), BuildConfig.VERSION_NAME)
+                        token = reg.deviceToken
+                        prefs.edit()
+                            .putString(AbacadAccessibilityService.KEY_RELAY_URL, relay)
+                            .putString(AbacadAccessibilityService.KEY_DEVICE_ID, reg.deviceId)
+                            .putString(AbacadAccessibilityService.KEY_DEVICE_TOKEN, reg.deviceToken)
+                            .apply()
+                        runOnUiThread {
+                            deviceId = reg.deviceId
+                            claimCode = reg.claimCode
+                            relayUrl = relay
+                        }
+                    } catch (e: Enrollment.Failure.NotSupported) {
+                        runOnUiThread {
+                            enrolling = false
+                            enrollError = "This relay doesn't support automatic setup. Use a connection URL below."
+                        }
+                        return@Thread
+                    } catch (e: Exception) {
+                        runOnUiThread {
+                            enrolling = false
+                            enrollError = "Couldn't reach ${Enrollment.normalizeRelay(relay)}. Check your network."
+                        }
+                        return@Thread
+                    }
+                }
+
+                var transient = 0
+                while (!Thread.currentThread().isInterrupted) {
+                    try {
+                        val st = Enrollment.heartbeat(relay, token)
+                        transient = 0
+                        if (st.claimed) {
+                            runOnUiThread {
+                                enrolling = false
+                                claimCode = ""
+                                toast(
+                                    if (st.claimedBy.isEmpty()) "Added to your account"
+                                    else "Added by ${st.claimedBy}")
+                            }
+                            // The service assembles the dial URL from relay_url +
+                            // device_token, so it just needs a nudge.
+                            sendBroadcast(
+                                Intent(AbacadAccessibilityService.ACTION_RECONNECT).setPackage(packageName))
+                            return@Thread
+                        }
+                        runOnUiThread {
+                            if (st.deviceId.isNotEmpty()) deviceId = st.deviceId
+                            claimCode = st.claimCode
+                        }
+                        Thread.sleep(Enrollment.clampIntervalSec(st.heartbeatIn) * 1000L)
+                    } catch (e: Enrollment.Failure.UnknownToken) {
+                        // Registration reaped, or the device was deleted. Clear
+                        // and go around once more to register from scratch.
+                        prefs.edit()
+                            .remove(AbacadAccessibilityService.KEY_DEVICE_ID)
+                            .remove(AbacadAccessibilityService.KEY_DEVICE_TOKEN)
+                            .apply()
+                        runOnUiThread { deviceId = ""; claimCode = "" }
+                        break
+                    } catch (e: InterruptedException) {
+                        return@Thread
+                    } catch (e: Exception) {
+                        // A flaky network shouldn't abandon a screen someone is
+                        // reading a code off; retry, but don't spin forever.
+                        transient++
+                        if (transient >= 10) {
+                            runOnUiThread {
+                                enrolling = false
+                                enrollError = "Lost contact with ${Enrollment.normalizeRelay(relay)}."
+                            }
+                            return@Thread
+                        }
+                        try { Thread.sleep(10_000L) } catch (_: InterruptedException) { return@Thread }
+                    }
+                }
+            }
+        }
+        enrollThread = t
+        t.isDaemon = true
+        t.start()
+    }
+
+    /** A recognizable default name so the claim page shows more than "New device". */
+    private fun defaultDeviceName(): String {
+        val model = android.os.Build.MODEL.orEmpty().trim()
+        return if (model.isEmpty()) "Android phone" else model
     }
 
     private fun disconnect() {
@@ -471,8 +632,86 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * The two lines a human reads off this phone and types at <relay>/claim.
+     * Replaces "paste a connection URL" as the primary setup step.
+     */
+    @Composable
+    private fun ClaimSection(
+        deviceId: String,
+        claimCode: String,
+        relay: String,
+        enrolling: Boolean,
+        error: String?,
+        palette: AbacadColors,
+        onRetry: () -> Unit,
+    ) {
+        SectionLabel("Add this phone")
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(AbacadDim.radiusMd),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(AbacadDim.spaceLg)) {
+                when {
+                    error != null -> {
+                        Text(error, color = palette.danger, style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.height(AbacadDim.spaceSm))
+                        OutlinedButton(onClick = onRetry) { Text("Try again") }
+                    }
+                    claimCode.isEmpty() && enrolling -> {
+                        Text(
+                            "Contacting ${Enrollment.normalizeRelay(relay)}…",
+                            color = palette.inkMuted,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    claimCode.isNotEmpty() -> {
+                        Text("Device ID", color = palette.inkMuted, style = MaterialTheme.typography.labelSmall)
+                        Text(
+                            deviceId,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontFamily = FontFamily.Monospace,
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Spacer(Modifier.height(AbacadDim.spaceSm))
+                        Text("Claim code", color = palette.inkMuted, style = MaterialTheme.typography.labelSmall)
+                        Text(
+                            claimCode,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.headlineSmall,
+                        )
+                        Spacer(Modifier.height(AbacadDim.spaceSm))
+                        Text(
+                            "Open ${Enrollment.normalizeRelay(relay)}/claim and enter both.",
+                            color = palette.inkMuted,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Spacer(Modifier.height(AbacadDim.spaceXs))
+                        Text(
+                            "The code changes every few minutes. Anyone who can read these two lines can add this phone to their account.",
+                            color = palette.inkSubtle,
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                    else -> {
+                        Text(
+                            "Not connected to a relay yet.",
+                            color = palette.inkMuted,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Spacer(Modifier.height(AbacadDim.spaceSm))
+                        OutlinedButton(onClick = onRetry) { Text("Set up") }
+                    }
+                }
+            }
+        }
+    }
+
     @Composable
     private fun ConnectSection(url: String, onUrl: (String) -> Unit, onScan: () -> Unit, onConnect: () -> Unit) {
+        SectionLabel("Other ways to connect")
         OutlinedTextField(
             value = url,
             onValueChange = onUrl,
