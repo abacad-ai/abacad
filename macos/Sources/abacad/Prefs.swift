@@ -7,25 +7,51 @@ import Security
 // in UserDefaults by an older build is migrated into the Keychain on first read.
 enum Prefs {
     private static let service = "ai.abacad.agent"
-    private static let account = "server_url"
     private static let legacyDefaultsKey = "server_url"
 
+    /// The full dial URL (wss://…?token=…). Written by `abacad connect` and by a
+    /// human pasting into the panel. Self-enrollment leaves this empty and uses
+    /// relayURL + deviceToken instead.
     static var serverURL: String {
         get {
-            if let v = keychainGet() { return v }
+            if let v = keychainGet("server_url") { return v }
             // Migrate a value written by an older UserDefaults-backed build.
             let legacy = UserDefaults.standard.string(forKey: legacyDefaultsKey) ?? ""
             if !legacy.isEmpty {
-                keychainSet(legacy)
+                keychainSet("server_url", legacy)
                 UserDefaults.standard.removeObject(forKey: legacyDefaultsKey)
                 return legacy
             }
             return ""
         }
-        set { keychainSet(newValue) }
+        set { keychainSet("server_url", newValue) }
     }
 
-    private static func baseQuery() -> [String: Any] {
+    // Self-enrollment credentials. The token is a bearer secret, so it lives in
+    // the same login Keychain as serverURL rather than UserDefaults.
+    static var relayURL: String {
+        get { keychainGet("relay_url") ?? "" }
+        set { keychainSet("relay_url", newValue) }
+    }
+
+    static var deviceID: String {
+        get { keychainGet("device_id") ?? "" }
+        set { keychainSet("device_id", newValue) }
+    }
+
+    static var deviceToken: String {
+        get { keychainGet("device_token") ?? "" }
+        set { keychainSet("device_token", newValue) }
+    }
+
+    /// Drop the self-enrollment credential, keeping the relay so a re-register
+    /// goes back to the same server. Used when the relay stops recognizing us.
+    static func clearEnrollment() {
+        deviceID = ""
+        deviceToken = ""
+    }
+
+    private static func baseQuery(_ account: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -33,23 +59,24 @@ enum Prefs {
         ]
     }
 
-    private static func keychainGet() -> String? {
-        var query = baseQuery()
+    private static func keychainGet(_ account: String) -> String? {
+        var query = baseQuery(account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var out: AnyObject?
         guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess,
-              let data = out as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+              let data = out as? Data,
+              let s = String(data: data, encoding: .utf8), !s.isEmpty else { return nil }
+        return s
     }
 
-    private static func keychainSet(_ value: String) {
+    private static func keychainSet(_ account: String, _ value: String) {
         let data = Data(value.utf8)
         // Upsert: update in place, or add if the item doesn't exist yet.
-        let status = SecItemUpdate(baseQuery() as CFDictionary,
+        let status = SecItemUpdate(baseQuery(account) as CFDictionary,
                                    [kSecValueData as String: data] as CFDictionary)
         if status == errSecItemNotFound {
-            var add = baseQuery()
+            var add = baseQuery(account)
             add[kSecValueData as String] = data
             add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
             SecItemAdd(add as CFDictionary, nil)

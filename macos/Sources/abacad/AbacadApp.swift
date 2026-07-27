@@ -55,6 +55,17 @@ final class Agent: ObservableObject {
     @Published var axGranted = Permissions.accessibilityGranted
     @Published var screenGranted = Permissions.screenRecordingGranted
 
+    // Self-enrollment state. While unclaimed the panel shows deviceID + claimCode
+    // — the two things a human reads off this Mac and types at <relay>/claim.
+    // Once claimed, claimedBy names the account that took it, so a claim by
+    // someone who merely read the screen isn't invisible to the person here.
+    @Published var relayURL: String = Prefs.relayURL.isEmpty ? Enrollment.defaultRelay : Prefs.relayURL
+    @Published var deviceID: String = Prefs.deviceID
+    @Published var claimCode: String = ""
+    @Published var claimedBy: String = ""
+    @Published var enrolling = false
+    @Published var enrollError: String?
+
     // Awareness state — the consent surface for the person at this Mac.
     @Published var paused = false            // soft-kill: reject commands locally
     @Published var watched = false           // a live-view (VNC) session is active
@@ -100,7 +111,148 @@ final class Agent: ObservableObject {
         ws.onText = { [weak self] text in self?.handle(text: text) }
         ws.onBinary = { [weak self] data in self?.tunnel.handle(data) }
         observeSystemEvents()
-        if !serverURL.isEmpty { ws.connect(urlString: serverURL) }
+        if !serverURL.isEmpty {
+            // An explicitly configured URL (from `abacad connect`, or pasted)
+            // still wins, so existing installs are untouched.
+            ws.connect(urlString: serverURL)
+        } else {
+            // Nothing configured: self-enroll. Registers if we have no token,
+            // then polls until a human claims this Mac, then dials.
+            Task { await self.runEnrollment() }
+        }
+    }
+
+    // MARK: self-enrollment
+
+    /// Drives the register -> wait-to-be-claimed -> connect loop. Bounded to two
+    /// passes: the second exists only for the case where a stored credential
+    /// turned out to be dead, so we discard it and enroll afresh in-process
+    /// rather than making someone quit and relaunch.
+    @MainActor
+    private func runEnrollment() async {
+        enrolling = true
+        enrollError = nil
+        defer { enrolling = false }
+
+        for _ in 0..<2 {
+            let relay = Enrollment.normalize(relayURL)
+            var token = Prefs.deviceToken
+
+            if token.isEmpty {
+                do {
+                    let reg = try await Enrollment.register(
+                        relay: relay, platform: "macos",
+                        name: Enrollment.defaultDeviceName(), version: Enrollment.appVersion())
+                    token = reg.deviceToken
+                    Prefs.relayURL = relay
+                    Prefs.deviceID = reg.deviceID
+                    Prefs.deviceToken = reg.deviceToken
+                    deviceID = reg.deviceID
+                    claimCode = reg.claimCode
+                } catch Enrollment.EnrollError.notSupported {
+                    enrollError = "This relay doesn't support automatic setup. Run `abacad connect`, or paste a connection URL below."
+                    return
+                } catch {
+                    enrollError = "Couldn't reach \(relay). Check the relay address and your network."
+                    return
+                }
+            }
+
+            switch await waitForClaim(relay: relay, token: token) {
+            case .claimed(let status):
+                claimedBy = status.claimedBy
+                claimCode = ""
+                event("• claimed by \(status.claimedBy.isEmpty ? "your account" : status.claimedBy)")
+                // WebSocketClient splits ?token= into an Authorization header at
+                // dial time, so the combined form is what the rest of the app
+                // expects — including the Advanced "Connect" button, which reads
+                // serverURL. Held in memory only, NOT written to Prefs: leaving
+                // it unset means the next launch re-runs the heartbeat, which is
+                // one cheap round trip that re-confirms who owns this Mac and
+                // notices if the device was deleted.
+                let dialURL = Enrollment.deviceURL(relay: relay) + "?token=" + token
+                serverURL = dialURL
+                dispatcher.blobClient = BlobClient.fromServerURL(dialURL)
+                ws.connect(urlString: dialURL)
+                return
+            case .credentialDead:
+                // Registration reaped, or the device was deleted. Start over.
+                Prefs.clearEnrollment()
+                deviceID = ""
+                claimCode = ""
+                event("• relay no longer recognizes this device — re-registering")
+                continue
+            case .failed(let message):
+                enrollError = message
+                return
+            }
+        }
+        enrollError = "The relay rejected freshly issued credentials twice."
+    }
+
+    private enum ClaimOutcome {
+        case claimed(Enrollment.Status)
+        case credentialDead
+        case failed(String)
+    }
+
+    @MainActor
+    private func waitForClaim(relay: String, token: String) async -> ClaimOutcome {
+        var transientFailures = 0
+        while true {
+            do {
+                let st = try await Enrollment.heartbeat(relay: relay, token: token)
+                transientFailures = 0
+                if st.claimed { return .claimed(st) }
+                if !st.deviceID.isEmpty { deviceID = st.deviceID }
+                claimCode = st.claimCode // the relay rotates it; we just display it
+                try? await Task.sleep(nanoseconds: Enrollment.interval(st.heartbeatIn) * 1_000_000_000)
+            } catch Enrollment.EnrollError.unknownToken {
+                return .credentialDead
+            } catch {
+                // A flaky network shouldn't abandon a setup screen someone is
+                // looking at; keep retrying, but give up rather than spin forever.
+                transientFailures += 1
+                if transientFailures >= 10 {
+                    return .failed("Lost contact with \(relay) while waiting to be claimed.")
+                }
+                try? await Task.sleep(nanoseconds: 10 * 1_000_000_000)
+            }
+        }
+    }
+
+    /// Disown this Mac locally and enroll again, so it can be claimed by someone
+    /// else. The counterpart to the "claimed by" disclosure: if that name is a
+    /// surprise, this is the way out without touching the dashboard.
+    @MainActor
+    func forgetEnrollment() {
+        ws.disconnect()
+        tunnel.closeAll()
+        Prefs.serverURL = ""
+        serverURL = ""
+        Prefs.clearEnrollment()
+        deviceID = ""
+        claimCode = ""
+        claimedBy = ""
+        Task { await self.runEnrollment() }
+    }
+
+    /// Re-enroll against a different relay (from the panel). Drops the current
+    /// credential: device identity is per-relay, so pointing at a new server
+    /// means becoming a new device there.
+    @MainActor
+    func changeRelay(to newRelay: String) {
+        let relay = Enrollment.normalize(newRelay)
+        ws.disconnect()
+        Prefs.serverURL = ""
+        serverURL = ""
+        Prefs.relayURL = relay
+        Prefs.clearEnrollment()
+        relayURL = relay
+        deviceID = ""
+        claimCode = ""
+        claimedBy = ""
+        Task { await self.runEnrollment() }
     }
 
     deinit {
@@ -359,14 +511,82 @@ struct AgentPanel: View {
 
     // MARK: setup (demoted when ready, primary when not)
 
+    // While unclaimed, the two lines a human reads off this Mac and types at
+    // <relay>/claim. This replaces "paste a connection URL" as the primary setup
+    // step: nothing secret travels toward the device any more.
+    private var claimBody: some View {
+        VStack(alignment: .leading, spacing: Theme.spaceXs) {
+            Text("Add this Mac").font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Text("Device ID").font(.caption2).foregroundStyle(.secondary)
+                Spacer()
+                Text(agent.deviceID).font(.system(.body, design: .monospaced)).textSelection(.enabled)
+            }
+            HStack {
+                Text("Claim code").font(.caption2).foregroundStyle(.secondary)
+                Spacer()
+                Text(agent.claimCode)
+                    .font(.system(.title3, design: .monospaced)).bold()
+                    .textSelection(.enabled)
+            }
+            Text("Open \(Enrollment.normalize(agent.relayURL))/claim and enter both.")
+                .font(.caption2).foregroundStyle(.secondary)
+            Text("The code changes every few minutes. Anyone who can read these two lines can add this Mac to their account.")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+
     private var connectBody: some View {
         VStack(alignment: .leading, spacing: Theme.spaceXs) {
-            Text("Server URL").font(.caption).foregroundStyle(.secondary)
-            TextField("wss://host/device?token=…", text: $agent.serverURL)
-                .textFieldStyle(.roundedBorder)
-            HStack {
-                Button(agent.connected ? "Reconnect" : "Connect") { agent.connect() }
-                Button("Disconnect") { agent.disconnect() }.disabled(!agent.connected)
+            if agent.enrolling && agent.deviceID.isEmpty && agent.enrollError == nil {
+                HStack(spacing: Theme.spaceXs) {
+                    ProgressView().controlSize(.small)
+                    Text("Contacting \(Enrollment.normalize(agent.relayURL))…").font(.caption)
+                }
+            } else if !agent.claimCode.isEmpty {
+                claimBody
+                Divider()
+            }
+
+            if let err = agent.enrollError {
+                Text(err).font(.caption).foregroundStyle(.red)
+            }
+
+            // Who holds this device. Shown after a claim so a claim made by
+            // someone who merely read the screen is visible to the person at the
+            // keyboard, with a one-click way out.
+            if !agent.claimedBy.isEmpty {
+                HStack {
+                    Text("Claimed by").font(.caption2).foregroundStyle(.secondary)
+                    Spacer()
+                    Text(agent.claimedBy).font(.caption)
+                }
+                Button("That wasn't me — disconnect") { agent.forgetEnrollment() }
+                    .font(.caption)
+            }
+
+            DisclosureGroup("Relay & advanced") {
+                VStack(alignment: .leading, spacing: Theme.spaceXs) {
+                    Text("Relay").font(.caption2).foregroundStyle(.secondary)
+                    HStack {
+                        TextField(Enrollment.defaultRelay, text: $agent.relayURL)
+                            .textFieldStyle(.roundedBorder)
+                        Button("Switch") { agent.changeRelay(to: agent.relayURL) }
+                    }
+                    if Enrollment.normalize(agent.relayURL) == Enrollment.defaultRelay {
+                        Text("On the same network as your agent? Your own relay is lower latency — abacad.ai/docs/guides/self-hosting/")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Divider()
+                    Text("Connection URL").font(.caption2).foregroundStyle(.secondary)
+                    TextField("wss://host/device?token=…", text: $agent.serverURL)
+                        .textFieldStyle(.roundedBorder)
+                    HStack {
+                        Button(agent.connected ? "Reconnect" : "Connect") { agent.connect() }
+                        Button("Disconnect") { agent.disconnect() }.disabled(!agent.connected)
+                    }
+                }
+                .padding(.top, Theme.spaceXs)
             }
         }
     }
