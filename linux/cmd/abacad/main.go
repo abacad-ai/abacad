@@ -21,6 +21,7 @@ import (
 	"syscall"
 
 	"abacad-linux/internal/agent"
+	"abacad-linux/internal/enroll"
 	"abacad-linux/internal/gui"
 	"abacad-linux/internal/version"
 	"abacad-linux/internal/x11"
@@ -38,16 +39,34 @@ func main() {
 		return
 	}
 
-	var flagURL, flagToken string
+	var flagURL, flagToken, flagRelay string
 	var flagGUI bool
 	flag.StringVar(&flagURL, "server-url", "", "relay device URL, wss://host/device[?token=…]")
 	flag.StringVar(&flagToken, "token", "", "device token (alternative to ?token= in the URL)")
+	flag.StringVar(&flagRelay, "relay", "", "relay to self-enroll with (default "+enroll.DefaultRelay+")")
 	flag.BoolVar(&flagGUI, "gui", false, "run the GTK4/libadwaita desktop client instead of the headless daemon")
 	flag.Parse()
 
 	cfg := loadConfigFile()
 	serverURL := firstNonEmpty(flagURL, os.Getenv("ABACAD_SERVER_URL"), cfg["server_url"])
 	token := firstNonEmpty(flagToken, os.Getenv("ABACAD_TOKEN"), cfg["token"])
+
+	// Self-enrollment is the default path for a machine with a screen: with no
+	// explicitly configured URL, register with the relay and wait to be claimed.
+	// An explicit --server-url/--token (or a legacy config) still wins, so an
+	// existing install and `abacad connect` both keep working untouched.
+	if serverURL == "" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		e, err := ensureEnrolled(ctx, cfg, flagRelay)
+		stop()
+		switch {
+		case err != nil && ctx.Err() == nil:
+			log.Fatalf("enrollment: %v", err)
+		case e != nil:
+			serverURL, token = e.deviceURL, e.token
+			log.Printf("device %s ready", e.deviceID)
+		}
+	}
 	// Assemble the dial URL; the agent lifts ?token= into a header and leaves other
 	// query params (so ?version= rides through). For the GUI the URL may be empty —
 	// the user enters it in-app — so guard the assembly and defer the "no URL" fatal
@@ -86,7 +105,10 @@ func main() {
 	}
 
 	if serverURL == "" {
-		log.Fatal("no server URL — set --server-url, ABACAD_SERVER_URL, or server_url in ~/.config/abacad/config (or run with --gui)")
+		// Reached only when self-enrollment did not apply: a headless box (no
+		// screen to read a claim code off), or a relay too old to support it.
+		log.Fatal("no server URL — this looks like a headless box, so enroll it with `abacad connect` " +
+			"(or set --server-url / ABACAD_SERVER_URL / server_url in ~/.config/abacad/config)")
 	}
 
 	a, err := agent.New(serverURL, x)

@@ -182,8 +182,11 @@ func saveConfig(kv map[string]string) (string, error) {
 	}
 	path := filepath.Join(d, "config")
 	var b strings.Builder
-	b.WriteString("# Written by `abacad connect`. Re-run it to replace these.\n")
-	for _, k := range []string{"server_url", "token"} {
+	b.WriteString("# Written by abacad. Delete this file to re-enroll from scratch.\n")
+	// relay_url/device_id/device_token come from self-enrollment; server_url/token
+	// from `abacad connect`. Both shapes are written by the same function so a
+	// switch between them can't leave a half-stale file behind.
+	for _, k := range []string{"relay_url", "device_id", "device_token", "server_url", "token"} {
 		if v := kv[k]; v != "" {
 			fmt.Fprintf(&b, "%s = %s\n", k, v)
 		}
