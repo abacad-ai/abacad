@@ -76,7 +76,9 @@ sealed class TrayIcon : IDisposable
 
         _tray.ToolTip = "abacad — " +
             (_agent.Paused ? "paused" : _agent.Controlling ? "controlling now" : _agent.Connected ? "connected" : "disconnected");
-        try { _tray.UpdateContextMenu(); } catch { /* best-effort menu refresh */ }
+        // No explicit menu refresh needed: PopupMenu builds the native HMENU from
+        // Items on every Show(), so the Text/Enabled set above are picked up at the
+        // next right-click.
     }
 
     public void Dispose()

@@ -53,16 +53,24 @@ jobs:
           path: dist/
           if-no-files-found: error
 
-  # ── Windows tray app — self-contained single exe, cross-built on Linux ───────
+  # ── Windows tray app — self-contained single exe, built on Windows ───────────
+  # Self-hosted NUC. Since the WinUI 3 (Windows App SDK) rewrite this can no
+  # longer cross-build on Linux — the Windows App SDK targets resolve only on a
+  # Windows host — so it runs on the box that has the .NET 8 SDK provisioned,
+  # the same way macOS/Android lean on the Mac mini.
+  #
+  # bash (Git Bash, on the runner's PATH) because the Makefile recipes are POSIX;
+  # the Windows default shell would be pwsh. GNU make is on the machine PATH.
+  #
   # The csproj stamps its Version from the repo-root VERSION file at build time,
   # so there is nothing to inject here — the whole monorepo shares one number.
   windows:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "8.0.x"
       - name: Build + stage self-contained exe
         run: |
           make windows-release

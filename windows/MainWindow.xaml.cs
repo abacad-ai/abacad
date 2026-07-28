@@ -12,7 +12,10 @@ namespace Abacad;
 // Disconnected), "screen being watched" / "recording" flags, a Pause / Disconnect
 // pair, the recent-actions tail, and the server-URL / Connect setup (shown while
 // disconnected). Closing hides the window; the app exits only from the tray.
-public sealed partial class MainWindow : Window
+// internal, not public: its constructor takes Agent (and it surfaces
+// ActivityLine), both of which are internal — a public MainWindow would be
+// inconsistently accessible (CS0051). Only App holds one, in a private field.
+internal sealed partial class MainWindow : Window
 {
     readonly Agent _agent;
     readonly DispatcherQueueTimer _tick;

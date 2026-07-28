@@ -18,7 +18,9 @@ static class Program
             return ConnectFlow.Run(args);
 
         WinRT.ComWrappersSupport.InitializeComWrappers();
-        Application.Start(_ =>
+        // Parameter is named `p`, not `_`: a `_` parameter is a real name here, so
+        // the `_ = new App()` discard below would bind to it and fail to compile.
+        Application.Start(p =>
         {
             var context = new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread());
             SynchronizationContext.SetSynchronizationContext(context);

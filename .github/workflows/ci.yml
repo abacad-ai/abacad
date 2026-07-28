@@ -53,6 +53,22 @@ jobs:
             exit 1
           fi
 
+  # Windows client — build only, on the self-hosted NUC. Since the WinUI 3
+  # (Windows App SDK) rewrite this cannot cross-build on Linux, so a cloud runner
+  # can't cover it and breakage would otherwise surface only at tag time — which
+  # is how v0.4.1 shipped with no Windows binary at all.
+  #
+  # bash because the Makefile recipes are POSIX (the Windows default is pwsh);
+  # Git Bash, GNU make and the .NET 8 SDK are on the box's machine PATH.
+  windows:
+    runs-on: [self-hosted, Windows, X64]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - run: make windows-release
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

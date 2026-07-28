@@ -22,8 +22,11 @@
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
 
     <!-- Custom entry point (Program.cs) so `abacad connect` can run the pairing
-         CLI and exit before any WinUI init. -->
-    <DisableXamlGeneratedMain>true</DisableXamlGeneratedMain>
+         CLI and exit before any WinUI init. WinUI 3 gates the Program/Main it
+         generates into App.g.i.cs behind this *compiler constant* — the
+         DisableXamlGeneratedMain MSBuild property is WPF-only and is silently
+         ignored here, which collides with Program.cs (CS0101/CS0111). -->
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
 
     <!-- PerMonitorV2 so GDI capture, UIA BoundingRectangle, and SendInput's
          absolute coordinates all agree in physical pixels. -->
@@ -44,9 +47,11 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.240923002" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.1742" />
     <!-- Tray icon at the Win32 (Shell_NotifyIcon) level — WinUI has no NotifyIcon.
-         The .Core package is XAML-free and takes an HICON directly, so RelayMark's
-         GDI-drawn icon is reused as-is. -->
-    <PackageReference Include="H.NotifyIcon.Core" Version="2.1.3" />
+         The base package is the XAML-free one (its types live in the
+         H.NotifyIcon.Core *namespace*; there is no H.NotifyIcon.Core package) and
+         takes an HICON directly, so RelayMark's GDI-drawn icon is reused as-is.
+         The .Wpf/.WinUI/.Maui siblings are the XAML flavours — we want none. -->
+    <PackageReference Include="H.NotifyIcon" Version="2.1.3" />
     <!-- UI-Automation client (reads/drives other apps' trees), replacing the old
          System.Windows.Automation (which came in via UseWPF). -->
     <PackageReference Include="FlaUI.UIA3" Version="4.0.0" />
