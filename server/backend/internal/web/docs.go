@@ -23,10 +23,21 @@ var docsDistFS embed.FS
 // slash) auto-redirects to `/docs/`:
 //
 //	mux.Handle("GET /docs/", web.Docs())
+//
+// As with the SPA (spa.go), docs-dist is generated and never committed. With no
+// build embedded we return a 404 handler outright: http.FileServer would answer
+// /docs/ with a 200 directory listing of the stub, which is both a confusing
+// "the docs are empty" signal and a needless peek at the server's file layout.
 func Docs() http.Handler {
 	sub, err := fs.Sub(docsDistFS, "docs-dist")
-	if err != nil {
+	if err != nil || !HaveDocs() {
 		return http.NotFoundHandler()
 	}
 	return http.StripPrefix("/docs/", http.FileServer(http.FS(sub)))
+}
+
+// HaveDocs reports whether a real Astro build is embedded, vs the bare stub.
+func HaveDocs() bool {
+	_, err := fs.Stat(docsDistFS, "docs-dist/index.html")
+	return err == nil
 }

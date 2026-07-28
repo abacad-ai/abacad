@@ -21,6 +21,11 @@ npm run build
 echo "== embedding dist into backend =="
 rm -rf "$here/backend/internal/web/dist"
 cp -r "$here/frontend/dist" "$here/backend/internal/web/dist"
+# Restore the tracked stub the rm -rf above just removed. It is the only tracked
+# file in dist/ (everything else is gitignored) and it exists so //go:embed has a
+# directory to match on a fresh clone — losing it here would show up as a
+# spurious deletion in every post-build `git status`. See internal/web/.gitignore.
+touch "$here/backend/internal/web/dist/.gitkeep"
 
 echo "== building docs site =="
 cd "$here/docs-site"
@@ -30,6 +35,7 @@ npm run build
 echo "== embedding docs into backend =="
 rm -rf "$here/backend/internal/web/docs-dist"
 cp -r "$here/docs-site/dist" "$here/backend/internal/web/docs-dist"
+touch "$here/backend/internal/web/docs-dist/.gitkeep"
 
 echo "== building backend (v$version) =="
 cd "$here/backend"

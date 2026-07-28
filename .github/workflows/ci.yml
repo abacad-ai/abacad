@@ -6,6 +6,9 @@ on:
   pull_request:
 
 jobs:
+  # Fast Go-only checks. dist/ and docs-dist/ are generated, not committed, so
+  # this compiles against the .gitkeep stubs — which is exactly the fresh-clone
+  # state we want to keep working. The `server` job below covers the real embed.
   backend:
     runs-on: ubuntu-latest
     defaults:
@@ -20,6 +23,35 @@ jobs:
       - run: go build ./...
       - run: go vet ./...
       - run: go test ./...
+
+  # End-to-end server build: SPA + docs + embed + link the binary, via the same
+  # script releases use. Since the built assets are no longer committed, this is
+  # what proves they still embed and that the shipped binary actually builds.
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: server/backend/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: ./build.sh
+        working-directory: server
+      # Guard the whole point of this change: a full build must leave the embed
+      # dirs free of tracked changes. Scoped to those dirs on purpose — build.sh
+      # runs `npm install`, which can legitimately touch a lockfile, and that is
+      # a different problem from a generated asset escaping .gitignore.
+      - name: Build artifacts stay untracked
+        run: |
+          dirty="$(git status --porcelain -- server/backend/internal/web)"
+          if [ -n "$dirty" ]; then
+            echo "::error::build.sh left tracked changes under internal/web — a generated asset is escaping .gitignore:"
+            echo "$dirty"
+            exit 1
+          fi
 
   frontend:
     runs-on: ubuntu-latest

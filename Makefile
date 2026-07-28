@@ -88,7 +88,7 @@ APK_RELEASE := android/app/build/outputs/apk/release/app-release.apk
 WIN_EXE     := windows/publish/Abacad.exe
 
 .PHONY: build build-debug build-release debug release \
-        dev tokens bump-version version android android-release \
+        dev server tokens bump-version version android android-release \
         linux linux-release linux-run linux-test \
         macos macos-icon macos-dmg macos-release macos-trust-reset macos-clean \
         windows windows-debug windows-release \
@@ -156,8 +156,19 @@ build-release:
 	if [ -n "$$failed" ]; then echo "Built + staged release clients (v$(VERSION)) — SKIPPED failed:$$failed"; \
 	else echo "Built + staged release clients: Android, Linux, macOS, Windows (v$(VERSION))"; fi
 
+# Build the deployable server binary: dashboard SPA + docs site, embedded into
+# the Go backend. The embedded copies (server/backend/internal/web/{dist,docs-dist})
+# are generated here, not committed — only a .gitkeep stub is tracked in each, so
+# the Go package still compiles on a fresh clone (go:embed needs the directory to
+# exist at compile time). Until you run this, the backend serves a placeholder
+# page for the dashboard and 404s /docs; the API and device channels work either way.
+# Needs node + go. Output: server/backend/abacad
+server:
+	./server/build.sh
+
 # Start the Go backend and the Vite frontend together in the foreground.
-# Open http://localhost:$(PORT). Ctrl-C stops both.
+# Open http://localhost:$(PORT). Ctrl-C stops both. No embedded build is needed:
+# the dashboard is served by Vite, and the backend's placeholder page is never hit.
 dev:
 	@cd server/frontend && npm install
 	@trap 'kill 0' INT TERM EXIT; \
