@@ -67,14 +67,6 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-      - name: TEMP diagnose toolchain PATH
-        run: |
-          echo "--- bash PATH ---"; echo "$PATH" | tr ':' '\n'
-          echo "--- machine PATH (registry) ---"
-          reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path || true
-          echo "--- where make / dotnet ---"; where make || echo "make NOT on PATH"; where dotnet || echo "dotnet NOT on PATH"
-          echo "--- WinGet Links ---"; ls -la "/c/Program Files/WinGet/Links/" || true
-          echo "--- ezwinports pkg ---"; ls -la "/c/Program Files (x86)/WinGet/Packages/ezwinports.make_Microsoft.Winget.Source_8wekyb3d8bbwe/bin/" || true
       - run: make windows-release
 
   frontend:
