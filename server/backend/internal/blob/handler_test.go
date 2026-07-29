@@ -39,14 +39,14 @@ func newFixture(t *testing.T) (*http.ServeMux, store.Account, store.Account) {
 
 	h := &Handler{
 		Svc: &Service{Store: st, Dir: t.TempDir(), MaxBytes: 1 << 20},
-		Account: func(r *http.Request) (store.Account, error) {
+		Account: func(r *http.Request) (Caller, error) {
 			switch r.Header.Get("X-Test-Account") {
 			case "A":
-				return accA, nil
+				return Caller{AccountID: accA.ID}, nil
 			case "B":
-				return accB, nil
+				return Caller{AccountID: accB.ID}, nil
 			}
-			return store.Account{}, errors.New("unauthorized")
+			return Caller{}, errors.New("unauthorized")
 		},
 	}
 	mux := http.NewServeMux()
@@ -182,7 +182,7 @@ func newSignedFixture(t *testing.T, deliver Deliver) (*http.ServeMux, *Service, 
 	signer := NewSigner([]byte("test-key"), "http://127.0.0.1")
 	h := &Handler{
 		Svc:     svc,
-		Account: func(r *http.Request) (store.Account, error) { return store.Account{}, errors.New("no bearer") },
+		Account: func(r *http.Request) (Caller, error) { return Caller{}, errors.New("no bearer") },
 		Signer:  signer,
 		Deliver: deliver,
 	}
@@ -197,7 +197,7 @@ func TestSignedDownloadNeedsNoBearer(t *testing.T) {
 	mux, svc, signer, acc := newSignedFixture(t, deliver)
 
 	body := []byte("hello signed world")
-	b, err := svc.Put(acc.ID, "text/plain", bytes.NewReader(body))
+	b, err := svc.Put(acc.ID, "", "text/plain", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("put: %v", err)
 	}

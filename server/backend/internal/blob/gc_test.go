@@ -26,7 +26,7 @@ func TestPruneOlderThan(t *testing.T) {
 
 	dir := t.TempDir()
 	svc := &Service{Store: st, Dir: dir, MaxBytes: 1 << 20}
-	b, err := svc.Put(acc.ID, "text/plain", strings.NewReader("hello"))
+	b, err := svc.Put(acc.ID, "", "text/plain", strings.NewReader("hello"))
 	if err != nil {
 		t.Fatalf("put: %v", err)
 	}

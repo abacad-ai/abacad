@@ -22,11 +22,43 @@ import (
 	"abacad/internal/store"
 )
 
-// AccountResolver authenticates a request to an account. It accepts any of the
-// server's identities (dashboard session, MCP bearer, device token) — whichever
-// the caller presents — and returns the owning account, or an error to reject
-// with 401. Built in main so this package stays unaware of how auth is wired.
-type AccountResolver func(r *http.Request) (store.Account, error)
+// Caller is an authenticated requester of the data plane, and how far it
+// reaches. The account alone is not enough: blobs record the device they came
+// from, and a key restricted to one device must not be able to download
+// another's bytes merely because both sit in the same account.
+type Caller struct {
+	AccountID string
+	// DeviceID is set when the caller authenticated with a device token. Such a
+	// caller may only touch its own blobs — a device has no business reading
+	// what a sibling device uploaded.
+	DeviceID string
+	// Scope is set when the caller authenticated with an API key; nil for a
+	// dashboard session, which is the account owner and reaches everything.
+	Scope *store.KeyScope
+}
+
+// CanReach reports whether this caller may touch a blob that originated on
+// deviceID. An empty deviceID means the blob did not come from a device (an
+// agent staged it for send_file), so nothing device-specific restricts it.
+func (c Caller) CanReach(deviceID string) bool {
+	if deviceID == "" {
+		return true
+	}
+	if c.DeviceID != "" {
+		return c.DeviceID == deviceID
+	}
+	if c.Scope != nil {
+		return c.Scope.AllowsDevice(deviceID)
+	}
+	return true // dashboard session: the owner
+}
+
+// AccountResolver authenticates a request. It accepts any of the server's
+// identities (dashboard session, MCP bearer, device token) — whichever the
+// caller presents — and returns who they are and how far they reach, or an
+// error to reject with 401. Built in main so this package stays unaware of how
+// auth is wired.
+type AccountResolver func(r *http.Request) (Caller, error)
 
 // ErrDeviceOffline is returned by a Deliver func when the target device has no
 // live connection. The Send handler maps it to 504.
@@ -56,7 +88,7 @@ type uploadResponse struct {
 // Upload handles POST /blobs: stream the request body to disk (capped, hashed),
 // record its metadata against the caller's account, and return the id.
 func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
-	acc, err := h.Account(r)
+	caller, err := h.Account(r)
 	if err != nil {
 		unauthorized(w, err)
 		return
@@ -66,7 +98,9 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	// enforces the same cap for in-process callers that have no such reader.
 	r.Body = http.MaxBytesReader(w, r.Body, h.Svc.MaxBytes)
 
-	b, err := h.Svc.Put(acc.ID, r.Header.Get("Content-Type"), r.Body)
+	// Stamp the originating device when one uploaded this, so Download can scope
+	// it. Blank for an agent or the dashboard.
+	b, err := h.Svc.Put(caller.AccountID, caller.DeviceID, r.Header.Get("Content-Type"), r.Body)
 	if err != nil {
 		var mbe *http.MaxBytesError
 		switch {
@@ -111,12 +145,12 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Bearer path.
-	acc, err := h.Account(r)
+	caller, err := h.Account(r)
 	if err != nil {
 		unauthorized(w, err)
 		return
 	}
-	f, b, err := h.Svc.Open(acc.ID, id)
+	f, b, err := h.Svc.Open(caller.AccountID, id)
 	// 404 whether it doesn't exist or isn't yours — never leak another account's
 	// blob ids by distinguishing "not found" from "forbidden".
 	if errors.Is(err, store.ErrNotFound) {
@@ -128,6 +162,14 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer f.Close()
+	// Same account is not sufficient. A key scoped to one device, or a device
+	// token, must not read bytes that came off a different device — otherwise
+	// per-device gating of pull_file is undone the moment the bytes land here.
+	// Same 404 as above, for the same reason.
+	if !caller.CanReach(b.DeviceID) {
+		writeErr(w, http.StatusNotFound, "blob not found")
+		return
+	}
 	serveBlob(w, r, b, f)
 }
 
@@ -162,7 +204,11 @@ func (h *Handler) Send(w http.ResponseWriter, r *http.Request) {
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, h.Svc.MaxBytes)
-	b, err := h.Svc.Put(grant.AccountID, r.Header.Get("Content-Type"), r.Body)
+	// No originating device: these are agent-supplied bytes staged for delivery
+	// TO a device, not pulled FROM one. The signature is already the grant for
+	// this exact (account, device, path), so nothing further restricts reading
+	// it back.
+	b, err := h.Svc.Put(grant.AccountID, "", r.Header.Get("Content-Type"), r.Body)
 	if err != nil {
 		var mbe *http.MaxBytesError
 		switch {

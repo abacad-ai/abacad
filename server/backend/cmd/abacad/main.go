@@ -218,13 +218,17 @@ func main() {
 	// dashboard session, API-key bearer, or device token — all resolving to the
 	// owning account, since a device uploads (screenshots, files), an agent and
 	// the dashboard download, and blobs are scoped per account.
-	accountForBlob := func(r *http.Request) (store.Account, error) {
+	// Each identity carries how far it reaches, not just which account it is in.
+	// The key's scope used to be discarded here, so a key restricted to one
+	// device could still download bytes pulled from another — per-device gating
+	// of pull_file undone at the point the bytes actually move.
+	accountForBlob := func(r *http.Request) (blob.Caller, error) {
 		if acc, err := st.AccountBySession(auth.SessionID(r)); err == nil {
-			return acc, nil // dashboard session cookie
+			return blob.Caller{AccountID: acc.ID}, nil // dashboard session: the owner
 		}
 		if tok := auth.BearerToken(r); tok != "" {
-			if accID, _, err := st.APIKeyScopeByTokenHash(auth.HashToken(tok)); err == nil {
-				return st.AccountByID(accID) // agent API-key bearer
+			if accID, scope, err := st.APIKeyScopeByTokenHash(auth.HashToken(tok)); err == nil {
+				return blob.Caller{AccountID: accID, Scope: &scope}, nil // agent API-key bearer
 			}
 		}
 		tok := r.URL.Query().Get("token") // device token (query, matching /device)
@@ -233,10 +237,11 @@ func main() {
 		}
 		if tok != "" {
 			if d, err := st.DeviceByTokenHash(auth.HashToken(tok)); err == nil {
-				return st.AccountByID(d.AccountID)
+				// A device reaches only its own blobs, not its siblings'.
+				return blob.Caller{AccountID: d.AccountID, DeviceID: d.ID}, nil
 			}
 		}
-		return store.Account{}, errors.New("missing or invalid credentials (session, MCP token, or device token)")
+		return blob.Caller{}, errors.New("missing or invalid credentials (session, MCP token, or device token)")
 	}
 	blobHandler := &blob.Handler{
 		Svc:     blobSvc,

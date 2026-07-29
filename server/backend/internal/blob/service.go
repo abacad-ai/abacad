@@ -41,7 +41,9 @@ type Service struct {
 // in-process caller passes a plain reader with no network layer to trip. If r's
 // own read already failed (e.g. an http.MaxBytesReader upstream), that error is
 // returned verbatim so the handler can classify it.
-func (s *Service) Put(accountID, contentType string, r io.Reader) (store.Blob, error) {
+// deviceID records which device the bytes came from, or "" when they did not
+// come from one; Handler.Download uses it to scope who may read them back.
+func (s *Service) Put(accountID, deviceID, contentType string, r io.Reader) (store.Blob, error) {
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
@@ -83,6 +85,7 @@ func (s *Service) Put(accountID, contentType string, r io.Reader) (store.Blob, e
 	b := store.Blob{
 		ID:          id,
 		AccountID:   accountID,
+		DeviceID:    deviceID,
 		ContentType: contentType,
 		Size:        size,
 		SHA256:      hex.EncodeToString(hasher.Sum(nil)),

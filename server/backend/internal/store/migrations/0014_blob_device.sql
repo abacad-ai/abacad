@@ -1,0 +1,16 @@
+-- Which device a blob came from, so the data plane can be scoped the same way
+-- the command plane is.
+--
+-- Blobs were account-scoped only: Service.Open compared account_id and nothing
+-- else, and the blob authorizer discarded the API key's scope entirely. So a key
+-- restricted to device A could still download a file pulled from device B, or a
+-- screen recording of it — undoing per-device gating of pull_file at the moment
+-- the bytes actually move. Device tokens had the same reach across their account.
+--
+-- '' means "not from a device" (an agent-uploaded blob staged for send_file), and
+-- carries no device restriction. Existing rows backfill to '' via the DEFAULT,
+-- which preserves today's behaviour for blobs whose origin we can no longer know.
+--
+-- Single ALTER TABLE, per the rule in 0013 — SQLite has no ADD COLUMN IF NOT
+-- EXISTS, so a duplicate-column error would abort the rest of this file.
+ALTER TABLE blobs ADD COLUMN device_id TEXT NOT NULL DEFAULT '';

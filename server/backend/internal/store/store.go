@@ -1116,14 +1116,19 @@ type Blob struct {
 	Size        int64
 	SHA256      string // hex
 	CreatedAt   int64
+	// DeviceID is the device the bytes came from, or "" for a blob that did not
+	// originate on one (an agent staging an upload for send_file). A non-empty
+	// value restricts who may download it: the data plane has to be scoped the
+	// same way the command plane is, or gating pull_file accomplishes nothing.
+	DeviceID string
 }
 
 // CreateBlob records a blob's metadata. The caller has already written the bytes
 // to disk; ID must be unique (use auth.NewID("blob")).
 func (s *Store) CreateBlob(b Blob) error {
 	_, err := s.db.Exec(
-		`INSERT INTO blobs(id,account_id,content_type,size,sha256,created_at) VALUES(?,?,?,?,?,?)`,
-		b.ID, b.AccountID, b.ContentType, b.Size, b.SHA256, b.CreatedAt)
+		`INSERT INTO blobs(id,account_id,content_type,size,sha256,created_at,device_id) VALUES(?,?,?,?,?,?,?)`,
+		b.ID, b.AccountID, b.ContentType, b.Size, b.SHA256, b.CreatedAt, b.DeviceID)
 	return err
 }
 
@@ -1133,8 +1138,8 @@ func (s *Store) CreateBlob(b Blob) error {
 func (s *Store) BlobByID(id string) (Blob, error) {
 	var b Blob
 	err := s.db.QueryRow(
-		`SELECT id,account_id,content_type,size,sha256,created_at FROM blobs WHERE id=?`, id).
-		Scan(&b.ID, &b.AccountID, &b.ContentType, &b.Size, &b.SHA256, &b.CreatedAt)
+		`SELECT id,account_id,content_type,size,sha256,created_at,device_id FROM blobs WHERE id=?`, id).
+		Scan(&b.ID, &b.AccountID, &b.ContentType, &b.Size, &b.SHA256, &b.CreatedAt, &b.DeviceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Blob{}, ErrNotFound
 	}
@@ -1145,7 +1150,7 @@ func (s *Store) BlobByID(id string) (Blob, error) {
 // retention sweep, which needs each id to delete its bytes before its row.
 func (s *Store) BlobsOlderThan(ts int64) ([]Blob, error) {
 	rows, err := s.db.Query(
-		`SELECT id,account_id,content_type,size,sha256,created_at FROM blobs WHERE created_at<=?`, ts)
+		`SELECT id,account_id,content_type,size,sha256,created_at,device_id FROM blobs WHERE created_at<=?`, ts)
 	if err != nil {
 		return nil, err
 	}
@@ -1153,7 +1158,7 @@ func (s *Store) BlobsOlderThan(ts int64) ([]Blob, error) {
 	var out []Blob
 	for rows.Next() {
 		var b Blob
-		if err := rows.Scan(&b.ID, &b.AccountID, &b.ContentType, &b.Size, &b.SHA256, &b.CreatedAt); err != nil {
+		if err := rows.Scan(&b.ID, &b.AccountID, &b.ContentType, &b.Size, &b.SHA256, &b.CreatedAt, &b.DeviceID); err != nil {
 			return nil, err
 		}
 		out = append(out, b)
