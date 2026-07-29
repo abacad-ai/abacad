@@ -97,12 +97,26 @@ final class Agent: ObservableObject {
 
     init() {
         dispatcher.blobClient = BlobClient.fromServerURL(serverURL)
+        // Load the ceiling before the socket exists: it must be in force before
+        // the first command can arrive, and it is reported on connect.
+        Capabilities.load()
+        // Re-report when it changes locally, so the dashboard and the relay's
+        // gate converge without waiting for a reconnect.
+        Capabilities.onChange { [weak self] in self?.sendCapabilities() }
         tunnel.sendFrame = { [weak self] data in self?.ws.send(data: data) }
         ws.onStateChange = { [weak self] up in
             guard let self else { return }
             // A fresh socket starts out assumed active server-side, so re-report
             // our real power state on every (re)connect.
-            if up { self.sendPresence(self.asleep ? "asleep" : "active") }
+            if up {
+                self.sendPresence(self.asleep ? "asleep" : "active")
+                // Declare this Mac's ceiling immediately. Until it lands the
+                // relay has only the value from a previous session, so
+                // reporting first thing keeps that window as short as the
+                // socket allows. Advisory only — handle(text:) enforces it
+                // either way.
+                self.sendCapabilities()
+            }
             DispatchQueue.main.async {
                 self.connected = up
                 self.event(up ? "• connected" : "• disconnected")
@@ -302,6 +316,20 @@ final class Agent: ObservableObject {
         ws.send(text: Json.string(["type": "presence", "state": state]))
     }
 
+    /// Declares what this Mac exposes. Always the FULL set — a delta needs both
+    /// ends to agree on a starting point and they cannot after a reconnect or a
+    /// dropped frame, so sending everything makes the latest frame the whole
+    /// truth. Tagged like presence, so relays predating it ignore it harmlessly.
+    ///
+    /// Fire-and-forget, and safe: this is an advisory mirror for the dashboard
+    /// and the relay's gate, not the enforcement. If it never arrives the Mac
+    /// still refuses the same commands; the relay just does not know why yet.
+    func sendCapabilities() {
+        ws.send(text: Json.string([
+            "type": "capabilities", "capabilities": Capabilities.report(),
+        ]))
+    }
+
     func connect() {
         let url = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
         Prefs.serverURL = url
@@ -397,6 +425,21 @@ final class Agent: ObservableObject {
             ws.send(text: Json.string(["id": id, "ok": false, "error": "paused by device operator"]))
             return
         }
+        // The device-side ceiling. The relay checks the same thing before
+        // sending, so in normal operation this never fires — which is exactly
+        // why it must be here: it is what makes the limit hold when the relay
+        // does NOT check, because it is out of date, misconfigured, or simply
+        // somebody else's. Enforcement that lives only at the end which might be
+        // lying is not enforcement.
+        if let why = Capabilities.refusal(method: method, params: params) {
+            event("\(method) · rejected · not exposed")
+            // The code distinguishes "its owner turned this off" from "this
+            // platform has no such verb"; identical to the caller otherwise.
+            ws.send(text: Json.string([
+                "id": id, "ok": false, "error": why, "code": "capability_disabled",
+            ]))
+            return
+        }
         noteCommand(method)
         updateAwareness(method: method, params: params)
 
@@ -423,6 +466,12 @@ final class Agent: ObservableObject {
 struct AgentPanel: View {
     @ObservedObject var agent: Agent
 
+    /// Bumped on every capability change so the switches repaint. Capabilities
+    /// is a plain thread-safe store rather than observable state — it has to be
+    /// readable from the socket's queue, where an ObservableObject would be the
+    /// wrong tool.
+    @State private var capabilityRevision = 0
+
     private var ready: Bool { agent.connected && agent.axGranted && agent.screenGranted }
 
     var body: some View {
@@ -436,6 +485,9 @@ struct AgentPanel: View {
                 recentActions
                 Divider()
                 DisclosureGroup("Setup & connection") { setupBody }
+                    .font(.caption)
+                Divider()
+                DisclosureGroup("What this Mac exposes") { capabilitiesBody }
                     .font(.caption)
             } else {
                 Divider()
@@ -475,6 +527,66 @@ struct AgentPanel: View {
             }
         }
     }
+
+    /// What this Mac exposes, decided here rather than by the relay.
+    ///
+    /// Grouped, because 21 switches is not a decision anyone makes well — the
+    /// same groups the dashboard shows, so moving between the two means choosing
+    /// the same things by the same names. Storage stays per verb.
+    ///
+    /// The copy says what each group really grants: these are not peers, and a
+    /// column of identical-looking switches would imply they are.
+    private var capabilitiesBody: some View {
+        VStack(alignment: .leading, spacing: Theme.spaceSm) {
+            Text("Turn off anything this Mac should never do. Enforced here, on the device, so it holds even if the relay is compromised.")
+                .font(.caption2).foregroundStyle(.secondary)
+            ForEach(Self.capabilityGroups, id: \.label) { group in
+                Toggle(isOn: Binding(
+                    get: { group.members.allSatisfy { Capabilities.allows($0) } },
+                    set: { want in
+                        group.members.forEach { Capabilities.toggle($0, on: want) }
+                        capabilityRevision += 1
+                    }
+                )) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(group.label).font(.caption)
+                        Text(group.note).font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+            }
+            // A tunnel dials this Mac's own sshd, so "ssh off, tunnel on" is not
+            // the closed door it looks like. Say so where the choice is made.
+            if Capabilities.allows("tunnel") && !Capabilities.allows("ssh") {
+                Text("SSH is off but the network tunnel is on — a tunnel can reach this Mac's own port 22. Turn the tunnel off too.")
+                    .font(.caption2).foregroundStyle(Theme.warning)
+            }
+        }
+        // Read the counter so SwiftUI repaints: Capabilities is a plain store,
+        // not observable state.
+        .id(capabilityRevision)
+    }
+
+    private struct CapabilityGroup {
+        let label: String
+        let members: [String]
+        let note: String
+    }
+
+    private static let capabilityGroups: [CapabilityGroup] = [
+        .init(label: "See the screen", members: ["screenshot", "screen_recording"],
+              note: "Also returns the text of every on-screen field, not just pixels."),
+        .init(label: "Control input", members: ["click", "right_click", "drag", "scroll", "press_keys", "input_text", "composite", "tap", "long_press", "swipe"],
+              note: "Effectively full control: anything that can type can open a terminal."),
+        .init(label: "Read and write files", members: ["push_file", "pull_file"],
+              note: "Writing files is equivalent to full control."),
+        .init(label: "Live view", members: ["vnc"],
+              note: "Not read-only — it carries keyboard and pointer events back."),
+        .init(label: "Network tunnel", members: ["tunnel"],
+              note: "The broadest setting: reaches any port this Mac can, including its own."),
+        .init(label: "SSH", members: ["ssh"], note: "Reach this Mac's sshd via the jump host."),
+    ]
 
     private var awarenessFlags: some View {
         HStack(spacing: Theme.spaceSm) {

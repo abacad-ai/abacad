@@ -46,6 +46,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -176,6 +177,8 @@ class MainActivity : ComponentActivity() {
                             RecentActions(snap, palette)
                             Spacer(Modifier.height(AbacadDim.spaceLg))
                             SetupDrawer(checks, palette, startExpanded = false)
+                            Spacer(Modifier.height(AbacadDim.spaceLg))
+                            CapabilitiesSection(palette)
                         } else {
                             Spacer(Modifier.height(AbacadDim.spaceLg))
                             // Self-enrollment is the primary path: this phone shows
@@ -229,6 +232,9 @@ class MainActivity : ComponentActivity() {
         startEnrollment()
     }
 
+    // One onPause, not two. Kotlin rejects the overload, so the second
+    // declaration meant this Activity did not compile at all — the enrollment
+    // teardown and the listener teardown were added separately and never met.
     override fun onPause() {
         super.onPause()
         // Stop polling once nobody is looking at the code. The service holds the
@@ -236,10 +242,6 @@ class MainActivity : ComponentActivity() {
         enrollThread?.interrupt()
         enrollThread = null
         enrolling = false
-    }
-
-    override fun onPause() {
-        super.onPause()
         AbacadStatus.removeListener(statusListener)
     }
 
@@ -583,6 +585,64 @@ class MainActivity : ComponentActivity() {
                         ) { Text("Disconnect") }
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * What this phone exposes, decided here rather than by the relay.
+     *
+     * Grouped, because 21 switches is not a decision anyone makes well — the
+     * same groups the dashboard shows, so moving between the two means choosing
+     * the same things by the same names. Storage stays per verb.
+     *
+     * The copy says what each group really grants: these are not peers, and a
+     * row of identical-looking switches would imply they are.
+     */
+    @Composable
+    private fun CapabilitiesSection(c: AbacadColors) {
+        // Recomposition key: bump on every change so the switches repaint.
+        var revision by remember { mutableStateOf(0) }
+        val groups = listOf(
+            Triple("See the screen", listOf("screenshot", "screen_recording"),
+                "Screenshots and recordings. A screenshot also returns the text of every on-screen field, not just pixels."),
+            Triple("Control input", listOf("tap", "long_press", "swipe", "input_text", "back", "home", "recents"),
+                "Tap, swipe, type, and the navigation keys."),
+            Triple("Read and write files", listOf("push_file", "pull_file"),
+                "Transfer files to and from this phone. Writing files is close to full control."),
+            Triple("Live view", listOf("vnc"),
+                "Watch this screen in real time. Not read-only — a live view also carries taps and typing back."),
+        )
+        SectionLabel("What this device exposes")
+        Text(
+            "Turn off anything this phone should never do. Enforced here, on the device, " +
+                "so it holds even if the relay is compromised.",
+            color = c.inkMuted,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Spacer(Modifier.height(AbacadDim.spaceSm))
+        for ((label, members, desc) in groups) {
+            // Read `revision` so Compose re-runs this when a switch flips;
+            // AbacadCapabilities is a plain singleton, not observable state.
+            @Suppress("UNUSED_EXPRESSION") revision
+            val on = members.all { AbacadCapabilities.allows(it) }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = AbacadDim.spaceSm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(label, color = c.ink, style = MaterialTheme.typography.bodyMedium)
+                    Text(desc, color = c.inkMuted, style = MaterialTheme.typography.bodySmall)
+                }
+                Switch(
+                    checked = on,
+                    onCheckedChange = { want ->
+                        members.forEach { AbacadCapabilities.toggle(it, want) }
+                        revision++
+                    },
+                )
             }
         }
     }

@@ -44,6 +44,17 @@ static class Prefs
         set => Write("device_token", value);
     }
 
+    /// The device-side capability ceiling, comma-separated (see Capabilities).
+    /// Not a secret — it is a policy decision about this PC — but it lives with
+    /// the rest so there is one store to reason about. Empty means never
+    /// configured, which is the wildcard; Capabilities writes an explicit marker
+    /// for the empty set, since Read cannot tell "" from a missing value.
+    public static string Capabilities
+    {
+        get => Read("capabilities");
+        set => Write("capabilities", value);
+    }
+
     /// <summary>
     /// Drop the self-enrollment credential, keeping the relay so a re-register
     /// goes back to the same server. Used when the relay stops recognizing us.

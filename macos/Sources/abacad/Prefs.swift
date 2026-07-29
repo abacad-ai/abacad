@@ -39,6 +39,16 @@ enum Prefs {
         set { keychainSet("device_id", newValue) }
     }
 
+    /// The device-side capability ceiling, comma-separated (see Capabilities).
+    /// Not a secret — it is a policy decision about this machine — but it lives
+    /// with the rest so there is one store to reason about. Empty means never
+    /// configured, which is the wildcard; Capabilities writes an explicit marker
+    /// for the empty set, because keychainGet cannot tell "" from a missing item.
+    static var capabilities: String {
+        get { keychainGet("capabilities") ?? "" }
+        set { keychainSet("capabilities", newValue) }
+    }
+
     static var deviceToken: String {
         get { keychainGet("device_token") ?? "" }
         set { keychainSet("device_token", newValue) }

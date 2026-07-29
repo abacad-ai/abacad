@@ -39,6 +39,12 @@
     background: rgba(11,11,13,.94); color: #f2f2f4; border-radius: 10px; padding: 10px 12px;
     box-shadow: 0 6px 20px rgba(0,0,0,.4); display: none; }
   .abacad-toast a { color: #ff8a80; font-weight: 600; text-decoration: none; }
+  .abacad-caps { position: fixed; left: 8px; top: 44px; width: 240px; z-index: 2147483647;
+    background: rgba(11,11,13,.94); color: #f2f2f4; border-radius: 10px; padding: 10px 12px;
+    font: 12px/1.5 system-ui, sans-serif; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+  .abacad-caps-head { font-weight: 600; margin-bottom: 6px; }
+  .abacad-caps-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; cursor: pointer; }
+  .abacad-caps-note { margin-top: 8px; color: #b8b8bd; font-size: 11px; }
 </style>
 <!-- Pixel capture. The DOM tree (below) is the primary semantic layer; this is
      the escape hatch for pixels. Served same-origin (vendored, not a CDN) so it
@@ -65,15 +71,88 @@
   // surface — ensureUI() re-attaches it.
   let paused = false, closed = false, controlling = false, ctrlTimer = 0, toastShown = false;
 
+  // The device-side capability ceiling: what this tab is willing to expose,
+  // decided here rather than by the relay. The relay keeps its own set and the
+  // effective surface is the intersection; this half is what holds when the
+  // relay is compromised, out of date, or somebody else's.
+  //
+  // Weaker here than on the native clients, and worth being plain about: the
+  // ceiling lives in localStorage, and `execute` runs arbitrary JS in this very
+  // page — so a tab that still exposes `execute` can rewrite its own ceiling.
+  // Turning `execute` off is meaningful; leaving it on and expecting the rest to
+  // hold is not. (Native clients have the same shape of limit: any capability
+  // granting code execution outranks the ceiling.)
+  const CAP_KEY = "abacad.capabilities";
+  const CAP_WILDCARD = "*";
+  // Only the verbs this client implements — a browser tab has no OS shell.
+  const CAP_ALL = ["screenshot", "tap", "click", "scroll", "input_text", "execute"];
+  // No stored value means never configured, which is the wildcard: silence is
+  // "unspecified", not "denied". An explicit empty string is a real refusal of
+  // everything, so the two must not be conflated.
+  let capSet = null; // null => wildcard
+  try {
+    const raw = localStorage.getItem(CAP_KEY);
+    if (raw !== null) capSet = raw === CAP_WILDCARD ? null : raw.split(",").filter(Boolean);
+  } catch (e) { /* storage blocked (private mode); wildcard stands */ }
+
+  function capAllows(name) { return capSet === null || capSet.indexOf(name) !== -1; }
+  function capReport() { return capSet === null ? [CAP_WILDCARD] : capSet.slice(); }
+  function capToggle(name, on) {
+    const next = capSet === null ? CAP_ALL.slice() : capSet.slice();
+    const at = next.indexOf(name);
+    if (on && at === -1) next.push(name);
+    if (!on && at !== -1) next.splice(at, 1);
+    capSet = next;
+    try { localStorage.setItem(CAP_KEY, next.join(",")); } catch (e) {}
+    // Re-report so the dashboard and the relay's gate converge without waiting
+    // for a reconnect.
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: "capabilities", capabilities: capReport() }));
+    }
+    render();
+  }
+
   const ui = document.createElement("div"); ui.id = "abacad-ui";
   const badge = document.createElement("div"); badge.className = "abacad-badge";
   const dot = document.createElement("span"); dot.className = "abacad-dot";
   const label = document.createElement("b"); label.textContent = "abacad";
   const pauseBtn = document.createElement("button"); pauseBtn.className = "abacad-btn"; pauseBtn.textContent = "Pause";
   const discBtn = document.createElement("button"); discBtn.className = "abacad-btn abacad-danger"; discBtn.textContent = "Disconnect";
-  badge.append(dot, label, pauseBtn, discBtn);
+  const capBtn = document.createElement("button"); capBtn.className = "abacad-btn"; capBtn.textContent = "Limits";
+  badge.append(dot, label, capBtn, pauseBtn, discBtn);
   const toast = document.createElement("div"); toast.className = "abacad-toast";
-  ui.append(badge, toast);
+  // The capability panel, built in JS inside #abacad-ui so ensureUI() restores
+  // it after a content rewrite — and so capture()/buildTree() keep excluding it
+  // from the surface the agent sees. Anywhere else and the agent could read and
+  // click its own limits.
+  const capPanel = document.createElement("div"); capPanel.className = "abacad-caps"; capPanel.style.display = "none";
+  ui.append(badge, capPanel, toast);
+
+  function renderCaps() {
+    capPanel.textContent = "";
+    const head = document.createElement("div"); head.className = "abacad-caps-head";
+    head.textContent = "What this tab exposes";
+    capPanel.append(head);
+    CAP_ALL.forEach((name) => {
+      const row = document.createElement("label"); row.className = "abacad-caps-row";
+      const box = document.createElement("input"); box.type = "checkbox"; box.checked = capAllows(name);
+      box.addEventListener("change", () => capToggle(name, box.checked));
+      const text = document.createElement("span"); text.textContent = name;
+      row.append(box, text);
+      capPanel.append(row);
+    });
+    const note = document.createElement("div"); note.className = "abacad-caps-note";
+    note.textContent = capAllows("execute")
+      ? "execute runs JS in this page, so it can change these limits. Turn it off to make them stick."
+      : "Enforced in this tab, so it holds even if the relay is compromised.";
+    capPanel.append(note);
+  }
+
+  capBtn.addEventListener("click", () => {
+    const showing = capPanel.style.display !== "none";
+    capPanel.style.display = showing ? "none" : "block";
+    if (!showing) renderCaps();
+  });
 
   pauseBtn.addEventListener("click", () => { paused = !paused; render(); });
   discBtn.addEventListener("click", () => disconnect());
@@ -230,7 +309,15 @@
   function connect() {
     if (closed) return;
     ws = new WebSocket(wsURL);
-    ws.addEventListener("open", () => { render(); showToast(); });
+    ws.addEventListener("open", () => {
+      render();
+      showToast();
+      // Declare this tab's ceiling immediately. Always the FULL set — a delta
+      // needs both ends to agree on a starting point and they cannot after a
+      // reconnect, so the latest frame is the whole truth. Advisory only: the
+      // check in the message handler enforces it either way.
+      ws.send(JSON.stringify({ type: "capabilities", capabilities: capReport() }));
+    });
     ws.addEventListener("close", () => { render(); if (!closed) setTimeout(connect, 1000); });
     ws.addEventListener("error", () => {});
     ws.addEventListener("message", async (ev) => {
@@ -241,6 +328,19 @@
       // error; only the badge's Resume clears it.
       if (paused) {
         ws.send(JSON.stringify({ id: cmd.id, ok: false, error: "paused by device operator" }));
+        return;
+      }
+      // The device-side ceiling. The relay checks the same thing before
+      // sending, so this normally never fires — which is why it must be here:
+      // it is what makes the limit hold when the relay does NOT check.
+      if (!capAllows(cmd.method)) {
+        ws.send(JSON.stringify({
+          id: cmd.id, ok: false,
+          error: cmd.method + " is turned off on this device",
+          // Distinguishes "its owner turned this off" from the "unknown method"
+          // below — otherwise the two are identical to the caller.
+          code: "capability_disabled",
+        }));
         return;
       }
       const fn = handlers[cmd.method];

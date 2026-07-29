@@ -43,6 +43,15 @@ sealed class TrayIcon : IDisposable
                     _statusItem,
                     new PopupMenuSeparator(),
                     _pauseItem,
+                    new PopupMenuSeparator(),
+                    // What this PC exposes, decided here rather than by the
+                    // relay. Grouped, because 21 switches is not a decision
+                    // anyone makes well — the same groups the dashboard shows,
+                    // so moving between the two means choosing the same things
+                    // by the same names. Storage stays per verb.
+                    new PopupMenuItem("What this PC exposes:", (_, _) => { }) { Enabled = false },
+                    CapItem(0), CapItem(1), CapItem(2), CapItem(3), CapItem(4), CapItem(5),
+                    new PopupMenuSeparator(),
                     new PopupMenuItem("Settings…", (_, _) => _showWindow()),
                     new PopupMenuItem("Disconnect", (_, _) => _agent.Disconnect()),
                     new PopupMenuSeparator(),
@@ -80,6 +89,39 @@ sealed class TrayIcon : IDisposable
         // Items on every Show(), so the Text/Enabled set above are picked up at the
         // next right-click.
     }
+
+    // Capability groups mirroring the dashboard's. These are NOT peers: input is
+    // close to full control on a desktop, file-write can drop a startup entry,
+    // and a tunnel reaches this PC's own ports including sshd — so the labels
+    // say so rather than presenting a row of identical-looking switches.
+    static readonly (string Label, string[] Members)[] CapGroups =
+    {
+        ("See the screen", new[] { "screenshot", "screen_recording" }),
+        ("Control input (≈ full control)", new[] { "click", "right_click", "drag", "scroll", "press_keys", "input_text", "composite", "tap", "long_press", "swipe" }),
+        ("Read and write files (≈ full control)", new[] { "push_file", "pull_file" }),
+        ("Live view (also sends input)", new[] { "vnc" }),
+        ("Network tunnel (reaches every local port)", new[] { "tunnel" }),
+        ("SSH", new[] { "ssh" }),
+    };
+
+    // One toggle row. Flat PopupMenuItems rather than a submenu: this file
+    // already proves that type works, and a checkmark in the label shows state
+    // without depending on a menu API this build cannot be compiled against here.
+    static PopupMenuItem CapItem(int index)
+    {
+        var (label, members) = CapGroups[index];
+        var item = new PopupMenuItem(CapLabel(label, members), (_, _) =>
+        {
+            var want = !members.All(Capabilities.Allows);
+            foreach (var c in members) Capabilities.Toggle(c, want);
+        });
+        // Repaint the checkmark when the set changes from anywhere.
+        Capabilities.OnChange(() => item.Text = CapLabel(label, members));
+        return item;
+    }
+
+    static string CapLabel(string label, string[] members) =>
+        (members.All(Capabilities.Allows) ? "✓ " : "     ") + label;
 
     public void Dispose()
     {

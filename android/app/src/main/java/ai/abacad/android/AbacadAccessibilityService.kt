@@ -231,6 +231,9 @@ class AbacadAccessibilityService : AccessibilityService() {
     }
 
     private fun connectFromPrefs() {
+        // Load the ceiling before dialling: it must be in force before the first
+        // command can arrive, and it is reported to the relay on connect.
+        AbacadCapabilities.load(this)
         val p = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         // An explicitly configured URL wins. Otherwise fall back to the
         // self-enrollment credential, which MainActivity's enrollment flow wrote
@@ -266,6 +269,10 @@ class AbacadAccessibilityService : AccessibilityService() {
         }
         blobClient = BlobClient.fromServerUrl(url)
         device = DeviceClient(url, ::execute) { currentActivityState() }.also { it.connect() }
+        // Re-report when the operator changes the set in the app, so the
+        // dashboard and the relay's gate converge without waiting for a
+        // reconnect. Registered once per client; the send no-ops while down.
+        AbacadCapabilities.onChange { device?.reportCapabilities() }
         // Run at foreground-service priority + hold the socket alive through screen-off so the
         // device stays reachable while it "sleeps" (see docs/power-lockscreen.md).
         startForegroundConnection()

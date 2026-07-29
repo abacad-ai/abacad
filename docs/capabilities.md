@@ -90,7 +90,17 @@ refusal is not: the device checks its own ceiling before acting, so a relay that
 received the frame, ignored it, or was lying gets the same answer. That is what makes
 "even the relay cannot turn this back on" true rather than aspirational.
 
-On Linux, from the device:
+Where each client puts the switches, and where it stores them:
+
+| Client | Set it in | Stored in |
+|---|---|---|
+| Linux | `abacad capabilities` (see below) | `~/.config/abacad/capabilities` |
+| macOS | menu-bar panel → "What this Mac exposes" | login Keychain |
+| Android | app screen → "What this device exposes" | app-private `SharedPreferences` |
+| Windows | tray menu → "What this PC exposes" | DPAPI-encrypted, per user |
+| Browser | badge → "Limits" | `localStorage` for that device's origin |
+
+On Linux — a headless box has no panel to click, so the CLI *is* the control surface:
 
 ```console
 $ abacad capabilities                      # what is on and off
@@ -99,15 +109,20 @@ $ abacad capabilities --only screenshot    # exactly this, nothing else
 $ abacad capabilities --none               # expose nothing
 ```
 
-Stored at `~/.config/abacad/capabilities`; a missing file means no ceiling, so an
-existing install behaves exactly as it did before.
+In every case a missing stored value means no ceiling, so an existing install behaves
+exactly as it did before.
 
 **A client that reports nothing imposes no ceiling.** Silence means *unspecified*, not
-*denied* — reading it as a refusal would take every existing device offline on upgrade —
-so such devices are governed by the account grant alone, exactly as before. Today only
-the Linux client reports; macOS, Windows, Android and the browser device are still to
-come, and the dashboard shows which devices have reported so the difference is visible
-rather than assumed.
+*denied* — reading it as a refusal would take every device on an older build offline the
+moment the relay upgraded — so those devices are governed by the account grant alone,
+exactly as before. The dashboard shows which devices have reported, so "this device has
+no opinion" and "this device exposes nothing" stay distinguishable rather than looking
+identical.
+
+The browser is the weak one, and worth saying plainly: its ceiling lives in
+`localStorage` and `execute` runs arbitrary JS in that same page, so a tab still exposing
+`execute` can rewrite its own limits. Turning `execute` off is meaningful; leaving it on
+and expecting the rest to hold is not.
 
 A ceiling cannot constrain a capability that already grants code execution as the device
 user: a device still exposing file-write is one `push_file` from having its own config

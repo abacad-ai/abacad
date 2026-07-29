@@ -58,6 +58,16 @@ sealed class Tunnel
             EmitClose(id, $"target {host} is not an allowed address");
             return;
         }
+        // The local ceiling governs the binary lane too. Worth stating because
+        // the pause check does NOT cover this path — it lives in HandleText, so
+        // a paused PC still bridges tunnels. A ceiling enforced only on the
+        // command lane would leave the widest surface here ungoverned.
+        var capRefusal = Capabilities.TunnelRefusal(host, port);
+        if (capRefusal is not null)
+        {
+            EmitClose(id, capRefusal);
+            return;
+        }
 
         lock (_gate) { if (_closedAll) return; _known.Add(id); }
 

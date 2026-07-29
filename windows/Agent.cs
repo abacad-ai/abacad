@@ -44,15 +44,43 @@ sealed class Agent
     public Agent()
     {
         _dispatcher.Blobs = BlobClient.FromServerUrl(ServerUrl);
+        // Load the ceiling before the socket exists: it must be in force before
+        // the first command can arrive, and it is reported on connect.
+        Abacad.Capabilities.Load();
+        // Re-report when it changes locally, so the dashboard and the relay's
+        // gate converge without waiting for a reconnect.
+        Abacad.Capabilities.OnChange(SendCapabilities);
         _tunnel.SendFrame = data => _ws.Send(data);
         _ws.OnStateChange = up =>
         {
             Connected = up;
             Event(up ? "• connected" : "• disconnected");
+            // Declare this PC's ceiling immediately. Until it lands the relay
+            // has only the value from a previous session, so reporting first
+            // thing keeps that window as short as the socket allows. Advisory
+            // only — HandleText enforces it either way.
+            if (up) SendCapabilities();
             ConnectedChanged?.Invoke(up);
         };
         _ws.OnText = HandleText;
         _ws.OnBinary = data => _tunnel.Handle(data);
+    }
+
+    /// Declares what this PC exposes. Always the FULL set — a delta needs both
+    /// ends to agree on a starting point and they cannot after a reconnect or a
+    /// dropped frame, so sending everything makes the latest frame the whole
+    /// truth. Tagged by type, so relays predating it ignore it harmlessly.
+    ///
+    /// Fire-and-forget, and safe: this is an advisory mirror for the dashboard
+    /// and the relay's gate, not the enforcement. If it never arrives this PC
+    /// still refuses the same commands; the relay just does not know why yet.
+    void SendCapabilities()
+    {
+        _ws.Send(Json.String(new Dictionary<string, object?>
+        {
+            ["type"] = "capabilities",
+            ["capabilities"] = Abacad.Capabilities.Report().Cast<object?>().ToList(),
+        }));
     }
 
     // Toggle the soft-kill pause (from the settings window). While paused every
@@ -302,6 +330,25 @@ sealed class Agent
             _ws.Send(Json.String(new Dictionary<string, object?>
             {
                 ["id"] = id, ["ok"] = false, ["error"] = "paused by device operator",
+            }));
+            return;
+        }
+        // The device-side ceiling. The relay checks the same thing before
+        // sending, so in normal operation this never fires — which is exactly
+        // why it must be here: it is what makes the limit hold when the relay
+        // does NOT check, because it is out of date, misconfigured, or simply
+        // somebody else's. Enforcement that lives only at the end which might be
+        // lying is not enforcement.
+        var refusal = Abacad.Capabilities.Refusal(method, p);
+        if (refusal is not null)
+        {
+            Event($"{method} · rejected · not exposed");
+            _ws.Send(Json.String(new Dictionary<string, object?>
+            {
+                ["id"] = id, ["ok"] = false, ["error"] = refusal,
+                // Distinguishes "its owner turned this off" from "this platform
+                // has no such verb"; identical to the caller otherwise.
+                ["code"] = "capability_disabled",
             }));
             return;
         }

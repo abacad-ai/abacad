@@ -9,6 +9,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
@@ -160,6 +161,28 @@ class DeviceClient(
     private fun presenceFrame(state: String): String =
         JSONObject().put("type", "presence").put("state", state).toString()
 
+    /**
+     * The device declaring what it exposes. Always the FULL set — a delta needs
+     * both ends to agree on a starting point and they cannot after a reconnect
+     * or a dropped frame, so sending everything makes the latest frame the whole
+     * truth. Tagged like presence, so servers predating it ignore it harmlessly.
+     */
+    private fun capabilitiesFrame(): String =
+        JSONObject()
+            .put("type", "capabilities")
+            .put("capabilities", JSONArray(AbacadCapabilities.report()))
+            .toString()
+
+    /**
+     * Re-report after the operator changes the set locally, so the dashboard and
+     * the relay's gate converge without waiting for a reconnect. Dropped if the
+     * socket is down; onOpen re-reports on reconnect.
+     */
+    fun reportCapabilities() {
+        val sock = ws ?: return
+        try { sock.send(capabilitiesFrame()) } catch (_: Exception) {}
+    }
+
     // Reflect live-view / recording sessions in the status panel so the person at
     // the device sees when their screen is being watched or recorded. Best-effort,
     // inferred from the command verbs the server relays.
@@ -233,6 +256,11 @@ class DeviceClient(
                 // Tell the server our current power state up front, so a device that
                 // connects while the screen is already off shows as asleep, not active.
                 currentActivity?.let { webSocket.send(presenceFrame(it())) }
+                // Declare this device's ceiling immediately. Until it lands the
+                // server has only the value from a previous session, so
+                // reporting first thing keeps that window as short as the socket
+                // allows. Advisory only — the check above enforces it either way.
+                webSocket.send(capabilitiesFrame())
             }
         }
 
@@ -256,6 +284,31 @@ class DeviceClient(
                 webSocket.send(
                     JSONObject().put("id", id).put("ok", false)
                         .put("error", "paused by device operator").toString(),
+                )
+                return
+            }
+            // The device-side ceiling. The relay checks the same thing before
+            // sending, so in normal operation this never fires — which is exactly
+            // why it must be here: it is what makes the limit hold when the relay
+            // does NOT check, because it is out of date, misconfigured, or simply
+            // somebody else's. Enforcement that lives only at the end which might
+            // be lying is not enforcement.
+            //
+            // Stopping is never blocked: screen_recording and vnc multiplex
+            // start/stop through one method, so refusing the stop would strand
+            // the very session the operator just revoked.
+            val stopping = (method == "vnc" || method == "screen_recording") &&
+                params.optString("action") == "stop"
+            if (!stopping && !AbacadCapabilities.allows(method)) {
+                Log.i(tag, "cmd $method rejected — not exposed")
+                AbacadStatus.event("$method · rejected · not exposed")
+                webSocket.send(
+                    JSONObject().put("id", id).put("ok", false)
+                        .put("error", "$method is turned off on this device — re-enable it in the abacad app")
+                        // Distinguishes "its owner turned this off" from "this
+                        // platform has no such verb"; identical to the caller
+                        // otherwise.
+                        .put("code", "capability_disabled").toString(),
                 )
                 return
             }

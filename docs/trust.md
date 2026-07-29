@@ -27,7 +27,7 @@ destination, and this table as how far along the road we are.
 | **Device hardware keypair / mutual TLS** (edge ③) | ○ planned (P1) — the device still authenticates with a shared bearer token, now header-only |
 | Scoped / expiring MCP tokens; enforced non-escalation | ○ planned (P1) |
 | **Per-device capabilities**, enforced at the relay for every caller | ✅ shipped |
-| **Device-side capability ceiling** the server cannot widen | ◐ shipped on Linux; macOS / Windows / Android / browser still report nothing (and so impose no ceiling) |
+| **Device-side capability ceiling** the server cannot widen | ✅ every client (Linux, macOS, Android, Windows, browser). Windows ships **uncompiled** — no Windows toolchain is available to build it, so treat that one as unverified |
 | Surfaced audit trail + kill switch | ○ planned (P1) |
 | Dashboard MFA; cookie `Secure` unconditional | ○ planned (P1) |
 | Runtime verification (installed app vs a live server) | ○ not done — compiles on all three platforms; not yet exercised end-to-end |

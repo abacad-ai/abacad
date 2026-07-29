@@ -49,6 +49,14 @@ final class Tunnel {
             emitClose(id, reason: "target \(host) is not an allowed address")
             return
         }
+        // The local ceiling governs the binary lane too. Worth stating because
+        // the pause check does NOT cover this path — it lives in handle(text:),
+        // so a paused Mac still bridges tunnels. A ceiling enforced only on the
+        // command lane would leave the widest surface here ungoverned.
+        if let why = Capabilities.tunnelRefusal(host: host, port: "\(port.rawValue)") {
+            emitClose(id, reason: why)
+            return
+        }
         let conn = NWConnection(host: NWEndpoint.Host(host), port: port, using: .tcp)
         queue.async { self.conns[id] = conn }
         conn.stateUpdateHandler = { [weak self] state in
