@@ -80,8 +80,10 @@ func callTool(ctx context.Context, params json.RawMessage, resolver DeviceResolv
 	if !ok {
 		return errorResult("unknown tool: " + p.Name)
 	}
-	if scope != nil && !scope.AllowsMethod(p.Name) {
-		return errorResult(fmt.Sprintf("method %q is not permitted for this API key", p.Name))
+	// Authorize on the protocol method, not the tool name — they differ for
+	// send_file/get_file (see actionTool.method).
+	if scope != nil && !scope.AllowsMethod(string(tool.method)) {
+		return errorResult(fmt.Sprintf("%s (method %q) is not permitted for this API key", p.Name, tool.method))
 	}
 
 	var sel deviceIDArg

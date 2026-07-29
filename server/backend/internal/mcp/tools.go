@@ -56,7 +56,17 @@ const deviceIDSchema = `"device_id":{"type":"string","description":"REQUIRED —
 // through the /blobs data plane on the agent's behalf. Exactly one of call /
 // fileCall is set.
 type actionTool struct {
-	name        string
+	name string
+	// method is the protocol verb this tool authorizes as. It is usually the same
+	// string as name, but NOT always: send_file/get_file drive push_file/pull_file.
+	// An API key's allowlist is stored in protocol-method space (protocol.Methods
+	// is its documented source of truth), so every scope check must go through
+	// this field and never through name. Checking name meant "send_file" could
+	// never be granted to a non-wildcard key: the validator only ever accepted
+	// "push_file", which then failed to match the tool name at call time, so file
+	// transfer was reachable only via all_methods. TestToolMethodsMatchProtocol
+	// asserts this mapping stays a bijection with protocol.Methods.
+	method      protocol.Method
 	description string
 	schema      string // JSON Schema object
 	call        func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult
@@ -73,6 +83,7 @@ type actionTool struct {
 var actionTools = []actionTool{
 	{
 		name:        "screenshot",
+		method:      protocol.MethodScreenshot,
 		description: "Look at the connected device's screen. Returns a JPEG of the current screen and, by default, the accessibility UI tree: the foreground package plus a list of nodes, each with class, text, resource id, a clickable flag, and screen bounds [left, top, right, bottom]. Use the tree to decide what to interact with — tap the center of a node's bounds. Set include_ui_tree=false for canvas/game screens where the tree is empty or noise (you still get the image). The device is woken automatically if its screen was off.",
 		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"include_ui_tree":{"type":"boolean","description":"also return the accessibility UI tree (default true)"}},"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
@@ -102,6 +113,7 @@ var actionTools = []actionTool{
 	},
 	{
 		name:        "tap",
+		method:      protocol.MethodTap,
 		description: "Tap the connected device screen at absolute pixel coordinates. Get coordinates from a screenshot's UI tree node bounds — tap the center of the target node.",
 		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"x":{"type":"integer","description":"x pixel coordinate"},"y":{"type":"integer","description":"y pixel coordinate"}},"required":["x","y"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
@@ -120,6 +132,7 @@ var actionTools = []actionTool{
 	},
 	{
 		name:        "long_press",
+		method:      protocol.MethodLongPress,
 		description: "Press and hold at absolute pixel coordinates for duration_ms (default 600). Use for context menus, drag handles, and other press-and-hold interactions where a plain tap won't do.",
 		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"x":{"type":"integer","description":"x pixel coordinate"},"y":{"type":"integer","description":"y pixel coordinate"},"duration_ms":{"type":"integer","description":"hold duration in ms (default 600)"}},"required":["x","y"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
@@ -145,6 +158,7 @@ var actionTools = []actionTool{
 	},
 	{
 		name:        "swipe",
+		method:      protocol.MethodSwipe,
 		description: "Swipe/drag on the connected device from (x1,y1) to (x2,y2) over duration_ms (default 300). Use for scrolling and navigation — e.g. to advance a vertical video feed, swipe from a lower point to a higher point (bottom -> top); a shorter duration flings faster. Absolute pixels; get screen size from a screenshot.",
 		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"x1":{"type":"integer","description":"start x pixel"},"y1":{"type":"integer","description":"start y pixel"},"x2":{"type":"integer","description":"end x pixel"},"y2":{"type":"integer","description":"end y pixel"},"duration_ms":{"type":"integer","description":"gesture duration in ms (default 300)"}},"required":["x1","y1","x2","y2"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
@@ -170,6 +184,7 @@ var actionTools = []actionTool{
 	},
 	{
 		name:        "input_text",
+		method:      protocol.MethodInputText,
 		description: "Type text into the currently focused input field on the connected device. Tap the field first to focus it, then call this. Replaces the field's current contents. For submitting/searching, follow with the on-screen action button (e.g. tap the keyboard's Enter/Search key via its node).",
 		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"text":{"type":"string","description":"text to place into the focused field"}},"required":["text"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
@@ -195,6 +210,7 @@ var actionTools = []actionTool{
 	// --- Desktop tools (macOS today; a mobile device rejects them as unknown). ---
 	{
 		name:        "click",
+		method:      protocol.MethodClick,
 		description: "(desktop) Left-click at absolute pixel coordinates, optionally holding modifier keys (for ⇧-click, ⌘-click, etc.). Get coordinates from a screenshot's UI tree node bounds — click the center of the target. Set count=2 for a double-click.",
 		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"x":{"type":"integer","description":"x pixel coordinate"},"y":{"type":"integer","description":"y pixel coordinate"},"modifiers":{"type":"array","items":{"type":"string","enum":["cmd","shift","opt","ctrl"]},"description":"modifier keys held during the click"},"count":{"type":"integer","description":"click count (2 = double-click; default 1)"}},"required":["x","y"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
@@ -221,6 +237,7 @@ var actionTools = []actionTool{
 	},
 	{
 		name:        "right_click",
+		method:      protocol.MethodRightClick,
 		description: "(desktop) Right / secondary click at absolute pixel coordinates to open a context menu.",
 		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"x":{"type":"integer","description":"x pixel coordinate"},"y":{"type":"integer","description":"y pixel coordinate"}},"required":["x","y"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
@@ -239,6 +256,7 @@ var actionTools = []actionTool{
 	},
 	{
 		name:        "drag",
+		method:      protocol.MethodDrag,
 		description: "(desktop) Press at (x1,y1), move to (x2,y2), and release — move a window, select a range, or drag-and-drop. duration_ms (default 300) paces the movement; modifiers are held for the duration.",
 		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"x1":{"type":"integer"},"y1":{"type":"integer"},"x2":{"type":"integer"},"y2":{"type":"integer"},"duration_ms":{"type":"integer","description":"drag duration in ms (default 300)"},"modifiers":{"type":"array","items":{"type":"string","enum":["cmd","shift","opt","ctrl"]}}},"required":["x1","y1","x2","y2"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
@@ -265,6 +283,7 @@ var actionTools = []actionTool{
 	},
 	{
 		name:        "scroll",
+		method:      protocol.MethodScroll,
 		description: "(desktop) Scroll at absolute pixel coordinates by a wheel delta. Positive dy scrolls content up (finger-down / page moves up); negative dy scrolls down. dx scrolls horizontally. Units are wheel lines.",
 		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"x":{"type":"integer"},"y":{"type":"integer"},"dx":{"type":"integer","description":"horizontal wheel delta (default 0)"},"dy":{"type":"integer","description":"vertical wheel delta"}},"required":["x","y","dy"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
@@ -285,6 +304,7 @@ var actionTools = []actionTool{
 	},
 	{
 		name:        "press_keys",
+		method:      protocol.MethodPressKeys,
 		description: "(desktop) Press a key chord — a set of keys pressed together and released, like a person hitting ⌘-C or Esc. Use key names (\"cmd\",\"shift\",\"opt\",\"ctrl\",\"enter\",\"tab\",\"esc\",\"space\",\"delete\",\"left\",\"right\",\"up\",\"down\") and single characters (\"c\",\"a\"). Order the modifiers first, then the main key, e.g. [\"cmd\",\"c\"]. For typing prose into a field, use input_text instead.",
 		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"keys":{"type":"array","items":{"type":"string"},"description":"keys pressed together as a chord, modifiers first"}},"required":["keys"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
@@ -308,6 +328,7 @@ var actionTools = []actionTool{
 	},
 	{
 		name:        "composite",
+		method:      protocol.MethodComposite,
 		description: "(desktop) Run an ordered sequence of low-level steps in ONE call, executed on-device with real timing — use for precise, multi-step, or timing-sensitive input that the single-shot verbs can't express, and to batch several actions plus a screenshot into one round-trip. Each step is an object with an \"op\": pointer_down/pointer_move/pointer_up {x,y,button?}, key_down/key_up {key}, type {text}, wait {ms}, click {x,y}, or screenshot {}. Any screenshot steps return their frames in order.",
 		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"steps":{"type":"array","items":{"type":"object"},"description":"ordered list of step objects, each with an op field"}},"required":["steps"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
@@ -338,6 +359,7 @@ var actionTools = []actionTool{
 	// platforms reject it as unknown). ---
 	{
 		name:        "execute",
+		method:      protocol.MethodExecute,
 		description: "(browser) Evaluate JavaScript inside the browser device's page and return the JSON-serialized result. This is the browser's power verb — prefer it over pixel clicks for anything structured. The code runs as the body of an async function, so you can return a value and await promises: e.g. return document.title; return [...document.querySelectorAll('a')].map(a => a.href); return await fetch('/api/x').then(r => r.json()). Use it to read page state, act by selector (document.querySelector('#go').click(); el.value = 'hi'), and build content in place (document.body.innerHTML = ...). It always has full control because it runs in the device page itself. Do NOT navigate away — location.href = '...', or clicking/submitting anything that unloads the page: a top-level navigation unloads the device client and takes the device OFFLINE with no way back until someone reopens it. A thrown error is returned as a tool error.",
 		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"code":{"type":"string","description":"JavaScript to evaluate; runs as an async function body, so use return <value> to get a result back"}},"required":["code"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
@@ -372,12 +394,14 @@ var actionTools = []actionTool{
 	// /blobs data plane over HTTP, never the device socket — see docs. ---
 	{
 		name:        "send_file",
+		method:      protocol.MethodPushFile,
 		description: "Send a file TO the device's filesystem. Returns a short-lived signed upload URL; POST the file bytes to that URL and the server writes them to the device at the given path, returning {written, size, sha256} on success (or an error status) in the POST response — so you learn pass/fail from the POST, not from a later call. The bytes ride HTTP, never this MCP channel. Parent directories must already exist. This is a real filesystem write, subject to the device user's permissions.",
 		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"path":{"type":"string","description":"absolute destination path on the device"},"mode":{"type":"integer","description":"unix file mode, e.g. 493 for 0755 (default 420 = 0644)"}},"required":["path"],"additionalProperties":false}`,
 		fileCall:    sendFile,
 	},
 	{
 		name:        "get_file",
+		method:      protocol.MethodPullFile,
 		description: "Get a file FROM the device's filesystem. The device uploads the bytes over HTTP; returns a short-lived signed download URL plus the size and sha256. GET that URL to fetch the raw bytes (Range/resume supported). The bytes never cross this MCP channel. Use this to retrieve configs, logs, or any file the device user can read.",
 		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"path":{"type":"string","description":"absolute source path on the device"}},"required":["path"],"additionalProperties":false}`,
 		fileCall:    getFile,
@@ -388,6 +412,7 @@ var actionTools = []actionTool{
 	// clip from GET /blobs/{id}. The live (VNC) channel is a later addition. ---
 	{
 		name:        "screen_recording",
+		method:      protocol.MethodScreenRecording,
 		description: "Record or live-view the connected device's screen — the moving-picture counterpart of screenshot. Two channels: file (an on-device high-quality recording you get as a downloadable clip) and live (a real-time view a human watches in the dashboard). Drive with action: \"start\" — pass file={enabled:true} (optionally fps/max_duration_seconds) to begin recording at full resolution while you keep driving with your normal verbs, and/or live={enabled:true} to open a live session and get a dashboard link to hand to your operator so they can watch (and, with a VNC client, take over). \"stop\" finalizes the file clip and begins transferring it (large clips upload in the background). \"status\" reports file progress — poll after stop until a download link appears, then fetch GET /blobs/{id}. One recording per device at a time; video only (no audio).",
 		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"action":{"type":"string","enum":["start","stop","status"],"description":"start a recording / live session, stop and transfer the file, or report status"},"file":{"type":"object","description":"the file channel: record to a high-quality on-device video file, transferred afterward","properties":{"enabled":{"type":"boolean","description":"turn the file channel on"},"fps":{"type":"integer","description":"frames per second (default = native/max)"},"format":{"type":"string","description":"container/codec (default \"mp4\", H.264)"},"max_duration_seconds":{"type":"integer","description":"safety cap on recording length"}},"additionalProperties":false},"live":{"type":"object","description":"the live channel: a real-time view a human opens in the dashboard (VNC under the hood)","properties":{"enabled":{"type":"boolean","description":"turn the live channel on; returns a dashboard link for your operator"},"reason":{"type":"string","description":"short note on why a human should look"}},"additionalProperties":false}},"required":["action"],"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
@@ -550,6 +575,7 @@ func getFile(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage, _ 
 func globalAction(name string, method protocol.Method, description string) actionTool {
 	return actionTool{
 		name:        name,
+		method:      method,
 		description: description,
 		schema:      `{"type":"object","properties":{` + deviceIDSchema + `},"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
@@ -584,7 +610,7 @@ func toolInfos(scope Scope) []toolInfo {
 		InputSchema: json.RawMessage(listDevicesSchema),
 	}}
 	for _, t := range actionTools {
-		if scope != nil && !scope.AllowsMethod(t.name) {
+		if scope != nil && !scope.AllowsMethod(string(t.method)) {
 			continue
 		}
 		infos = append(infos, toolInfo{

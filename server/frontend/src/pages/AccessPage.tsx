@@ -10,8 +10,12 @@ import { CopyField } from "@/components/CopyField";
 import { PageHeader } from "@/components/PageHeader";
 import { cn } from "@/lib/utils";
 
-// The device methods a key can be scoped to, grouped for the picker. Kept in sync
-// with the server's protocol.Methods (the server rejects anything unknown).
+// The device methods a key can be scoped to, grouped for the picker. Values are
+// protocol method names — the server validates against protocol.Methods and
+// rejects anything unknown, so this list must cover it exactly. Two entries are
+// labelled with their tool name because the two differ: the send_file and
+// get_file tools authorize as push_file and pull_file. Omitting them here (as
+// this list used to) makes those tools grantable only via "all methods".
 const METHOD_GROUPS: { label: string; methods: [string, string][] }[] = [
   { label: "General", methods: [["screenshot", "screenshot"], ["input_text", "input_text"]] },
   {
@@ -37,6 +41,14 @@ const METHOD_GROUPS: { label: string; methods: [string, string][] }[] = [
     ],
   },
   { label: "Browser", methods: [["execute", "execute (run JS)"]] },
+  {
+    label: "Files & capture",
+    methods: [
+      ["push_file", "push_file (send_file)"],
+      ["pull_file", "pull_file (get_file)"],
+      ["screen_recording", "screen_recording"],
+    ],
+  },
 ];
 
 export function AccessPage() {
