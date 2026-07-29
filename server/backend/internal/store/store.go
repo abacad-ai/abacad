@@ -63,6 +63,24 @@ type Device struct {
 	// every caller passes through: the dashboard, the VNC manager and the blob
 	// delivery hook all reach a device without going near an API key's scope.
 	Capabilities protocol.CapabilitySet
+	// ClientCapabilities is the ceiling the DEVICE declared for itself, reported
+	// over the wire on connect and again on every local change. The effective set
+	// is this intersected with Capabilities: the account may narrow what the
+	// device offers, never widen it. A device that has never reported carries the
+	// wildcard, so clients older than the frame impose no ceiling.
+	ClientCapabilities protocol.CapabilitySet
+}
+
+// EffectiveCapabilities is what this device will actually do: its own declared
+// ceiling intersected with the account-side grant. Both must allow a capability
+// for it to be exposed, and neither can widen the other.
+//
+// The device is the grounded authority here. It enforces its own ceiling
+// independently, so this intersection is the server agreeing with the device
+// rather than the server permitting it — which is what makes the guarantee
+// survive a misconfigured or compromised relay.
+func (d Device) EffectiveCapabilities() protocol.CapabilitySet {
+	return protocol.IntersectCapabilities(d.ClientCapabilities, d.Capabilities)
 }
 
 // Open opens (creating if needed) the SQLite database at path and runs
@@ -335,7 +353,7 @@ func (s *Store) CreateDevice(accountID, name, platform string, expiresAt int64) 
 // expired device cannot (re)connect — the gate for auto-expiry.
 func (s *Store) DeviceByTokenHash(tokenHash string) (Device, error) {
 	return s.scanDevice(s.db.QueryRow(
-		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at,capabilities FROM devices
+		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at,capabilities,client_capabilities FROM devices
 		  WHERE token_hash=? AND (expires_at=0 OR expires_at>?)`, tokenHash, now()))
 }
 
@@ -345,7 +363,7 @@ func (s *Store) DeviceByTokenHash(tokenHash string) (Device, error) {
 // that rely on it (only the Host router) must intend exactly that.
 func (s *Store) DeviceByID(deviceID string) (Device, error) {
 	return s.scanDevice(s.db.QueryRow(
-		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at,capabilities FROM devices
+		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at,capabilities,client_capabilities FROM devices
 		  WHERE id=? AND (expires_at=0 OR expires_at>?)`, deviceID, now()))
 }
 
@@ -354,7 +372,7 @@ func (s *Store) DeviceByID(deviceID string) (Device, error) {
 // or delete it from the dashboard.
 func (s *Store) DeviceOwnedBy(deviceID, accountID string) (Device, error) {
 	return s.scanDevice(s.db.QueryRow(
-		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at,capabilities FROM devices WHERE id=? AND account_id=?`,
+		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at,capabilities,client_capabilities FROM devices WHERE id=? AND account_id=?`,
 		deviceID, accountID))
 }
 
@@ -362,7 +380,7 @@ func (s *Store) DeviceOwnedBy(deviceID, accountID string) (Device, error) {
 // DeviceOwnedBy it does not filter on expiry — dormant devices remain listed.
 func (s *Store) DevicesByAccount(accountID string) ([]Device, error) {
 	rows, err := s.db.Query(
-		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at,capabilities FROM devices
+		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at,capabilities,client_capabilities FROM devices
 		  WHERE account_id=? ORDER BY last_seen DESC, created_at DESC`, accountID)
 	if err != nil {
 		return nil, err
@@ -371,11 +389,12 @@ func (s *Store) DevicesByAccount(accountID string) ([]Device, error) {
 	var out []Device
 	for rows.Next() {
 		var d Device
-		var caps string
-		if err := rows.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen, &d.Version, &d.Humanize, &d.ExpiresAt, &caps); err != nil {
+		var caps, clientCaps string
+		if err := rows.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen, &d.Version, &d.Humanize, &d.ExpiresAt, &caps, &clientCaps); err != nil {
 			return nil, err
 		}
 		d.Capabilities = protocol.ParseCapabilities(caps)
+		d.ClientCapabilities = protocol.ParseCapabilities(clientCaps)
 		out = append(out, d)
 	}
 	return out, rows.Err()
@@ -410,6 +429,33 @@ func (s *Store) DeviceCapabilities(deviceID string) (protocol.CapabilitySet, err
 		return protocol.CapabilitySet{}, err
 	}
 	return protocol.ParseCapabilities(caps), nil
+}
+
+// EffectiveDeviceCapabilities is what the relay gate consults: the device's own
+// declared ceiling intersected with the account-side grant, in one query.
+func (s *Store) EffectiveDeviceCapabilities(deviceID string) (protocol.CapabilitySet, error) {
+	var caps, clientCaps string
+	err := s.db.QueryRow(
+		`SELECT capabilities, client_capabilities FROM devices WHERE id=?`, deviceID).
+		Scan(&caps, &clientCaps)
+	if errors.Is(err, sql.ErrNoRows) {
+		return protocol.CapabilitySet{}, ErrNotFound
+	}
+	if err != nil {
+		return protocol.CapabilitySet{}, err
+	}
+	return protocol.IntersectCapabilities(
+		protocol.ParseCapabilities(clientCaps), protocol.ParseCapabilities(caps)), nil
+}
+
+// SetClientCapabilities records what a device declared about itself. Keyed by
+// device id alone, with no account check: the caller is the device's own
+// authenticated socket, not a user, and a device is always allowed to narrow
+// itself. Unknown names are stored as-is rather than rejected — a newer client
+// may know capabilities this server does not, and they simply never match.
+func (s *Store) SetClientCapabilities(deviceID string, caps protocol.CapabilitySet) error {
+	return s.affect(s.db.Exec(`UPDATE devices SET client_capabilities=? WHERE id=?`,
+		caps.String(), deviceID))
 }
 
 // SetDeviceCapabilities replaces which interfaces a device exposes. Only ever
@@ -493,12 +539,13 @@ func (s *Store) SetDeviceVersion(deviceID, version string) {
 
 func (s *Store) scanDevice(row *sql.Row) (Device, error) {
 	var d Device
-	var caps string
-	err := row.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen, &d.Version, &d.Humanize, &d.ExpiresAt, &caps)
+	var caps, clientCaps string
+	err := row.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen, &d.Version, &d.Humanize, &d.ExpiresAt, &caps, &clientCaps)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Device{}, ErrNotFound
 	}
 	d.Capabilities = protocol.ParseCapabilities(caps)
+	d.ClientCapabilities = protocol.ParseCapabilities(clientCaps)
 	return d, err
 }
 

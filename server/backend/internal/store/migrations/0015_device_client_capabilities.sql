@@ -1,0 +1,17 @@
+-- The device-side capability ceiling: what the client itself is willing to
+-- expose, set locally on the device by whoever is sitting at it.
+--
+-- Distinct from devices.capabilities, which is the ACCOUNT-side grant set from
+-- the dashboard. The effective set is the intersection: the server may narrow
+-- what a device offers, never widen it. That is what makes the client the
+-- grounded authority — a compromised or misconfigured relay cannot switch a
+-- capability back on, because the device refuses it independently anyway.
+--
+-- '*' is the wildcard AND the never-reported state, and those mean the same
+-- thing on purpose: a client older than the capabilities frame imposes no
+-- ceiling. Reading silence as "expose nothing" would brick every existing device
+-- on upgrade. An empty string is different and meaningful — a client that
+-- reported an empty list is asking to expose nothing at all.
+--
+-- Single ALTER TABLE, per the rule in 0013.
+ALTER TABLE devices ADD COLUMN client_capabilities TEXT NOT NULL DEFAULT '*';

@@ -8,6 +8,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/coder/websocket"
@@ -44,14 +45,22 @@ type Seen func(deviceID string)
 // the client doesn't report one; a nil hook is fine.
 type Reported func(deviceID, version string)
 
+// CapabilitiesReported is an optional hook fired whenever the client declares
+// which capabilities it exposes — once on connect, then on every local change.
+// caps is always the device's full set. A nil hook is fine.
+type CapabilitiesReported func(deviceID string, caps []string)
+
 // Handler builds the /device HTTP handler.
 type Handler struct {
-	Hub       *relay.Hub
-	Resolve   Resolver
-	OnSeen    Seen
-	OnVersion Reported           // records the client-reported version; may be nil
-	Events    *events.Log        // per-device live ring; may be nil
-	Activity  *activity.Recorder // persistent account trail; may be nil
+	Hub     *relay.Hub
+	Resolve Resolver
+	OnSeen  Seen
+	// OnVersion records the client-reported version; may be nil.
+	OnVersion Reported
+	// OnCapabilities records the device's own capability ceiling; may be nil.
+	OnCapabilities CapabilitiesReported
+	Events         *events.Log        // per-device live ring; may be nil
+	Activity       *activity.Recorder // persistent account trail; may be nil
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -102,6 +111,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if host != "" {
 			dc.SetOrigin(scheme + "://" + host)
 		}
+	}
+	// Installed before Register: the device sends its capability set in its first
+	// frames after connect, and an observer attached later would miss it.
+	if h.OnCapabilities != nil {
+		dc.SetCapabilitiesObserver(func(id string, caps []string) {
+			h.OnCapabilities(id, caps)
+			if h.Events != nil {
+				h.Events.Append(id, events.Event{
+					Kind:    events.KindCommand,
+					Method:  "capabilities.reported",
+					Source:  "device",
+					Outcome: "ok",
+					Detail:  strings.Join(caps, ","),
+				})
+			}
+		})
 	}
 	dc.SetCommandObserver(func(rec relay.CommandRecord) {
 		if h.Events != nil {

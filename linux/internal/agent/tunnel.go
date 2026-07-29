@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"abacad-linux/internal/status"
 )
 
 // The binary tunnel lane, mirroring the macOS Tunnel and the framing in the
@@ -79,6 +81,15 @@ func (t *Tunnel) open(id uint64, target string) {
 	// this is device-side defense in depth.
 	if isBlockedTargetHost(host) {
 		t.emitClose(id, "target "+host+" is not an allowed address")
+		return
+	}
+	// The local ceiling governs the binary lane too. Worth stating explicitly
+	// because the existing pause check does NOT cover this path — it lives in
+	// handleText, so a paused device still bridges tunnels. A ceiling enforced
+	// only on the command lane would leave the widest surface here ungoverned.
+	if err := checkTunnelTarget(target); err != nil {
+		status.Event("tunnel · rejected · not exposed")
+		t.emitClose(id, err.Error())
 		return
 	}
 	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), 10*time.Second)

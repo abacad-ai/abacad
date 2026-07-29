@@ -55,6 +55,13 @@ type Actor struct {
 // the caller's goroutine, so it must be cheap and non-blocking. nil disables it.
 type CommandObserver func(CommandRecord)
 
+// CapabilitiesObserver is notified when a device declares which capabilities it
+// exposes — on connect and on every local change. caps is the device's FULL set;
+// a nil/empty slice means the device sent an empty list (expose nothing), which
+// is different from never reporting at all (no ceiling). Runs inline on the
+// connection's read goroutine, so it must not block.
+type CapabilitiesObserver func(deviceID string, caps []string)
+
 // sourceKey tags a request context with who is driving (agent vs dashboard), so
 // the activity log can tell an agent's tap from the dashboard's screenshot poll.
 type sourceKey struct{}
@@ -156,6 +163,11 @@ type DeviceConn struct {
 
 	onCmd CommandObserver // may be nil; notified on every Send completion
 
+	// onCaps is notified when the device declares its own capability ceiling.
+	// May be nil. Set before Register so a report arriving in the first frames
+	// after connect is not dropped.
+	onCaps CapabilitiesObserver
+
 	// gate authorizes each command and stream against the device's configured
 	// capabilities. Injected by Hub.Register, so a connection that was never
 	// registered has none — and no gate denies (see DeviceConn.capability).
@@ -219,6 +231,11 @@ func NewDeviceConn(deviceID string, ws *websocket.Conn) *DeviceConn {
 // SetCommandObserver installs (or clears) the per-command observer. Call before
 // ReadPump starts.
 func (c *DeviceConn) SetCommandObserver(obs CommandObserver) { c.onCmd = obs }
+
+// SetCapabilitiesObserver installs (or clears) the handler for the device's own
+// capability reports. Call before Register: the device sends its set immediately
+// on connect, so an observer installed later can miss the first frame.
+func (c *DeviceConn) SetCapabilitiesObserver(obs CapabilitiesObserver) { c.onCaps = obs }
 
 // SetHumanize records whether this device wants human-like pointer motion,
 // mirroring the store record. Refreshed on every Resolve.
@@ -486,6 +503,16 @@ func (c *DeviceConn) ReadPump(ctx context.Context) {
 			var p protocol.Presence
 			if json.Unmarshal(data, &p) == nil {
 				c.setActivity(p.State)
+			}
+			continue
+		}
+		// The device declaring its own ceiling — on connect, and again whenever
+		// its owner changes it locally. Always the full set, so this replaces
+		// rather than merges.
+		if probe.Type == "capabilities" {
+			var rep protocol.CapabilitiesReport
+			if json.Unmarshal(data, &rep) == nil && c.onCaps != nil {
+				c.onCaps(c.DeviceID, rep.Capabilities)
 			}
 			continue
 		}

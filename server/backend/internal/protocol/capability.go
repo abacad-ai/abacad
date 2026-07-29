@@ -117,6 +117,28 @@ func (s CapabilitySet) List() []Capability {
 	return out
 }
 
+// IntersectCapabilities returns the set allowed by BOTH inputs. Used to combine
+// a device's own declared ceiling with the account-side grant: either may narrow
+// the result, neither may widen it, and a wildcard on one side simply defers to
+// the other. Intersection is the only combining rule that preserves "the device
+// has the final say" — a union would let the server re-enable something the
+// device refused.
+func IntersectCapabilities(a, b CapabilitySet) CapabilitySet {
+	if a.all {
+		return b
+	}
+	if b.all {
+		return a
+	}
+	out := CapabilitySet{set: make(map[Capability]bool, len(a.set))}
+	for c := range a.set {
+		if b.set[c] {
+			out.set[c] = true
+		}
+	}
+	return out
+}
+
 // KnownCapability reports whether c is one this build understands. Used to
 // reject typos at the API boundary rather than storing a capability that
 // silently never matches.

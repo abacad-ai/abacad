@@ -122,19 +122,30 @@ func TestXvfbE2E(t *testing.T) {
 		if err := device.Write(ctx, websocket.MessageText, b); err != nil {
 			t.Fatalf("write %s: %v", method, err)
 		}
-		select {
-		case raw := <-textCh:
-			var rep map[string]any
-			if err := json.Unmarshal([]byte(raw), &rep); err != nil {
-				t.Fatalf("bad reply json for %s: %v", method, err)
+		deadline := time.After(10 * time.Second)
+		for {
+			select {
+			case raw := <-textCh:
+				var rep map[string]any
+				if err := json.Unmarshal([]byte(raw), &rep); err != nil {
+					t.Fatalf("bad reply json for %s: %v", method, err)
+				}
+				// Not every device -> server text frame is a reply. Unsolicited,
+				// type-tagged frames (presence, capabilities) arrive on their own
+				// schedule — the client declares its capability set as soon as it
+				// connects — so skip them the way the real relay does instead of
+				// mistaking one for this command's answer.
+				if _, tagged := rep["type"]; tagged {
+					continue
+				}
+				if rep["id"] != id {
+					t.Fatalf("%s reply id = %v, want %s", method, rep["id"], id)
+				}
+				return rep
+			case <-deadline:
+				t.Fatalf("no reply for %s", method)
+				return nil
 			}
-			if rep["id"] != id {
-				t.Fatalf("%s reply id = %v, want %s", method, rep["id"], id)
-			}
-			return rep
-		case <-time.After(10 * time.Second):
-			t.Fatalf("no reply for %s", method)
-			return nil
 		}
 	}
 

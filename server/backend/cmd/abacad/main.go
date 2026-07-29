@@ -44,6 +44,42 @@ import (
 	"abacad/internal/web"
 )
 
+// recordClientCapabilities persists a device's self-declared capability ceiling.
+//
+// A nil slice means the device sent no list at all, which is NOT the same as an
+// empty one: empty says "expose nothing", nil says "I have nothing to say about
+// this". Only the former is a ceiling. Clients older than the capabilities frame
+// never send it, and reading their silence as a refusal would take every one of
+// them offline on upgrade.
+//
+// Unknown names are stored rather than rejected. A client newer than this server
+// may know capabilities it does not; they simply never match anything, so they
+// cannot widen reach — and dropping them would silently lose the device's stated
+// intent the moment the server catches up.
+func recordClientCapabilities(st *store.Store) device.CapabilitiesReported {
+	return func(deviceID string, names []string) {
+		if names == nil {
+			return
+		}
+		caps := make([]protocol.Capability, 0, len(names))
+		for _, n := range names {
+			if n == protocol.CapabilityWildcard {
+				// "everything, including capabilities added later" — an
+				// unconfigured client says this rather than enumerating, so it
+				// does not pin itself to the verbs its version shipped with.
+				if err := st.SetClientCapabilities(deviceID, protocol.AllCapabilities()); err != nil {
+					log.Printf("[device] %s: could not record client capabilities: %v", deviceID, err)
+				}
+				return
+			}
+			caps = append(caps, protocol.Capability(n))
+		}
+		if err := st.SetClientCapabilities(deviceID, protocol.NewCapabilitySet(caps...)); err != nil {
+			log.Printf("[device] %s: could not record client capabilities: %v", deviceID, err)
+		}
+	}
+}
+
 func main() {
 	cfg := config.Load()
 	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
@@ -80,7 +116,7 @@ func main() {
 	// Reads the store on every call so a revocation takes effect at once rather
 	// than at the device's next reconnect. Any lookup failure denies.
 	hub := relay.NewHub(func(deviceID string, need protocol.Capability) error {
-		caps, err := st.DeviceCapabilities(deviceID)
+		caps, err := st.EffectiveDeviceCapabilities(deviceID)
 		if err != nil {
 			return fmt.Errorf("%w: %s (capability lookup failed)", relay.ErrCapabilityDenied, need)
 		}
@@ -134,8 +170,11 @@ func main() {
 		},
 		OnSeen:    st.TouchDevice,
 		OnVersion: st.SetDeviceVersion,
-		Events:    evlog,
-		Activity:  trail,
+		// The device declaring its own ceiling. Stored verbatim; the gate
+		// intersects it with the account-side grant on every command.
+		OnCapabilities: recordClientCapabilities(st),
+		Events:         evlog,
+		Activity:       trail,
 	}
 
 	// Browser devices dial the same /device WebSocket but from their own subdomain
@@ -156,8 +195,11 @@ func main() {
 		},
 		OnSeen:    st.TouchDevice,
 		OnVersion: st.SetDeviceVersion,
-		Events:    evlog,
-		Activity:  trail,
+		// The device declaring its own ceiling. Stored verbatim; the gate
+		// intersects it with the account-side grant on every command.
+		OnCapabilities: recordClientCapabilities(st),
+		Events:         evlog,
+		Activity:       trail,
 	}
 
 	// blobSvc is the account-scoped data-plane store behind the /blobs HTTP

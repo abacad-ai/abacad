@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"log"
 
+	"abacad-linux/internal/capability"
 	"abacad-linux/internal/status"
 	"abacad-linux/internal/x11"
 )
@@ -33,11 +34,18 @@ func New(serverURL string, x *x11.Conn) (*Agent, error) {
 	}
 	ws.onText = a.handleText
 	ws.onBinary = a.tunnel.handle
+	// Re-report whenever the operator changes the local set, so the dashboard and
+	// the relay's gate converge without waiting for a reconnect.
+	capability.OnChange(func() { a.reportCapabilities() })
 	ws.onState = func(up bool) {
 		if up {
 			// Headless: the log is the only disclosure surface, so state it plainly.
 			log.Printf("device online — this machine can now be viewed and controlled remotely by an agent")
 			status.SetState(status.Connected, "connected")
+			// Declare the ceiling immediately. Until this lands the server has
+			// only the value from a previous session, so reporting first thing
+			// keeps that window as small as the socket allows.
+			a.reportCapabilities()
 		} else {
 			log.Printf("device offline")
 			status.SetState(status.Disconnected, "disconnected")
@@ -94,6 +102,26 @@ func (a *Agent) handleText(text string) {
 	if status.Paused() {
 		status.Event(cmd.Method + " · rejected · paused")
 		reply := map[string]any{"id": cmd.ID, "ok": false, "error": "paused by device operator"}
+		if b, err := json.Marshal(reply); err == nil {
+			a.ws.sendText(string(b))
+		}
+		return
+	}
+	// The device-side ceiling. The server checks the same thing before sending,
+	// so in normal operation this never fires — which is exactly why it must be
+	// here: it is what makes the limit hold when the server does NOT check,
+	// because it is out of date, misconfigured, compromised, or simply somebody
+	// else's. Enforcement that lives only at the end that could be lying is not
+	// enforcement.
+	if err := checkCapability(cmd.Method, cmd.Params); err != nil {
+		status.Event(cmd.Method + " · rejected · not exposed")
+		reply := map[string]any{
+			"id": cmd.ID, "ok": false,
+			"error": err.Error(),
+			// Distinguishes "its owner turned this off" from "this platform has
+			// no such verb", which are otherwise identical to the caller.
+			"code": protocolCodeCapabilityDisabled,
+		}
 		if b, err := json.Marshal(reply); err == nil {
 			a.ws.sendText(string(b))
 		}

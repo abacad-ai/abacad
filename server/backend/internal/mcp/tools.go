@@ -41,6 +41,42 @@ type DeviceSummary struct {
 	Platform string `json:"platform,omitempty"` // e.g. "android", "macos"; blank if unset
 	Version  string `json:"version,omitempty"`  // client version reported on connect; blank if unknown
 	LastSeen string `json:"last_seen,omitempty"`
+	// Tools is what this device will actually accept, as TOOL names (what the
+	// agent calls), not protocol verbs.
+	//
+	// This is where per-device limits are advertised, and the fit is exact:
+	// device_id is required on every call and there is no default device, so
+	// list_devices is already the mandatory first step. tools/list cannot carry
+	// this — it is scoped per key, and one key reaches many devices with
+	// different sets, so a tool list can only describe what SOME device allows.
+	// Only a per-device answer is truthful, and this is the per-device surface.
+	Tools []string `json:"tools"`
+	// Unavailable names the tools this device refuses, so the agent reads an
+	// explicit "don't bother" instead of having to diff two lists — and so a
+	// missing tool reads as a deliberate choice rather than an oversight.
+	Unavailable []string `json:"unavailable,omitempty"`
+	// Tunnel reports whether /connect may reach this device. Not a tool, so it
+	// cannot ride in the lists above, but an agent planning an ssh or rsync hop
+	// needs to know before it opens a socket.
+	Tunnel bool `json:"tunnel"`
+}
+
+// SplitToolsByCapability divides the tool surface into what a device exposing
+// caps will accept and what it will refuse, in tool names.
+//
+// Translating from capabilities (protocol verbs) to tool names matters: the
+// agent only ever knows tools, and the two differ — send_file/get_file authorize
+// as push_file/pull_file. Reporting raw verbs would name things the agent cannot
+// call and omit the names it can.
+func SplitToolsByCapability(caps protocol.CapabilitySet) (allowed, denied []string) {
+	for _, t := range actionTools {
+		if caps.Allows(protocol.Capability(t.method)) {
+			allowed = append(allowed, t.name)
+		} else {
+			denied = append(denied, t.name)
+		}
+	}
+	return allowed, denied
 }
 
 // deviceIDArg is the required target-selector present on every action tool.
@@ -596,7 +632,7 @@ func textResult(s string) toolResult {
 
 // listDevicesTool describes the account's devices so the agent can pick one.
 const listDevicesName = "list_devices"
-const listDevicesDescription = "List the devices connected to your abacad account, with their id, name, platform (e.g. android, macos, browser), and whether they are currently online. Use the platform to pick the right verbs — mobile devices take tap/swipe, desktops take click/scroll/press_keys, and a browser device is best driven with execute (run JS in the page) alongside screenshot/click/scroll. Every other tool requires a device_id — pass the device_id of the device you want to target on every call. There is no default device, so call this first to get the id."
+const listDevicesDescription = "List the devices connected to your abacad account, with their id, name, platform (e.g. android, macos, browser), whether they are currently online, and — importantly — which tools each one accepts. Use the platform to pick the right verbs: mobile devices take tap/swipe, desktops take click/scroll/press_keys, and a browser device is best driven with execute (run JS in the page) alongside screenshot/click/scroll. Every other tool requires a device_id — pass the device_id of the device you want to target on every call. There is no default device, so call this first to get the id.\n\nEach device reports \"tools\" (what it accepts) and \"unavailable\" (what it will refuse). These are per device and set by its owner, so two devices on the same account can differ, and a tool being listed by tools/list does NOT mean every device accepts it. Check \"unavailable\" before you plan: calling one of those tools returns a capability error, and no amount of retrying will change it — pick a different device, or a different approach on the same device. \"tunnel\" reports whether /connect may reach the device."
 const listDevicesSchema = `{"type":"object","properties":{},"additionalProperties":false}`
 
 // toolInfos returns the tools/list payload (list_devices first, then the device

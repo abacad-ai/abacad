@@ -91,6 +91,10 @@ type Reply struct {
 	OK     bool            `json:"ok"`
 	Result json.RawMessage `json:"result,omitempty"`
 	Error  string          `json:"error,omitempty"`
+	// Code is an optional machine-readable reason for a failure, so the server
+	// does not have to pattern-match Error prose. Empty on older clients. See
+	// ErrCodeCapabilityDisabled.
+	Code string `json:"code,omitempty"`
 }
 
 // Activity is a device's coarse power state, reported by the device itself. The
@@ -114,6 +118,44 @@ type Presence struct {
 	Type  string   `json:"type"` // always "presence"
 	State Activity `json:"state"`
 }
+
+// CapabilitiesReport is an unsolicited device -> server frame declaring which
+// capabilities the device is willing to expose — the ceiling its owner set
+// locally, on the device itself. Like Presence it carries no id and is tagged by
+// type, so servers predating it ignore it harmlessly.
+//
+// Always the FULL set, never a delta. A delta needs both ends to agree on a
+// starting point, and they cannot after a reconnect or a dropped frame; sending
+// everything means the most recent frame is always the whole truth.
+//
+// Sent immediately on connect and again on every local change. Deliberately a
+// frame rather than a connect-time query parameter: "on change" needs a frame
+// regardless, and one mechanism covering both beats two that can disagree.
+//
+// A device that never sends this imposes NO ceiling. Older clients predate the
+// frame, and reading silence as "expose nothing" would brick every one of them
+// on upgrade. Silence means unspecified, not denied — the one place this system
+// deliberately does not fail closed, because failing closed here breaks working
+// devices rather than protecting them. The account-side set still applies, so a
+// silent device is no more exposed than it was before this frame existed.
+type CapabilitiesReport struct {
+	Type         string   `json:"type"`         // always "capabilities"
+	Capabilities []string `json:"capabilities"` // full set; ["*"] means everything
+}
+
+// CapabilityWildcard in a CapabilitiesReport means "everything, including
+// capabilities added in later versions" — the same sentinel the server stores.
+// A client that has not been configured sends this rather than enumerating, so
+// it does not pin itself to the verb list of the version it shipped with.
+const CapabilityWildcard = "*"
+
+// ErrCodeCapabilityDisabled is the Reply.Code a device returns when it refuses a
+// command because its local configuration does not expose that capability. It
+// exists so a refusal is machine-distinguishable from "unknown method": one
+// means the device could do this but its owner said no, the other means this
+// platform has no such verb. Without the distinction an agent cannot tell a
+// policy decision from a capability gap, and neither can the dashboard.
+const ErrCodeCapabilityDisabled = "capability_disabled"
 
 // UITreeNode is one element of the on-screen accessibility tree.
 type UITreeNode struct {

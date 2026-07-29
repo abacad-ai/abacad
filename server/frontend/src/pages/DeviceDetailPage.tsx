@@ -524,6 +524,54 @@ const CAPABILITY_GROUPS: {
   },
 ];
 
+// What the device itself declared, shown read-only. The switches above are the
+// account's grant; this is the device's own ceiling, and the two intersect.
+//
+// It is deliberately not editable from here. A ceiling the dashboard could raise
+// would be worth nothing — the point is that it holds even when the server does
+// not agree, so it can only be changed at the device.
+function DeviceCeiling({ device }: { device: DeviceView }) {
+  const granted = device.capabilities ?? [];
+  const ceiling = device.client_capabilities ?? [];
+
+  // Not "the device allows nothing" — the client is too old to have an opinion.
+  // These look identical in the list and mean opposite things, so never render
+  // the empty case without saying which one it is.
+  if (!device.client_reported) {
+    return (
+      <p className="mt-4 border-t border-border pt-3 text-sm leading-6 text-ink-muted">
+        This device’s client doesn’t report its own limits, so only the switches above
+        apply. Newer clients can also refuse capabilities locally — which holds even if
+        this relay is compromised.
+      </p>
+    );
+  }
+
+  // Granted here but refused there: the switch above reads "on" yet nothing will
+  // happen. Surface it rather than letting the UI quietly contradict reality.
+  const refused = granted.filter((c) => !ceiling.includes(c));
+
+  return (
+    <div className="mt-4 border-t border-border pt-3 text-sm leading-6">
+      <p className="text-ink-muted">
+        <span className="font-medium text-ink">This device also limits itself.</span>{" "}
+        It exposes {ceiling.length === 0 ? "nothing" : `${ceiling.length} of ${protocolCapabilityCount}`} capabilities,
+        set on the device and enforced there — so it holds regardless of what this
+        dashboard says.
+      </p>
+      {refused.length > 0 && (
+        <p className="mt-2 rounded-md border border-border bg-surface-2 p-3 text-ink-muted">
+          Turned on above but refused by the device: {refused.join(", ")}. Change it on
+          the device itself to take effect.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// The size of the capability vocabulary, for the "N of M" summary above.
+const protocolCapabilityCount = CAPABILITY_GROUPS.reduce((n, g) => n + g.members.length, 0);
+
 function CapabilitiesSection({ device }: { device: DeviceView }) {
   const [caps, setCaps] = useState<string[]>(device.capabilities ?? []);
   const [busy, setBusy] = useState(false);
@@ -585,6 +633,7 @@ function CapabilitiesSection({ device }: { device: DeviceView }) {
           </span>
         </label>
       ))}
+      <DeviceCeiling device={device} />
       {sshMoot && (
         <p className="mt-3 rounded-md border border-border bg-surface-2 p-3 text-sm leading-6 text-ink-muted">
           SSH is off, but the network tunnel is on — and a tunnel can dial this device's

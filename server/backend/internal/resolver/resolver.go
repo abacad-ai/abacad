@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"abacad/internal/mcp"
+	"abacad/internal/protocol"
 	"abacad/internal/relay"
 	"abacad/internal/store"
 )
@@ -88,7 +89,30 @@ func (a *accountResolver) List(_ context.Context) ([]mcp.DeviceSummary, error) {
 		if d.LastSeen > 0 {
 			s.LastSeen = time.Unix(d.LastSeen, 0).UTC().Format(time.RFC3339)
 		}
+		// What this key can actually do to this device: the device's own declared
+		// ceiling, the account's grant, and this key's method scope, intersected.
+		// Advertising anything broader would promise calls that get refused.
+		effective := scopeCapabilities(a.scope, d.EffectiveCapabilities())
+		s.Tools, s.Unavailable = mcp.SplitToolsByCapability(effective)
+		s.Tunnel = effective.Allows(protocol.CapTunnel) && a.scope.AllowsTunnel()
 		out = append(out, s)
 	}
 	return out, nil
+}
+
+// scopeCapabilities narrows a device's capability set by an API key's method
+// allowlist, so list_devices describes what THIS credential can do rather than
+// what the device would allow some other one.
+func scopeCapabilities(scope store.KeyScope, caps protocol.CapabilitySet) protocol.CapabilitySet {
+	if scope.AllMethods {
+		return caps
+	}
+	allowed := make([]protocol.Capability, 0, len(scope.Methods))
+	for _, m := range scope.Methods {
+		allowed = append(allowed, protocol.Capability(m))
+	}
+	// The tunnel is governed by AllowTunnel, not the method list, so carry it
+	// through here and let the caller apply that separately.
+	allowed = append(allowed, protocol.CapTunnel, protocol.CapSSH, protocol.CapVNC)
+	return protocol.IntersectCapabilities(caps, protocol.NewCapabilitySet(allowed...))
 }

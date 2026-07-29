@@ -259,10 +259,20 @@ type deviceView struct {
 	ScreenshotAt int64  `json:"screenshot_at,omitempty"` // unix seconds of the last stored screenshot; 0/absent if none
 	Humanize     bool   `json:"humanize"`                // smooth pointer motion; default off, opt-in with attestation
 	ExpiresAt    string `json:"expires_at,omitempty"`    // enrollment expiry (RFC3339); absent = permanent
-	// Capabilities is which interfaces this device exposes, always as a concrete
-	// list — the "*" wildcard is expanded here so a client never has to special-
-	// case it. An empty list means the device accepts nothing.
+	// Capabilities is the ACCOUNT-side grant — what the dashboard switches set.
+	// Always a concrete list; the "*" wildcard is expanded here so no client has
+	// to special-case it. An empty list means nothing is granted.
 	Capabilities []string `json:"capabilities"`
+	// ClientCapabilities is the ceiling the DEVICE declared for itself.
+	// ClientReported distinguishes "this client is too old to report" (no
+	// ceiling) from "this device deliberately exposes nothing" — identical in
+	// the list alone, opposite in meaning.
+	ClientCapabilities []string `json:"client_capabilities"`
+	ClientReported     bool     `json:"client_reported"`
+	// EffectiveCapabilities is the intersection: what the device will actually
+	// do. Computed server-side so nothing has to re-derive it and risk
+	// disagreeing with the relay about what is enforced.
+	EffectiveCapabilities []string `json:"effective_capabilities"`
 }
 
 // capabilityNames renders a set for the API as plain strings.
@@ -980,6 +990,11 @@ func (a *API) viewDevice(d store.Device) deviceView {
 		Humanize:     d.Humanize,
 		Capabilities: capabilityNames(d.Capabilities),
 		CreatedAt:    time.Unix(d.CreatedAt, 0).UTC().Format(time.RFC3339),
+		// A device that has never reported carries the wildcard, which is exactly
+		// how "no ceiling" is represented — so the wildcard is the tell.
+		ClientReported:        !d.ClientCapabilities.All(),
+		ClientCapabilities:    capabilityNames(d.ClientCapabilities),
+		EffectiveCapabilities: capabilityNames(d.EffectiveCapabilities()),
 	}
 	if d.ExpiresAt > 0 {
 		v.ExpiresAt = time.Unix(d.ExpiresAt, 0).UTC().Format(time.RFC3339)

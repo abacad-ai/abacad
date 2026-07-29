@@ -26,7 +26,8 @@ destination, and this table as how far along the road we are.
 | **Server-identity *pinning* on the device** (edge ③) | ◐ **not yet** — the device gets CA-validated `wss://`, not a pinned peer; needs a managed server identity (TLS is terminated by an external proxy today) |
 | **Device hardware keypair / mutual TLS** (edge ③) | ○ planned (P1) — the device still authenticates with a shared bearer token, now header-only |
 | Scoped / expiring MCP tokens; enforced non-escalation | ○ planned (P1) |
-| **Per-device capabilities**, enforced at the relay for every caller | ✅ shipped — server-side only; see the honesty note below |
+| **Per-device capabilities**, enforced at the relay for every caller | ✅ shipped |
+| **Device-side capability ceiling** the server cannot widen | ◐ shipped on Linux; macOS / Windows / Android / browser still report nothing (and so impose no ceiling) |
 | Surfaced audit trail + kill switch | ○ planned (P1) |
 | Dashboard MFA; cookie `Secure` unconditional | ○ planned (P1) |
 | Runtime verification (installed app vs a live server) | ○ not done — compiles on all three platforms; not yet exercised end-to-end |
@@ -357,32 +358,51 @@ Two consequences worth stating plainly:
   they are set; file-write is equivalent to full control; input on a desktop can open
   a terminal. The UI says so rather than presenting a row of equal-looking switches.
 
-#### What this defends, and what it does not
+#### Two sets, and why there are two
 
-The configuration lives on the **server** and is enforced by the relay. Say what that
-buys, and no more:
+Capabilities are configured in **two independent places**, and the effective surface is
+their intersection. Either side may narrow; neither may widen.
 
-- ✅ **A rogue or prompt-injected agent** — the residual risk named at the bottom of
-  this doc — is held to the device's declared surface no matter what its token allows,
-  and every denial lands on the audit trail.
-- ✅ **A stolen or over-broad credential**, including the SSH jump's wildcard scope,
-  which nothing else narrows.
-- ❌ **A compromised relay.** The server is the thing enforcing the limit, so it is
-  not defended against itself. "Even the relay cannot make my laptop read files" is
-  **not** a claim this supports.
+| | Set where | Enforced where | Defends against |
+|---|---|---|---|
+| **Account grant** | dashboard | relay (`Send` / `OpenStream`) | a rogue or prompt-injected agent; a stolen or over-broad credential |
+| **Device ceiling** | on the device itself | the device, before it acts | a relay that is compromised, out of date, or simply somebody else's |
 
-Closing that last one needs the device to enforce its own ceiling and refuse anything
-beyond it — a *client-side* capability set the server can narrow but never widen. That
-requires a device→server capabilities frame at connect (the `/device` socket carries
-only `?token=` and `?version=` today) and a structured error code so a refusal is
-distinguishable from "unknown method". Until then, treat the server-side set as the
-whole of the enforcement, not one layer of three.
+The device reports its ceiling over the command socket — a `capabilities` frame sent on
+connect and again on every local change, always the full set so the latest frame is the
+whole truth. The server mirrors it, shows it in the dashboard, and stops sending what
+the device refuses.
 
-Note also the ceiling has a hard limit even once built: it cannot constrain a
-capability that already grants code execution as the device user. A client that stores
-its config in a file is one `push_file` away from having that config rewritten. The
-ceiling defends against a misbehaving *server*, never against a granted execution
-primitive.
+**But the report is advisory; the refusal is not.** The device enforces its own ceiling
+before acting, so a server that never received the frame, ignored it, or was lying still
+gets the same answer. That is the entire point of the split: enforcement that lives only
+at the end which might be lying is not enforcement. In normal operation the device-side
+check never fires, because the relay already declined to send — and that redundancy is
+the feature, not waste.
+
+Consequently the honest claim is now per case:
+
+- ✅ **Rogue agent / stolen credential** — held to the device's surface by the relay,
+  with every denial on the audit trail.
+- ✅ **Compromised or third-party relay** — cannot switch a capability back on. A
+  self-hoster's device does not have to trust the relay operator on this point.
+- ⚠️ **Older clients** predate the frame and report nothing. Silence means *unspecified*,
+  not *denied* — treating it as denial would take every existing device offline on
+  upgrade — so those devices are governed by the account grant alone, exactly as before.
+  This is the one place the design deliberately does not fail closed, and the dashboard
+  shows which devices have reported so the difference is visible rather than assumed.
+
+#### The ceiling's hard limit
+
+It cannot constrain a capability that already grants code execution as the device user.
+The Linux client stores its ceiling at `~/.config/abacad/capabilities`; a device that
+still exposes file-write is one `push_file` from having that file rewritten, and one
+that exposes input can type into a terminal. Keychain and DPAPI storage on the other
+clients raise the cost but do not change the shape.
+
+So the ceiling defends against a misbehaving *server*, never against a granted execution
+primitive. Turning `files` off is meaningful. Leaving it on and expecting the other
+switches to hold against a determined agent is not.
 
 ### Where the judgment lives instead
 

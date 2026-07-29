@@ -21,6 +21,7 @@ import (
 	"syscall"
 
 	"abacad-linux/internal/agent"
+	"abacad-linux/internal/capability"
 	"abacad-linux/internal/enroll"
 	"abacad-linux/internal/gui"
 	"abacad-linux/internal/version"
@@ -37,6 +38,20 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "connect" {
 		runConnect(os.Args[2:])
 		return
+	}
+	// `abacad capabilities` inspects and edits what this machine exposes. On a
+	// headless box this IS the control surface — there is no panel to click, and
+	// deferring the whole feature to the GTK build would mean a server that can
+	// be told "no" only by devices that happen to have a desktop.
+	if len(os.Args) > 1 && os.Args[1] == "capabilities" {
+		runCapabilities(os.Args[2:])
+		return
+	}
+
+	// Load before connecting: the ceiling has to be in force before the first
+	// command can arrive, and it is reported to the server on connect.
+	if err := capability.Load(); err != nil {
+		log.Printf("could not read capability config (exposing everything): %v", err)
 	}
 
 	var flagURL, flagToken, flagRelay string

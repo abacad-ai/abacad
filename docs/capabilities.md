@@ -77,9 +77,41 @@ The dashboard warns about exactly this combination.
 `composite` is authorized step by step rather than as a single verb, so a permitted
 `composite` cannot smuggle a denied screenshot or keystroke.
 
-The configuration lives on the server, so it holds against a rogue or prompt-injected
-agent and against an over-broad credential — but not against a compromised relay. See
-[trust.md](trust.md#what-this-defends-and-what-it-does-not).
+### The device gets a vote too
+
+The switches above are the **account grant**, set from the dashboard. A device can also
+declare its own **ceiling**, set locally on the device itself, and the effective surface
+is the intersection — either side may narrow, neither may widen.
+
+The device reports its ceiling over the command socket (a `capabilities` frame on
+connect and again on every local change, always the full set), the dashboard shows it,
+and the relay stops sending what the device refuses. But the report is advisory and the
+refusal is not: the device checks its own ceiling before acting, so a relay that never
+received the frame, ignored it, or was lying gets the same answer. That is what makes
+"even the relay cannot turn this back on" true rather than aspirational.
+
+On Linux, from the device:
+
+```console
+$ abacad capabilities                      # what is on and off
+$ abacad capabilities --disable files,ssh  # groups or individual names
+$ abacad capabilities --only screenshot    # exactly this, nothing else
+$ abacad capabilities --none               # expose nothing
+```
+
+Stored at `~/.config/abacad/capabilities`; a missing file means no ceiling, so an
+existing install behaves exactly as it did before.
+
+**A client that reports nothing imposes no ceiling.** Silence means *unspecified*, not
+*denied* — reading it as a refusal would take every existing device offline on upgrade —
+so such devices are governed by the account grant alone, exactly as before. Today only
+the Linux client reports; macOS, Windows, Android and the browser device are still to
+come, and the dashboard shows which devices have reported so the difference is visible
+rather than assumed.
+
+A ceiling cannot constrain a capability that already grants code execution as the device
+user: a device still exposing file-write is one `push_file` from having its own config
+rewritten. See [trust.md](trust.md#the-ceilings-hard-limit).
 
 ---
 

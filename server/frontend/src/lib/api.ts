@@ -14,7 +14,10 @@ export interface DeviceView {
   screenshot_at?: number; // unix seconds of the last stored screenshot; absent if none
   humanize: boolean; // smooth pointer motion on this device; default off, opt-in with attestation
   expires_at?: string; // enrollment expiry (ISO); absent = permanent (never expires)
-  capabilities: string[]; // interfaces this device exposes; always concrete (the server expands "*")
+  capabilities: string[]; // the ACCOUNT grant (what the dashboard switches set); always concrete
+  client_capabilities: string[]; // the ceiling the DEVICE declared for itself
+  client_reported: boolean; // false = client predates the frame, so it imposes no ceiling
+  effective_capabilities: string[]; // the intersection — what the device actually does
 }
 
 export interface SshKey {
