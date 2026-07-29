@@ -92,6 +92,13 @@ Two alternatives were rejected:
   `abacad.ai`) but is *not* a man-in-the-middle of your device session.
 - **Not an open relay.** Routing is scoped to devices the authenticated account owns, and
   the device-side target is fixed to `127.0.0.1:22`.
+- **Switchable per device.** SSH is one of the capabilities a device exposes
+  ([capabilities.md](capabilities.md#turning-capabilities-off)); turn it off and the
+  jump refuses to bridge to that device, registered key or not. This matters more here
+  than anywhere else: the jump resolves the device under a **full wildcard** credential
+  scope, so the device's own capability set is the only thing narrowing it.
+  *Caveat:* `/connect` can dial `127.0.0.1:22` itself, so switching SSH off while
+  leaving the tunnel on does not actually close SSH — turn off both.
 - **Public keys aren't secrets** — they're stored in full (normalized authorized_keys
   line) and indexed by SHA256 fingerprint; there's no reveal-once flow.
 

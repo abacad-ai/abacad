@@ -14,6 +14,7 @@ export interface DeviceView {
   screenshot_at?: number; // unix seconds of the last stored screenshot; absent if none
   humanize: boolean; // smooth pointer motion on this device; default off, opt-in with attestation
   expires_at?: string; // enrollment expiry (ISO); absent = permanent (never expires)
+  capabilities: string[]; // interfaces this device exposes; always concrete (the server expands "*")
 }
 
 export interface SshKey {
@@ -218,6 +219,10 @@ export const api = {
   // Enabling humanize requires attested=true (operator authorization); disabling does not.
   setDeviceHumanize: (id: string, humanize: boolean, attested?: boolean) =>
     req<void>(`/api/devices/${id}`, { method: "PATCH", body: JSON.stringify({ humanize, attested }) }),
+  // Replaces the WHOLE capability set — this is not a delta, so send the full
+  // list you want. An empty array is meaningful: expose nothing.
+  setDeviceCapabilities: (id: string, capabilities: string[]) =>
+    req<void>(`/api/devices/${id}`, { method: "PATCH", body: JSON.stringify({ capabilities }) }),
   // Reset enrollment expiry to now + TTL (hosted service only).
   extendDevice: (id: string) =>
     req<void>(`/api/devices/${id}`, { method: "PATCH", body: JSON.stringify({ extend: true }) }),

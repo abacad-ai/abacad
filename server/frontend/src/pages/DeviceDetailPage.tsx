@@ -215,6 +215,7 @@ export function DeviceDetailPage() {
 
         <Column title="Access">
           <AccessGuide device={device} needsKey={needsKey} />
+          <CapabilitiesSection device={device} />
         </Column>
 
         <div className="md:col-span-2">
@@ -456,6 +457,151 @@ function EnrollmentSection({ device }: { device: DeviceView }) {
 // Because enabling requires the operator to attest authorization, turning it ON
 // opens an inline attestation gate; turning it OFF applies immediately. Persists
 // optimistically; the 5s device poll re-syncs and a failed write reverts.
+// The capability groups shown in the UI. Storage is per protocol method — this
+// grouping is presentation only, because eighteen checkboxes is not a decision
+// anyone can make well. Values must stay in sync with protocol.Capabilities.
+//
+// `warn` copy exists because these are NOT peers. Several grant strictly more
+// than their label suggests, and a UI that renders them as equal siblings is
+// quietly misleading about what is being handed over.
+const CAPABILITY_GROUPS: {
+  key: string;
+  label: string;
+  members: string[];
+  desc: string;
+  warn?: string;
+}[] = [
+  {
+    key: "observe",
+    label: "See the screen",
+    members: ["screenshot", "screen_recording"],
+    desc: "Screenshots and screen recordings.",
+    warn: "A screenshot also returns the accessibility tree — the text of every on-screen field, not just pixels.",
+  },
+  {
+    key: "control",
+    label: "Control input",
+    members: [
+      "tap", "long_press", "swipe", "input_text", "back", "home", "recents",
+      "click", "right_click", "drag", "scroll", "press_keys", "composite",
+    ],
+    desc: "Tap, click, type, scroll, and key presses.",
+    warn: "On a desktop this is effectively full control: anything that can type can open a terminal.",
+  },
+  {
+    key: "files",
+    label: "Read and write files",
+    members: ["push_file", "pull_file"],
+    desc: "Transfer files to and from the device's filesystem.",
+    warn: "Writing files is equivalent to full control — it can add an SSH authorized key or a startup entry.",
+  },
+  {
+    key: "execute",
+    label: "Run JavaScript",
+    members: ["execute"],
+    desc: "Browser devices only: evaluate JS in the page.",
+    warn: "Full power over the page's origin, including cookies and storage, acting as the logged-in user.",
+  },
+  {
+    key: "vnc",
+    label: "Live view",
+    members: ["vnc"],
+    desc: "Watch the screen in real time from the dashboard.",
+    warn: "Not read-only. A live view carries keyboard and pointer events back to the device.",
+  },
+  {
+    key: "tunnel",
+    label: "Network tunnel",
+    members: ["tunnel"],
+    desc: "Raw TCP to any host and port the device can reach.",
+    warn: "The broadest setting here. It reaches the device's own ports — including its sshd — so it grants what the switches above grant, whatever they are set to.",
+  },
+  {
+    key: "ssh",
+    label: "SSH",
+    members: ["ssh"],
+    desc: "Reach this device's sshd through the jump host.",
+  },
+];
+
+function CapabilitiesSection({ device }: { device: DeviceView }) {
+  const [caps, setCaps] = useState<string[]>(device.capabilities ?? []);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  // Re-sync when a different device loads or the poll brings a new value.
+  const serverCaps = (device.capabilities ?? []).join(",");
+  useEffect(() => {
+    setCaps(device.capabilities ?? []);
+    setFailed(null);
+  }, [device.id, serverCaps]);
+
+  const has = (g: (typeof CAPABILITY_GROUPS)[number]) => g.members.every((m) => caps.includes(m));
+
+  const toggle = async (g: (typeof CAPABILITY_GROUPS)[number]) => {
+    const next = has(g)
+      ? caps.filter((c) => !g.members.includes(c))
+      : [...caps, ...g.members.filter((m) => !caps.includes(m))];
+    const prev = caps;
+    setCaps(next);
+    setBusy(true);
+    setFailed(null);
+    try {
+      await api.setDeviceCapabilities(device.id, next);
+    } catch (err) {
+      setCaps(prev); // revert on failure
+      setFailed((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // A tunnel reaches 127.0.0.1:22 directly, so turning SSH off while leaving the
+  // tunnel on does not actually close SSH. Say so rather than implying it did.
+  const sshMoot = caps.includes("tunnel") && !caps.includes("ssh");
+
+  return (
+    <div className="mt-5 border-t border-border pt-4">
+      <p className="mb-1 font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-ink-subtle">
+        What this device exposes
+      </p>
+      <p className="mb-3 text-sm leading-6 text-ink-muted">
+        Turn off anything this device should never do. Enforced by the relay for every
+        caller — agents, this dashboard, and SSH alike — not just for API keys.
+      </p>
+      {CAPABILITY_GROUPS.map((g) => (
+        <label key={g.key} className="mt-3 flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            checked={has(g)}
+            disabled={busy}
+            onChange={() => void toggle(g)}
+            className="mt-1 h-4 w-4 shrink-0 accent-brand"
+          />
+          <span className="text-sm leading-6">
+            <span className="font-medium text-ink">{g.label}</span>
+            <span className="text-ink-muted"> {g.desc}</span>
+            {g.warn && <span className="block text-ink-subtle">{g.warn}</span>}
+          </span>
+        </label>
+      ))}
+      {sshMoot && (
+        <p className="mt-3 rounded-md border border-border bg-surface-2 p-3 text-sm leading-6 text-ink-muted">
+          SSH is off, but the network tunnel is on — and a tunnel can dial this device's
+          own port 22 directly. To actually close SSH, turn the tunnel off too.
+        </p>
+      )}
+      {caps.length === 0 && (
+        <p className="mt-3 text-sm leading-6 text-ink-muted">
+          This device exposes nothing. It stays connected and listed here, but every
+          command and tunnel is refused.
+        </p>
+      )}
+      {failed && <p className="mt-3 text-sm leading-6 text-danger">{failed}</p>}
+    </div>
+  );
+}
+
 function HumanizeToggle({ device }: { device: DeviceView }) {
   const [on, setOn] = useState(device.humanize);
   const [confirming, setConfirming] = useState(false);

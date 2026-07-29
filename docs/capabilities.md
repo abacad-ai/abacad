@@ -36,6 +36,53 @@ the same register RFB/VNC and RustDesk operate in, borrowed, not the primary int
 
 ---
 
+## Turning capabilities off
+
+Everything below is what a device *can* do. Which of it a device *does* expose is
+per-device configuration, set by its owner in the dashboard (device → Access → "What
+this device exposes") or via `PATCH /api/devices/{id}` with a `capabilities` array.
+
+- **Default is everything**, including capabilities added in later versions.
+  Enrollment is the authorization ([trust.md](trust.md)); this narrows an
+  already-trusted device rather than gating a new one.
+- **It binds every caller**, not just agents — the dashboard's own live view and
+  screenshot go through the same gate. Enforcement is at the relay
+  (`DeviceConn.Send` / `OpenStream`), the only point every path crosses.
+- **Only a signed-in human can change it.** An API key cannot widen its own reach
+  (trust.md principle 2), and each change is recorded on the activity trail.
+- **Refusals are visible.** A denied call returns an error naming the capability and
+  is logged with `outcome=denied`, so probing what a device exposes leaves a trace.
+- **Narrowing takes effect immediately**, including on sessions already running:
+  revoking the tunnel closes open streams, and revoking live view stops it.
+
+The dashboard groups the switches; storage is per protocol method.
+
+| Switch | Covers | Worth knowing |
+|---|---|---|
+| See the screen | `screenshot`, `screen_recording` | A screenshot also returns the accessibility tree — the text of every on-screen field, not just pixels. |
+| Control input | `tap`, `long_press`, `swipe`, `input_text`, `back`, `home`, `recents`, `click`, `right_click`, `drag`, `scroll`, `press_keys`, `composite` | On a desktop this is effectively full control: anything that can type can open a terminal. |
+| Read and write files | `push_file`, `pull_file` | Writing files is equivalent to full control — it can add an SSH authorized key or a startup entry. |
+| Run JavaScript | `execute` | Full power over the page's origin, acting as the logged-in user. |
+| Live view | `vnc` | **Not read-only** — the RFB channel carries keyboard and pointer events back to the device. |
+| Network tunnel | `/connect` | The broadest switch here. See below. |
+| SSH | the jump host | Reaches the device's own `127.0.0.1:22`. |
+
+**These are not peers.** The network tunnel reaches any port the device can reach,
+*including its own* — sshd, an ADB port, a Chrome DevTools port (JS evaluation and
+screen capture), a local database. So a tunnel grants in substance what the narrower
+switches grant, whatever those are set to. In particular, turning SSH off while
+leaving the tunnel on does **not** close SSH: a tunnel dials `127.0.0.1:22` directly.
+The dashboard warns about exactly this combination.
+
+`composite` is authorized step by step rather than as a single verb, so a permitted
+`composite` cannot smuggle a denied screenshot or keystroke.
+
+The configuration lives on the server, so it holds against a rogue or prompt-injected
+agent and against an over-broad credential — but not against a compromised relay. See
+[trust.md](trust.md#what-this-defends-and-what-it-does-not).
+
+---
+
 ## Exposed to the agent
 
 The tool surface an agent drives, split by form factor.

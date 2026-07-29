@@ -26,6 +26,7 @@ destination, and this table as how far along the road we are.
 | **Server-identity *pinning* on the device** (edge ③) | ◐ **not yet** — the device gets CA-validated `wss://`, not a pinned peer; needs a managed server identity (TLS is terminated by an external proxy today) |
 | **Device hardware keypair / mutual TLS** (edge ③) | ○ planned (P1) — the device still authenticates with a shared bearer token, now header-only |
 | Scoped / expiring MCP tokens; enforced non-escalation | ○ planned (P1) |
+| **Per-device capabilities**, enforced at the relay for every caller | ✅ shipped — server-side only; see the honesty note below |
 | Surfaced audit trail + kill switch | ○ planned (P1) |
 | Dashboard MFA; cookie `Secure` unconditional | ○ planned (P1) |
 | Runtime verification (installed app vs a live server) | ○ not done — compiles on all three platforms; not yet exercised end-to-end |
@@ -315,16 +316,73 @@ already-mutually-authenticated device receive a new pin signed by the current ke
 
 abacad owns a **thin, non-semantic** sliver of responsibility here. It is
 deliberately *not* an approval or policy layer — abacad does **not** judge whether an
-action is safe, does not gate individual actions, and has no "arm the device" toggle.
-Enrollment *is* the authorization; the kill switch is the off. What remains is only:
+action is safe and does not decide, per action, whether to allow it. Enrollment *is*
+the authorization; the kill switch is the off. What remains is only:
 
-- **Scope** — which devices a credential reaches. Part of the auth chain, not a gate;
-  defaults to full-account, changeable only via the human session (principle 2).
+- **Scope** — what a given principal reaches. Two axes, both static, both changeable
+  only through the human session (principle 2):
+  - *per credential* — which devices an API key may drive;
+  - *per device* — which **capabilities** the device exposes at all, to anyone.
 - **Audit** — an append-only record of every command: source, method, outcome,
   duration, and every tunnel target. Automatic, no configuration, nothing to judge.
 - **Kill switch** — a human emergency stop that disconnects (and optionally revokes
   the device key), propagating over the live channel immediately. It decides
   nothing; a person hits it.
+
+### Why per-device capabilities are scope, not approval
+
+An earlier version of this doc said abacad "has no *arm the device* toggle." Per-device
+capabilities are not that toggle, and the distinction is the whole reason they belong
+here:
+
+- **Approval** is per action and needs *intent* — is this particular click dangerous?
+  That question cannot be answered from a UI tree, so it stays with the agent.
+- **Capability** is per device and needs nothing. "This laptop never transfers files"
+  is declared once by its owner, holds for every caller forever, and involves no
+  judgement about any specific request. It is `docker --cap-drop`, not a policy engine.
+
+So this is the same control the *scope* bullet always described, applied to the other
+end of the connection. It removes reach; it does not referee.
+
+Two consequences worth stating plainly:
+
+- **Enforcement is at the relay chokepoints** (`DeviceConn.Send` / `OpenStream`), not
+  in the MCP layer — because the MCP layer is not on every path. The dashboard's live
+  screenshot, the VNC manager and the blob delivery hook reach a device without
+  consulting any API key's scope, and the SSH jump runs under a *full wildcard* scope.
+  Anything expressed as a credential-scope field is bypassed on those paths by
+  construction.
+- **Capabilities are not peers.** A network tunnel reaches the device's own ports,
+  including its sshd, so it grants what the narrower switches grant regardless of how
+  they are set; file-write is equivalent to full control; input on a desktop can open
+  a terminal. The UI says so rather than presenting a row of equal-looking switches.
+
+#### What this defends, and what it does not
+
+The configuration lives on the **server** and is enforced by the relay. Say what that
+buys, and no more:
+
+- ✅ **A rogue or prompt-injected agent** — the residual risk named at the bottom of
+  this doc — is held to the device's declared surface no matter what its token allows,
+  and every denial lands on the audit trail.
+- ✅ **A stolen or over-broad credential**, including the SSH jump's wildcard scope,
+  which nothing else narrows.
+- ❌ **A compromised relay.** The server is the thing enforcing the limit, so it is
+  not defended against itself. "Even the relay cannot make my laptop read files" is
+  **not** a claim this supports.
+
+Closing that last one needs the device to enforce its own ceiling and refuse anything
+beyond it — a *client-side* capability set the server can narrow but never widen. That
+requires a device→server capabilities frame at connect (the `/device` socket carries
+only `?token=` and `?version=` today) and a structured error code so a refusal is
+distinguishable from "unknown method". Until then, treat the server-side set as the
+whole of the enforcement, not one layer of three.
+
+Note also the ceiling has a hard limit even once built: it cannot constrain a
+capability that already grants code execution as the device user. A client that stores
+its config in a file is one `push_file` away from having that config rewritten. The
+ceiling defends against a misbehaving *server*, never against a granted execution
+primitive.
 
 ### Where the judgment lives instead
 
