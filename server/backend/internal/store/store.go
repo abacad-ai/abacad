@@ -80,17 +80,56 @@ func Open(path string) (*Store, error) {
 
 func (s *Store) Close() error { return s.db.Close() }
 
-// migrate runs every migrations/*.sql file in lexical order. All statements are
-// idempotent (CREATE TABLE IF NOT EXISTS ...), so re-running the whole set on
-// each boot is safe — this doubles as the "apply new migrations" path without a
-// version table.
+// migrate runs each migrations/*.sql file in lexical order, exactly once, and
+// records it in the schema_migrations ledger so later boots skip it.
 //
-// The one shape pure SQL can't make idempotent is `ALTER TABLE ... ADD COLUMN`:
-// SQLite has no `IF NOT EXISTS` for it, so the second boot re-runs it and errors
-// "duplicate column name". That error is benign and can only mean the column is
-// already there, so we treat it as a no-op — keeping the re-run-every-boot model
-// intact while still allowing additive column migrations.
+// The ledger is not incidental bookkeeping — it is what makes a migration a
+// migration. Before it existed, every file was re-executed on every Open(), so
+// a file was only safe if every statement in it was idempotent. That invariant
+// was easy to state and easy to break: 0010_humanize_default_off.sql carries a
+// bare `UPDATE devices SET humanize = 0`, intended (per its own comment) as a
+// one-time reset, and it silently re-ran on every server start — wiping a
+// per-device flag the operator had to pass an attestation gate to enable. With
+// the ledger that file runs once per database, which is what it always meant.
+//
+// Upgrade path: a database created before the ledger has no record of what it
+// has already run, so the first migrate() after this change applies the whole
+// set once more. That is exactly the old behaviour, so it is safe by
+// construction, and it gives a self-hoster who skipped versions the one-time
+// data migrations they never got. Every file is then recorded and never re-runs.
+//
+// `ALTER TABLE ... ADD COLUMN` has no `IF NOT EXISTS` in SQLite, so on that
+// catch-up pass it errors "duplicate column name". The error can only mean the
+// column is already present — the migration's effect is in place — so it counts
+// as applied and is recorded. Note this aborts the rest of that file, which is
+// why an ADD COLUMN migration must be a single statement (see the header of
+// 0008_device_version.sql).
 func (s *Store) migrate() error {
+	if _, err := s.db.Exec(
+		`CREATE TABLE IF NOT EXISTS schema_migrations (
+			name       TEXT PRIMARY KEY,
+			applied_at INTEGER NOT NULL
+		)`); err != nil {
+		return fmt.Errorf("schema_migrations: %w", err)
+	}
+	applied := make(map[string]bool)
+	rows, err := s.db.Query(`SELECT name FROM schema_migrations`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return err
+		}
+		applied[name] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
 	entries, err := fs.ReadDir(migrationsFS, "migrations")
 	if err != nil {
 		return err
@@ -103,15 +142,22 @@ func (s *Store) migrate() error {
 	}
 	sort.Strings(names)
 	for _, name := range names {
+		if applied[name] {
+			continue
+		}
 		sqlBytes, err := migrationsFS.ReadFile("migrations/" + name)
 		if err != nil {
 			return err
 		}
 		if _, err := s.db.Exec(string(sqlBytes)); err != nil {
-			if strings.Contains(err.Error(), "duplicate column name") {
-				continue // ADD COLUMN already applied on an earlier boot
+			if !strings.Contains(err.Error(), "duplicate column name") {
+				return fmt.Errorf("migration %s: %w", name, err)
 			}
-			return fmt.Errorf("migration %s: %w", name, err)
+		}
+		if _, err := s.db.Exec(
+			`INSERT OR REPLACE INTO schema_migrations (name, applied_at) VALUES (?, ?)`,
+			name, now()); err != nil {
+			return fmt.Errorf("recording migration %s: %w", name, err)
 		}
 	}
 	return nil

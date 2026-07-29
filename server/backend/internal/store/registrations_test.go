@@ -274,9 +274,11 @@ func TestRegistrationQuotaCounters(t *testing.T) {
 	}
 }
 
-// TestMigrationIdempotent is the contract migrate() promises: it re-runs every
-// .sql file on every boot, so opening the same database twice must be clean.
-// Migration 0012 is CREATE TABLE IF NOT EXISTS precisely to keep this true.
+// TestMigrationIdempotent is the contract migrate() promises: opening the same
+// database twice must be clean and must not disturb existing rows. The ledger
+// means the second Open() skips every file, but the migrations stay individually
+// idempotent (0012 is CREATE TABLE IF NOT EXISTS) so the pre-ledger catch-up
+// pass is also safe.
 func TestMigrationIdempotent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "twice.db")
 	s1, err := Open(path)
@@ -299,5 +301,46 @@ func TestMigrationIdempotent(t *testing.T) {
 	// Re-running migrations must not have dropped the data.
 	if _, err := s2.RegistrationByID(reg.ID); err != nil {
 		t.Fatalf("registration lost across reopen: %v", err)
+	}
+}
+
+// TestMigrationsDoNotResetDeviceState guards the failure the schema_migrations
+// ledger exists to prevent. 0010_humanize_default_off.sql carries a bare
+// `UPDATE devices SET humanize = 0` meant as a one-time reset; without a ledger
+// it re-ran on every Open(), silently clearing a flag the operator had to pass
+// an attestation gate to enable. Restarting the server must never revoke an
+// operator's explicit choice.
+func TestMigrationsDoNotResetDeviceState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "restart.db")
+	s1, err := Open(path)
+	if err != nil {
+		t.Fatalf("first open: %v", err)
+	}
+	acc, err := s1.CreateAccount("a@b.com", "hash")
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	dev, _, err := s1.CreateDevice(acc.ID, "phone", "android", 0)
+	if err != nil {
+		t.Fatalf("create device: %v", err)
+	}
+	if err := s1.SetDeviceHumanize(dev.ID, acc.ID, true); err != nil {
+		t.Fatalf("set humanize: %v", err)
+	}
+	if err := s1.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	s2, err := Open(path)
+	if err != nil {
+		t.Fatalf("second open: %v", err)
+	}
+	defer s2.Close()
+	got, err := s2.DeviceByID(dev.ID)
+	if err != nil {
+		t.Fatalf("device lost across reopen: %v", err)
+	}
+	if !got.Humanize {
+		t.Fatal("humanize was reset by re-running migrations on restart")
 	}
 }
