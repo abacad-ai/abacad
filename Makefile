@@ -269,9 +269,11 @@ linux-test:
 	cd linux && go test ./... && go test -tags e2e -run TestXvfbE2E ./internal/e2e
 
 # ── Windows ──────────────────────────────────────────────────────────────────
-# Tray client targeting Windows 10/11. The .NET SDK can cross-build it from
-# macOS or Linux. Debug: windows/bin/Debug/net8.0-windows/. Release: a
-# self-contained single exe at windows/publish/Abacad.exe.
+# Tray client targeting Windows 10/11. Needs a Windows host with the .NET 8 SDK:
+# the WinUI 3 (Windows App SDK) targets and the XAML compiler do not resolve on
+# macOS or Linux, so this no longer cross-builds — CI runs it on the self-hosted
+# NUC. Debug: windows/bin/Debug/net8.0-windows/. Release: a self-contained
+# single exe at windows/publish/Abacad.exe.
 
 # `windows` (bare) is the release build, for back-compat and `make windows`.
 windows: windows-release

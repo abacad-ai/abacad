@@ -5,7 +5,11 @@
 #     git tag v0.1.0 && git push origin v0.1.0
 #
 # Each client builds on the runner that has its toolchain and signing material:
-#   - Linux (CLI/daemon) and Windows (tray) cross-build on free cloud runners.
+#   - Linux (CLI/daemon) cross-builds on a free cloud runner.
+#   - Windows (tray) builds on the self-hosted NUC: the WinUI 3 / Windows App SDK
+#     client needs a real Windows host, so it can no longer cross-build. That box
+#     needs Git for Windows, GNU make and the .NET 8 SDK on the MACHINE PATH —
+#     the runner is a service (NETWORK SERVICE) and never sees a user PATH.
 #   - macOS (.dmg, Developer ID + notarized) and Android (signed APK) build on
 #     the self-hosted Mac mini, where the keys live — they never touch GitHub
 #     secrets. See the repo README / Makefile header for the box's prerequisites
