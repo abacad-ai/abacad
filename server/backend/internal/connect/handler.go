@@ -12,12 +12,15 @@ package connect
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/coder/websocket"
 
 	"abacad/internal/activity"
 	"abacad/internal/mcp"
+	"abacad/internal/protocol"
+	"abacad/internal/relay"
 	"abacad/internal/store"
 )
 
@@ -80,8 +83,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c.SetReadLimit(readLimit)
 	defer c.Close(websocket.StatusNormalClosure, "bye")
 
-	stream, err := dc.OpenStream(r.Context(), target)
+	stream, err := dc.OpenStream(r.Context(), target, protocol.CapTunnel)
 	if err != nil {
+		if errors.Is(err, relay.ErrCapabilityDenied) {
+			c.Close(websocket.StatusPolicyViolation, "tunnel is not exposed by this device")
+			return
+		}
 		c.Close(websocket.StatusBadGateway, "device dial failed")
 		return
 	}

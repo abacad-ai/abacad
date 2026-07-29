@@ -16,6 +16,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"abacad/internal/auth"
+	"abacad/internal/protocol"
 )
 
 //go:embed migrations/*.sql
@@ -55,6 +56,13 @@ type Device struct {
 	Version   string // last version the client reported on connect; "" if never
 	Humanize  bool   // smooth pointer motion on this device; default OFF, opt-in with attestation
 	ExpiresAt int64  // enrollment expiry, unix seconds; 0 = permanent (never expires)
+	// Capabilities is which interfaces this device exposes. Defaults to the
+	// wildcard — enrollment is the authorization, so this narrows an already
+	// authorized device rather than gating a new one. Enforced at the relay
+	// chokepoints (relay.DeviceConn.Send / OpenStream), which is the only place
+	// every caller passes through: the dashboard, the VNC manager and the blob
+	// delivery hook all reach a device without going near an API key's scope.
+	Capabilities protocol.CapabilitySet
 }
 
 // Open opens (creating if needed) the SQLite database at path and runs
@@ -305,13 +313,17 @@ func (s *Store) DeleteSession(sessionID string) error {
 // from the configured enrollment TTL.
 func (s *Store) CreateDevice(accountID, name, platform string, expiresAt int64) (Device, string, error) {
 	token := auth.NewSecret(deviceTokenPrefix)
-	d := Device{ID: auth.NewDeviceID(), AccountID: accountID, Name: name, Platform: platform, CreatedAt: now(), Humanize: false, ExpiresAt: expiresAt}
-	// humanize is written EXPLICITLY. The column's DEFAULT is still 1 (migration
-	// 0009); 0010 flipped the product default to off but only via a one-time
-	// UPDATE, so omitting the column here would silently enrol every new device
-	// with humanize ON — bypassing the attestation gate in api.updateDevice.
-	_, err := s.db.Exec(`INSERT INTO devices(id,account_id,name,token_hash,platform,created_at,last_seen,humanize,expires_at)
-		VALUES(?,?,?,?,?,?,0,0,?)`, d.ID, d.AccountID, d.Name, auth.HashToken(token), d.Platform, d.CreatedAt, d.ExpiresAt)
+	d := Device{ID: auth.NewDeviceID(), AccountID: accountID, Name: name, Platform: platform, CreatedAt: now(), Humanize: false, ExpiresAt: expiresAt,
+		Capabilities: protocol.AllCapabilities()}
+	// humanize and capabilities are written EXPLICITLY rather than left to the
+	// column DEFAULT. For humanize the DEFAULT is still 1 (migration 0009); 0010
+	// flipped the product default to off but only via a one-time UPDATE, so
+	// omitting it would silently enrol every new device with humanize ON,
+	// bypassing the attestation gate in api.updateDevice. Capabilities has the
+	// right DEFAULT today, but relying on a DEFAULT is exactly how that drift
+	// happened, and a security-relevant column should not depend on one.
+	_, err := s.db.Exec(`INSERT INTO devices(id,account_id,name,token_hash,platform,created_at,last_seen,humanize,expires_at,capabilities)
+		VALUES(?,?,?,?,?,?,0,0,?,?)`, d.ID, d.AccountID, d.Name, auth.HashToken(token), d.Platform, d.CreatedAt, d.ExpiresAt, d.Capabilities.String())
 	if err != nil {
 		return Device{}, "", err
 	}
@@ -323,7 +335,7 @@ func (s *Store) CreateDevice(accountID, name, platform string, expiresAt int64) 
 // expired device cannot (re)connect — the gate for auto-expiry.
 func (s *Store) DeviceByTokenHash(tokenHash string) (Device, error) {
 	return s.scanDevice(s.db.QueryRow(
-		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at FROM devices
+		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at,capabilities FROM devices
 		  WHERE token_hash=? AND (expires_at=0 OR expires_at>?)`, tokenHash, now()))
 }
 
@@ -333,7 +345,7 @@ func (s *Store) DeviceByTokenHash(tokenHash string) (Device, error) {
 // that rely on it (only the Host router) must intend exactly that.
 func (s *Store) DeviceByID(deviceID string) (Device, error) {
 	return s.scanDevice(s.db.QueryRow(
-		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at FROM devices
+		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at,capabilities FROM devices
 		  WHERE id=? AND (expires_at=0 OR expires_at>?)`, deviceID, now()))
 }
 
@@ -342,7 +354,7 @@ func (s *Store) DeviceByID(deviceID string) (Device, error) {
 // or delete it from the dashboard.
 func (s *Store) DeviceOwnedBy(deviceID, accountID string) (Device, error) {
 	return s.scanDevice(s.db.QueryRow(
-		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at FROM devices WHERE id=? AND account_id=?`,
+		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at,capabilities FROM devices WHERE id=? AND account_id=?`,
 		deviceID, accountID))
 }
 
@@ -350,7 +362,7 @@ func (s *Store) DeviceOwnedBy(deviceID, accountID string) (Device, error) {
 // DeviceOwnedBy it does not filter on expiry — dormant devices remain listed.
 func (s *Store) DevicesByAccount(accountID string) ([]Device, error) {
 	rows, err := s.db.Query(
-		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at FROM devices
+		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at,capabilities FROM devices
 		  WHERE account_id=? ORDER BY last_seen DESC, created_at DESC`, accountID)
 	if err != nil {
 		return nil, err
@@ -359,9 +371,11 @@ func (s *Store) DevicesByAccount(accountID string) ([]Device, error) {
 	var out []Device
 	for rows.Next() {
 		var d Device
-		if err := rows.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen, &d.Version, &d.Humanize, &d.ExpiresAt); err != nil {
+		var caps string
+		if err := rows.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen, &d.Version, &d.Humanize, &d.ExpiresAt, &caps); err != nil {
 			return nil, err
 		}
+		d.Capabilities = protocol.ParseCapabilities(caps)
 		out = append(out, d)
 	}
 	return out, rows.Err()
@@ -374,6 +388,41 @@ func (s *Store) RenameDevice(deviceID, accountID, name string) error {
 // SetDeviceHumanize toggles human-like pointer motion for a device.
 func (s *Store) SetDeviceHumanize(deviceID, accountID string, v bool) error {
 	return s.affect(s.db.Exec(`UPDATE devices SET humanize=? WHERE id=? AND account_id=?`, v, deviceID, accountID))
+}
+
+// DeviceCapabilities reads just the capability set for a device — the narrow
+// lookup the relay gate performs on every command and stream. Deliberately not
+// cached anywhere: the gate must see a revocation immediately, and the failure
+// modes of a stale authorization cache are worse than an indexed primary-key
+// read on a local SQLite file.
+//
+// Note this does NOT filter on expiry, unlike DeviceByTokenHash. Expiry is
+// enforced at connect time and by the sweeper's Kick; re-checking it here would
+// conflate "enrollment lapsed" with "owner turned this off" in the error the
+// agent sees.
+func (s *Store) DeviceCapabilities(deviceID string) (protocol.CapabilitySet, error) {
+	var caps string
+	err := s.db.QueryRow(`SELECT capabilities FROM devices WHERE id=?`, deviceID).Scan(&caps)
+	if errors.Is(err, sql.ErrNoRows) {
+		return protocol.CapabilitySet{}, ErrNotFound
+	}
+	if err != nil {
+		return protocol.CapabilitySet{}, err
+	}
+	return protocol.ParseCapabilities(caps), nil
+}
+
+// SetDeviceCapabilities replaces which interfaces a device exposes. Only ever
+// reachable from an authenticated dashboard session, never from an API key —
+// a credential must not be able to widen its own reach (docs/trust.md,
+// non-escalation).
+//
+// Callers must invalidate the relay's capability cache afterwards, or a live
+// device keeps its old set until it reconnects. Revocation that does not take
+// effect until reconnect is not revocation.
+func (s *Store) SetDeviceCapabilities(deviceID, accountID string, caps protocol.CapabilitySet) error {
+	return s.affect(s.db.Exec(`UPDATE devices SET capabilities=? WHERE id=? AND account_id=?`,
+		caps.String(), deviceID, accountID))
 }
 
 // SetDeviceExpiry sets a device's enrollment expiry (unix seconds; 0 = permanent).
@@ -444,10 +493,12 @@ func (s *Store) SetDeviceVersion(deviceID, version string) {
 
 func (s *Store) scanDevice(row *sql.Row) (Device, error) {
 	var d Device
-	err := row.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen, &d.Version, &d.Humanize, &d.ExpiresAt)
+	var caps string
+	err := row.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen, &d.Version, &d.Humanize, &d.ExpiresAt, &caps)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Device{}, ErrNotFound
 	}
+	d.Capabilities = protocol.ParseCapabilities(caps)
 	return d, err
 }
 
@@ -730,13 +781,14 @@ func (s *Store) ClaimRegistration(deviceID, claimCode, accountID, name string, e
 		ID: r.ID, AccountID: accountID, Name: name, Platform: r.Platform,
 		CreatedAt: now(), LastSeen: r.LastSeen, Version: r.Version,
 		Humanize: false, ExpiresAt: expiresAt,
+		Capabilities: protocol.AllCapabilities(),
 	}
-	// humanize written explicitly — see the note in CreateDevice; the column
-	// DEFAULT is 1, so omitting it would opt the device in without attestation.
+	// humanize and capabilities written explicitly — see the note in CreateDevice.
 	if _, err := tx.Exec(
-		`INSERT INTO devices(id,account_id,name,token_hash,platform,created_at,last_seen,version,humanize,expires_at)
-		 VALUES(?,?,?,?,?,?,?,?,0,?)`,
-		d.ID, d.AccountID, d.Name, tokenHash, d.Platform, d.CreatedAt, d.LastSeen, d.Version, d.ExpiresAt); err != nil {
+		`INSERT INTO devices(id,account_id,name,token_hash,platform,created_at,last_seen,version,humanize,expires_at,capabilities)
+		 VALUES(?,?,?,?,?,?,?,?,0,?,?)`,
+		d.ID, d.AccountID, d.Name, tokenHash, d.Platform, d.CreatedAt, d.LastSeen, d.Version, d.ExpiresAt,
+		d.Capabilities.String()); err != nil {
 		return Device{}, err
 	}
 	if _, err := tx.Exec(`DELETE FROM device_registrations WHERE id=?`, deviceID); err != nil {

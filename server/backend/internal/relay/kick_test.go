@@ -4,7 +4,7 @@ import "testing"
 
 // TestHubKick closes a live connection and reports whether one existed.
 func TestHubKick(t *testing.T) {
-	h := NewHub()
+	h := NewHub(AllowAllGate)
 
 	// No connection for the id: Kick is a no-op returning false.
 	if h.Kick("absent") {

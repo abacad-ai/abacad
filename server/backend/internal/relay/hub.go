@@ -16,17 +16,26 @@ import (
 type Hub struct {
 	mu    sync.Mutex
 	conns map[string]*DeviceConn
+	gate  Gate
 }
 
-// NewHub creates an empty hub.
-func NewHub() *Hub {
-	return &Hub{conns: make(map[string]*DeviceConn)}
+// NewHub creates an empty hub. gate authorizes every command and stream on every
+// connection the hub registers. It is a required argument rather than a settable
+// field so that "no gate" cannot arise by omission; pass AllowAllGate to opt out
+// explicitly and visibly.
+func NewHub(gate Gate) *Hub {
+	if gate == nil {
+		panic("relay.NewHub: nil gate — pass relay.AllowAllGate to allow everything explicitly")
+	}
+	return &Hub{conns: make(map[string]*DeviceConn), gate: gate}
 }
 
 // Register installs dc as the live connection for its device id, evicting and
-// closing any previous connection for the same id.
+// closing any previous connection for the same id. It also injects the hub's
+// capability gate — which is why a connection is only drivable once registered.
 func (h *Hub) Register(dc *DeviceConn) {
 	h.mu.Lock()
+	dc.gate = h.gate
 	old := h.conns[dc.DeviceID]
 	h.conns[dc.DeviceID] = dc
 	h.mu.Unlock()

@@ -68,7 +68,26 @@ func main() {
 		seed(st)
 	}
 
-	hub := relay.NewHub()
+	// The capability gate: which interfaces each device exposes. It hangs off the
+	// hub rather than the MCP layer because the MCP layer is not on the path of
+	// every caller — the dashboard's live screenshot, the VNC manager, the blob
+	// delivery hook and the SSH jump all reach a device without going near an API
+	// key's scope, and the jump in particular runs under a full-wildcard scope
+	// (resolver.Factory.For). Gating at relay.DeviceConn.Send / OpenStream is the
+	// only placement that covers all of them.
+	//
+	// Reads the store on every call so a revocation takes effect at once rather
+	// than at the device's next reconnect. Any lookup failure denies.
+	hub := relay.NewHub(func(deviceID string, need protocol.Capability) error {
+		caps, err := st.DeviceCapabilities(deviceID)
+		if err != nil {
+			return fmt.Errorf("%w: %s (capability lookup failed)", relay.ErrCapabilityDenied, need)
+		}
+		if !caps.Allows(need) {
+			return fmt.Errorf("%w: %s is turned off for this device — its owner can re-enable it in the dashboard", relay.ErrCapabilityDenied, need)
+		}
+		return nil
+	})
 	evlog := events.NewLog()
 	trail := activity.New(st, time.Duration(cfg.ActivityRetentionDays)*24*time.Hour)
 	// Device-enrollment expiry is always on (fixed product behavior, see
@@ -358,7 +377,11 @@ func main() {
 				if err != nil {
 					return nil, err
 				}
-				s, err := dc.OpenStream(ctx, "127.0.0.1:22")
+				// CapSSH, not CapTunnel: the jump is separately switchable. Note
+				// this is the one path whose resolver scope is a full wildcard
+				// (resolver.Factory.For), so the device's own capability set is
+				// the only thing narrowing it.
+				s, err := dc.OpenStream(ctx, "127.0.0.1:22", protocol.CapSSH)
 				if err == nil {
 					trail.Record(store.Activity{
 						AccountID: accountID, DeviceID: dc.DeviceID,

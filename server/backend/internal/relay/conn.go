@@ -120,6 +120,12 @@ type DeviceConn struct {
 
 	onCmd CommandObserver // may be nil; notified on every Send completion
 
+	// gate authorizes each command and stream against the device's configured
+	// capabilities. Injected by Hub.Register, so a connection that was never
+	// registered has none — and no gate denies (see DeviceConn.capability).
+	// Deliberately a function, not cached state: see the Gate doc comment.
+	gate Gate
+
 	// humanize mirrors the device record's humanize setting, refreshed on each
 	// Resolve. Read when building pointer commands so the client knows whether to
 	// synthesize human-like motion. Defaults OFF; opt-in per device.
@@ -220,7 +226,15 @@ func (c *DeviceConn) writeFrame(ctx context.Context, typ websocket.MessageType, 
 // OpenStream asks the device to dial target ("host:port") and returns a Stream
 // bridging to it. The dial is optimistic: OpenStream returns as soon as the OPEN
 // frame is sent, and a dial failure surfaces as an error on the first Read.
-func (c *DeviceConn) OpenStream(ctx context.Context, target string) (*Stream, error) {
+//
+// cap names which capability this stream is opened under — CapTunnel for a
+// /connect tunnel, CapSSH for the jump host. Callers must pass it explicitly so
+// that a future third consumer of the tunnel lane has to declare itself rather
+// than silently inheriting someone else's authorization.
+func (c *DeviceConn) OpenStream(ctx context.Context, target string, need protocol.Capability) (*Stream, error) {
+	if err := c.capability(need); err != nil {
+		return nil, err
+	}
 	select {
 	case <-c.closed:
 		return nil, ErrDeviceGone
@@ -308,6 +322,20 @@ func (c *DeviceConn) Send(ctx context.Context, method protocol.Method, params ma
 	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
+	// Authorize before anything else, so the deferred observer above records the
+	// denial on the activity trail. A denial the owner cannot see is how a
+	// compromised agent maps the capability matrix unnoticed.
+	if err = c.authorizeMethod(method, params); err != nil {
+		return nil, err
+	}
+	if method == protocol.MethodComposite {
+		// composite carries its own step list, each step an action in its own
+		// right. Authorizing only the outer verb would let one permitted call
+		// smuggle every denied one.
+		if params, err = c.authorizeComposite(params); err != nil {
+			return nil, err
+		}
+	}
 	select {
 	case <-c.closed:
 		return nil, ErrDeviceGone
@@ -368,6 +396,11 @@ func classify(err error) (outcome, detail string) {
 		return "timeout", ""
 	case errors.Is(err, ErrDeviceGone):
 		return "device_gone", ""
+	case errors.Is(err, ErrCapabilityDenied):
+		// Its own outcome, not a generic error: a denial is the gate working as
+		// configured, and the owner needs to see it on the trail. Without this,
+		// probing which capabilities a device exposes leaves no trace.
+		return "denied", err.Error()
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return "canceled", err.Error()
 	default:

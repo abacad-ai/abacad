@@ -31,7 +31,7 @@ func TestSweepReapsPastGrace(t *testing.T) {
 	// Permanent -> untouched.
 	perm, _, _ := st.CreateDevice(acc.ID, "perm", "android", 0)
 
-	s := &Sweeper{st: st, hub: relay.NewHub(), grace: time.Hour}
+	s := &Sweeper{st: st, hub: relay.NewHub(relay.AllowAllGate), grace: time.Hour}
 	s.sweep()
 
 	if _, err := st.DeviceOwnedBy(old.ID, acc.ID); err != store.ErrNotFound {
@@ -72,7 +72,7 @@ func TestSweepReapsPreEnrollment(t *testing.T) {
 		t.Fatalf("fresh pairing: %v", err)
 	}
 
-	s := &Sweeper{st: st, hub: relay.NewHub(), grace: time.Hour}
+	s := &Sweeper{st: st, hub: relay.NewHub(relay.AllowAllGate), grace: time.Hour}
 	s.sweep()
 
 	if _, err := st.RegistrationByID(live.ID); err != nil {

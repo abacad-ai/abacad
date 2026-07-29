@@ -18,7 +18,7 @@ func newTestConn(deviceID string) *DeviceConn {
 }
 
 func TestHubEvictsStaleConnAndKeepsFresh(t *testing.T) {
-	h := NewHub()
+	h := NewHub(AllowAllGate)
 	a := newTestConn("d1")
 	b := newTestConn("d1")
 
@@ -52,7 +52,7 @@ func TestHubEvictsStaleConnAndKeepsFresh(t *testing.T) {
 }
 
 func TestHubConcurrentReconnectStorm(t *testing.T) {
-	h := NewHub()
+	h := NewHub(AllowAllGate)
 	const rounds = 200
 	var wg sync.WaitGroup
 	for i := 0; i < rounds; i++ {

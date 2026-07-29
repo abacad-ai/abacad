@@ -1,0 +1,20 @@
+-- Per-device capability configuration: which interfaces a device exposes to the
+-- server and to agents (screenshot, input, file transfer, JS execute, tunnel,
+-- SSH, live view). Scoping, not approval — see docs/trust.md.
+--
+-- '*' is the wildcard: every capability, including ones added in later versions
+-- (same sentinel and meaning as api_keys.methods). Existing devices therefore
+-- keep working untouched, which is the intended default: enrollment is the
+-- authorization, and this config is opt-in hardening on top of it.
+--
+-- The DEFAULT clause is doing real work here. SQLite backfills existing rows as
+-- part of the schema change, so no UPDATE statement is needed — and a migration
+-- must never carry an unguarded UPDATE. Before the schema_migrations ledger
+-- existed, every file re-ran on every boot, and 0010's bare `UPDATE devices SET
+-- humanize = 0` silently reset that flag on each restart. Encode a default in
+-- the DEFAULT clause, never as a data statement.
+--
+-- Keep this file to the single ALTER TABLE. SQLite has no ADD COLUMN IF NOT
+-- EXISTS, so on the ledger's one-time catch-up pass over a pre-ledger database
+-- this errors "duplicate column name", which aborts the rest of the file.
+ALTER TABLE devices ADD COLUMN capabilities TEXT NOT NULL DEFAULT '*';

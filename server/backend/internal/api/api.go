@@ -253,6 +253,20 @@ type deviceView struct {
 	ScreenshotAt int64  `json:"screenshot_at,omitempty"` // unix seconds of the last stored screenshot; 0/absent if none
 	Humanize     bool   `json:"humanize"`                // smooth pointer motion; default off, opt-in with attestation
 	ExpiresAt    string `json:"expires_at,omitempty"`    // enrollment expiry (RFC3339); absent = permanent
+	// Capabilities is which interfaces this device exposes, always as a concrete
+	// list — the "*" wildcard is expanded here so a client never has to special-
+	// case it. An empty list means the device accepts nothing.
+	Capabilities []string `json:"capabilities"`
+}
+
+// capabilityNames renders a set for the API as plain strings.
+func capabilityNames(s protocol.CapabilitySet) []string {
+	caps := s.List()
+	out := make([]string, 0, len(caps))
+	for _, c := range caps {
+		out = append(out, string(c))
+	}
+	return out
 }
 
 func (a *API) listDevices(w http.ResponseWriter, r *http.Request) {
@@ -330,6 +344,10 @@ func (a *API) updateDevice(w http.ResponseWriter, r *http.Request) {
 		// Permanent removes enrollment expiry (0). Requires Attested; discloses that
 		// a permanently reachable device carries the standing-exposure risk.
 		Permanent *bool `json:"permanent"`
+		// Capabilities replaces the whole set — it is not a delta, so a client
+		// must send the full list it wants. An explicit empty list is meaningful
+		// (expose nothing) and is why this is a pointer.
+		Capabilities *[]string `json:"capabilities"`
 	}
 	if !decode(w, r, &body) {
 		return
@@ -369,6 +387,12 @@ func (a *API) updateDevice(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if body.Capabilities != nil {
+		if err := a.setCapabilities(w, id, accID, *body.Capabilities); err != nil {
+			return
+		}
+	}
+
 	// Extend enrollment: reset expiry to now + TTL (keep-alive another window).
 	if body.Extend != nil && *body.Extend {
 		if err := a.setExpiryOr404(w, id, accID, a.enrollmentExpiry()); err != nil {
@@ -390,6 +414,75 @@ func (a *API) updateDevice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// errHandled marks "a response has already been written, just return". Used by
+// helpers whose failure cases don't all have an underlying error to pass back.
+var errHandled = errors.New("response written")
+
+// setCapabilities replaces which interfaces a device exposes. It returns a
+// non-nil error exactly when it has already written a response.
+//
+// Narrowing has to take effect on activity that is ALREADY running, not just on
+// the next request. Tunnels and the SSH jump are authorized once at open time
+// and then move bytes indefinitely, and a live view holds its own channel — so a
+// revocation that only affects future calls would leave the exact sessions the
+// user is trying to cut still running.
+//
+// Order matters here, and not incidentally: live view is stopped BEFORE the new
+// set is persisted. The stop is itself a command to the device, so persisting
+// first would have the gate deny the very instruction that ends the session.
+func (a *API) setCapabilities(w http.ResponseWriter, id, accID string, names []string) error {
+	caps := make([]protocol.Capability, 0, len(names))
+	seen := map[protocol.Capability]bool{}
+	for _, n := range names {
+		c := protocol.Capability(strings.TrimSpace(n))
+		if !protocol.KnownCapability(c) {
+			writeErr(w, http.StatusBadRequest, "unknown capability: "+n)
+			return errHandled
+		}
+		if !seen[c] {
+			seen[c] = true
+			caps = append(caps, c)
+		}
+	}
+	next := protocol.NewCapabilitySet(caps...)
+
+	prev, err := a.Store.DeviceCapabilities(id)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		writeErr(w, http.StatusInternalServerError, "could not read device capabilities")
+		return errHandled
+	}
+
+	// Stop live view first, while the stop command is still permitted.
+	if prev.Allows(protocol.CapVNC) && !next.Allows(protocol.CapVNC) && a.VNC != nil {
+		a.VNC.Stop(id)
+	}
+
+	if err := a.Store.SetDeviceCapabilities(id, accID, next); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeErr(w, http.StatusNotFound, "device not found")
+		} else {
+			writeErr(w, http.StatusInternalServerError, "could not update capabilities")
+		}
+		return errHandled
+	}
+
+	// Then cut any tunnel or SSH session that is no longer authorized. The
+	// connection itself stays up: this revokes the byte pipes, not the device.
+	revokedTunnel := prev.Allows(protocol.CapTunnel) && !next.Allows(protocol.CapTunnel)
+	revokedSSH := prev.Allows(protocol.CapSSH) && !next.Allows(protocol.CapSSH)
+	if revokedTunnel || revokedSSH {
+		if dc, ok := a.Hub.Get(id); ok {
+			dc.CloseStreams()
+		}
+	}
+
+	a.record(accID, store.Activity{
+		Kind: activity.KindConsent, DeviceID: id, Method: "capabilities.set",
+		Detail: next.String(),
+	})
+	return nil
 }
 
 // setExpiryOr404 applies an expiry change and writes the appropriate error
@@ -866,13 +959,14 @@ func (a *API) enrollmentExpiry() int64 {
 
 func (a *API) viewDevice(d store.Device) deviceView {
 	v := deviceView{
-		ID:        d.ID,
-		Name:      d.Name,
-		Online:    a.Hub.Online(d.ID),
-		Platform:  d.Platform,
-		Version:   d.Version,
-		Humanize:  d.Humanize,
-		CreatedAt: time.Unix(d.CreatedAt, 0).UTC().Format(time.RFC3339),
+		ID:           d.ID,
+		Name:         d.Name,
+		Online:       a.Hub.Online(d.ID),
+		Platform:     d.Platform,
+		Version:      d.Version,
+		Humanize:     d.Humanize,
+		Capabilities: capabilityNames(d.Capabilities),
+		CreatedAt:    time.Unix(d.CreatedAt, 0).UTC().Format(time.RFC3339),
 	}
 	if d.ExpiresAt > 0 {
 		v.ExpiresAt = time.Unix(d.ExpiresAt, 0).UTC().Format(time.RFC3339)
