@@ -1,0 +1,13 @@
+-- Where the client IP resolved to, part 2/2: the English city name ("London").
+--
+-- Deliberately secondary to country. City-level geolocation is often the wrong
+-- city in the right region, and for mobile carriers, VPNs and CGNAT it can be off
+-- by a country — so the dashboard leads with the country code and shows the city
+-- only as a hint. A row with a country and no city is normal, not an error.
+--
+-- Populated only when a country was resolved from the same lookup; see 0021 for
+-- why this is snapshotted rather than joined.
+--
+-- Keep this file to the single ALTER so the runner's duplicate-column skip is
+-- unambiguous.
+ALTER TABLE activities ADD COLUMN city TEXT NOT NULL DEFAULT '';

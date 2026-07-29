@@ -1,0 +1,14 @@
+-- Provenance for the activity trail, part 1/5: which *class* of credential caused
+-- the row. The existing `source` column says which channel carried the action
+-- (agent | dashboard | ssh | tunnel); this says who was holding the key:
+--
+--   session | apikey | device | ssh
+--
+-- Blank for rows written before this migration, and for the handful of events
+-- that genuinely have no actor (a device self-registering has no account yet).
+--
+-- Not idempotent in the CREATE-TABLE-IF-NOT-EXISTS sense — SQLite has no
+-- `ADD COLUMN IF NOT EXISTS` — but the migrate() runner treats the "duplicate
+-- column name" error a re-run produces as a no-op. Keep this file to the single
+-- ALTER so that skip is unambiguous.
+ALTER TABLE activities ADD COLUMN actor_kind TEXT NOT NULL DEFAULT '';

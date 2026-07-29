@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import type { ActivityItem } from "@/lib/api";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -44,4 +45,40 @@ export function clockTime(ts: number): string {
     second: "2-digit",
     hour12: false,
   });
+}
+
+// actorText names who caused an activity row, for its meta line. Prefers the
+// label snapshotted at write time (an API key's name, the signing-in address) and
+// falls back to the id.
+//
+// Returns "" when the row has no actor — history recorded before the trail
+// tracked provenance, or an event whose actor is genuinely unknown, like a failed
+// sign-in. Callers omit the segment entirely in that case: printing "unknown"
+// would read as a claim about the row rather than an absence of data.
+export function actorText(a: ActivityItem): string {
+  const name = a.actor_label || a.actor_id;
+  if (!name) return "";
+  switch (a.actor_kind) {
+    case "apikey":
+      return `key ${name}`;
+    case "ssh":
+      return `ssh ${name}`;
+    case "device":
+      return ""; // the row already names the device; repeating it is noise
+    default:
+      return name; // a session: the account email
+  }
+}
+
+// locationText renders where an activity came from: "London, GB", or just "GB"
+// when the database knew the country but not the city (common), or "" when the
+// relay has no geo database or the address was private.
+//
+// Country leads because it is the trustworthy half. City-level geolocation is
+// often the wrong city in the right region, and for mobile carriers, VPNs and
+// CGNAT it can be off by a country — so it reads as a hint next to the country
+// code, never as a standalone claim about where someone was.
+export function locationText(a: ActivityItem): string {
+  if (!a.country) return "";
+  return a.city ? `${a.city}, ${a.country}` : a.country;
 }

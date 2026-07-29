@@ -943,35 +943,42 @@ func (s *Store) CreateAPIKey(accountID, name string, scope KeyScope) (string, AP
 	return token, k, nil
 }
 
+// APIKeyRef identifies the key a request authenticated with, for the activity
+// trail. Name is copied onto each row at write time rather than joined at read
+// time, so a revoked or renamed key stays attributable (see migration 0017).
+type APIKeyRef struct {
+	ID   string
+	Name string
+}
+
 // APIKeyScopeByTokenHash resolves an API-key bearer token (already hashed) to its
-// account and scope, recording last_used. This is the /mcp and /connect auth entry
-// point.
-func (s *Store) APIKeyScopeByTokenHash(tokenHash string) (accountID string, scope KeyScope, err error) {
+// account, identity and scope, recording last_used. This is the /mcp and /connect
+// auth entry point.
+func (s *Store) APIKeyScopeByTokenHash(tokenHash string) (accountID string, key APIKeyRef, scope KeyScope, err error) {
 	var (
-		id          string
 		allDevices  int
 		methods     string
 		allowTunnel int
 	)
 	err = s.db.QueryRow(
-		`SELECT id,account_id,all_devices,methods,allow_tunnel FROM api_keys WHERE token_hash=?`, tokenHash).
-		Scan(&id, &accountID, &allDevices, &methods, &allowTunnel)
+		`SELECT id,name,account_id,all_devices,methods,allow_tunnel FROM api_keys WHERE token_hash=?`, tokenHash).
+		Scan(&key.ID, &key.Name, &accountID, &allDevices, &methods, &allowTunnel)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", KeyScope{}, ErrNotFound
+		return "", APIKeyRef{}, KeyScope{}, ErrNotFound
 	}
 	if err != nil {
-		return "", KeyScope{}, err
+		return "", APIKeyRef{}, KeyScope{}, err
 	}
 	scope.AllDevices = allDevices != 0
 	scope.AllMethods, scope.Methods = decodeMethods(methods)
 	scope.AllowTunnel = allowTunnel != 0
 	if !scope.AllDevices {
-		if scope.DeviceIDs, err = s.apiKeyDeviceIDs(id); err != nil {
-			return "", KeyScope{}, err
+		if scope.DeviceIDs, err = s.apiKeyDeviceIDs(key.ID); err != nil {
+			return "", APIKeyRef{}, KeyScope{}, err
 		}
 	}
 	_, _ = s.db.Exec(`UPDATE api_keys SET last_used=? WHERE token_hash=?`, now(), tokenHash)
-	return accountID, scope, nil
+	return accountID, key, scope, nil
 }
 
 // APIKeysByAccount lists an account's keys, newest first (never the secret).
@@ -1225,6 +1232,17 @@ func (s *Store) AccountBySSHKeyFingerprint(fingerprint string) (Account, error) 
 	}
 	_, _ = s.db.Exec(`UPDATE ssh_keys SET last_used=? WHERE fingerprint=?`, now(), fingerprint)
 	return s.AccountByID(accountID)
+}
+
+// SSHKeyNameByFingerprint returns the human-readable name of a registered key,
+// for labelling its activity-trail rows. Falls back to "" (callers show the
+// fingerprint) rather than erroring: a missing name must never fail a session.
+func (s *Store) SSHKeyNameByFingerprint(fingerprint string) string {
+	var name string
+	if err := s.db.QueryRow(`SELECT name FROM ssh_keys WHERE fingerprint=?`, fingerprint).Scan(&name); err != nil {
+		return ""
+	}
+	return name
 }
 
 // SSHKeysByAccount lists an account's registered public keys, newest first.

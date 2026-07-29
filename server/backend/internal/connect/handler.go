@@ -18,6 +18,7 @@ import (
 	"github.com/coder/websocket"
 
 	"abacad/internal/activity"
+	"abacad/internal/auth"
 	"abacad/internal/mcp"
 	"abacad/internal/protocol"
 	"abacad/internal/relay"
@@ -32,9 +33,9 @@ const readLimit = 16 << 20
 type Handler struct {
 	// ResolverFor authenticates the request (API key -> account-scoped resolver),
 	// exactly like the MCP endpoint, and reports the account id (for the activity
-	// trail) and the key's scope (to gate the tunnel capability). Returning an
-	// error rejects 401.
-	ResolverFor func(r *http.Request) (mcp.DeviceResolver, string, store.KeyScope, error)
+	// trail), the key's identity (to attribute the trail row) and the key's scope
+	// (to gate the tunnel capability). Returning an error rejects 401.
+	ResolverFor func(r *http.Request) (mcp.DeviceResolver, string, store.APIKeyRef, store.KeyScope, error)
 	Activity    *activity.Recorder // persistent account trail; may be nil
 }
 
@@ -42,7 +43,7 @@ type Handler struct {
 // ?token= or Authorization: Bearer, checked by ResolverFor). device is required:
 // Resolve rejects an empty device with an error (there is no default device).
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	resolver, accountID, scope, err := h.ResolverFor(r)
+	resolver, accountID, key, scope, err := h.ResolverFor(r)
 	if err != nil {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="abacad"`)
 		http.Error(w, err.Error(), http.StatusUnauthorized)
@@ -97,6 +98,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.Activity.Record(store.Activity{
 			AccountID: accountID, DeviceID: dc.DeviceID,
 			Kind: activity.KindTunnel, Source: "tunnel", Detail: target,
+			ActorKind: store.ActorAPIKey, ActorID: key.ID, ActorLabel: key.Name,
+			IP: auth.ClientIP(r), UserAgent: r.UserAgent(),
 		})
 	}
 

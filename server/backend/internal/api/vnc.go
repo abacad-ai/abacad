@@ -21,7 +21,7 @@ func (a *API) vncStart(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "device not found")
 		return
 	}
-	ctx := relay.WithSource(r.Context(), "dashboard")
+	ctx := relay.WithActor(relay.WithSource(r.Context(), "dashboard"), sessionActor(r))
 	ticket, expiresAt, err := a.VNC.Start(ctx, d.ID, account(r).ID)
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())

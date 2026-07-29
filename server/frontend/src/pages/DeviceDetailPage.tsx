@@ -18,7 +18,7 @@ import {
   Unplug,
 } from "lucide-react";
 import { ApiError, api, type ActivityItem, type DeviceView } from "@/lib/api";
-import { clockTime, cn, relativeTime, untilTime } from "@/lib/utils";
+import { actorText, clockTime, cn, locationText, relativeTime, untilTime } from "@/lib/utils";
 import { clientDownload, resolvePlatform, type PlatformInfo } from "@/lib/devices";
 import { useManifest } from "@/lib/useManifest";
 import { DeviceFrame, DeviceScreen } from "@/components/DeviceScreen";
@@ -902,7 +902,11 @@ function collapseCommands(items: ActivityItem[]): { first: ActivityItem; count: 
       prev.first.kind === "command" &&
       prev.first.method === item.method &&
       prev.first.source === item.source &&
-      prev.first.outcome === item.outcome
+      prev.first.outcome === item.outcome &&
+      // Same reasoning as the Activities page: never merge a run that spans two
+      // credentials or two addresses, or the change disappears from the log.
+      prev.first.actor_id === item.actor_id &&
+      prev.first.ip === item.ip
     ) {
       prev.count += 1;
     } else {
@@ -958,6 +962,9 @@ function EventLog({ events }: { events: ActivityItem[] | null }) {
                 {clockTime(a.ts)}
                 {a.source ? ` · ${a.source}` : ""}
                 {a.duration_ms ? ` · ${a.duration_ms}ms` : ""}
+                {actorText(a) ? ` · ${actorText(a)}` : ""}
+                {a.ip ? ` · ${a.ip}` : ""}
+                {locationText(a) ? ` · ${locationText(a)}` : ""}
               </p>
             </div>
             {a.kind === "command" && (

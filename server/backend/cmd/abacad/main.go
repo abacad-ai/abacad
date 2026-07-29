@@ -32,6 +32,7 @@ import (
 	"abacad/internal/device"
 	"abacad/internal/devicegc"
 	"abacad/internal/events"
+	"abacad/internal/geoip"
 	"abacad/internal/mcp"
 	"abacad/internal/protocol"
 	"abacad/internal/relay"
@@ -89,7 +90,23 @@ func main() {
 		return nil
 	})
 	evlog := events.NewLog()
-	trail := activity.New(st, time.Duration(cfg.ActivityRetentionDays)*24*time.Hour)
+	// Optional geo enrichment for the activity trail. A missing or broken database
+	// is loud but NOT fatal: refusing to boot the whole relay — no devices, no
+	// agents — because an enrichment column can't be filled is disproportionate,
+	// and the file is exactly the sort of thing that is briefly absent while an
+	// operator's update cron swaps it.
+	var trailOpts []activity.Option
+	if cfg.GeoIPDB != "" {
+		locator, err := geoip.Open(cfg.GeoIPDB)
+		if err != nil {
+			log.Printf("geoip DISABLED: cannot open %q: %v — activity rows will record IPs without a country", cfg.GeoIPDB, err)
+		} else {
+			defer locator.Close()
+			trailOpts = append(trailOpts, activity.WithLocator(locator))
+			log.Printf("geoip              : %s", cfg.GeoIPDB)
+		}
+	}
+	trail := activity.New(st, time.Duration(cfg.ActivityRetentionDays)*24*time.Hour, trailOpts...)
 	// Device-enrollment expiry is always on (fixed product behavior, see
 	// api.enrollmentTTL); the sweeper kicks expired devices and reaps dormant rows.
 	devicegc.Start(st, hub, time.Duration(cfg.DeviceDormantDeleteDays)*24*time.Hour)
@@ -155,16 +172,22 @@ func main() {
 	// scoped resolver. The scope also gates which methods the key may call.
 	mcpHandler := &mcp.Handler{
 		Blobs: mcpBlobs{signer: blobSigner},
-		ResolverFor: func(r *http.Request) (mcp.DeviceResolver, mcp.Scope, error) {
+		ResolverFor: func(r *http.Request) (mcp.DeviceResolver, mcp.Scope, context.Context, error) {
 			token := auth.BearerToken(r)
 			if token == "" {
-				return nil, nil, errors.New("missing bearer token (add your abacad API key as Authorization: Bearer …)")
+				return nil, nil, nil, errors.New("missing bearer token (add your abacad API key as Authorization: Bearer …)")
 			}
-			accID, scope, err := st.APIKeyScopeByTokenHash(auth.HashToken(token))
+			accID, key, scope, err := st.APIKeyScopeByTokenHash(auth.HashToken(token))
 			if err != nil {
-				return nil, nil, errors.New("invalid API key")
+				return nil, nil, nil, errors.New("invalid API key")
 			}
-			return factory.ForScope(accID, scope), scope, nil
+			// Attribution for the trail: every command this request relays is
+			// recorded against this key and address, wherever it ends up executing.
+			ctx := relay.WithActor(r.Context(), relay.Actor{
+				Kind: store.ActorAPIKey, ID: key.ID, Label: key.Name,
+				IP: auth.ClientIP(r), UserAgent: r.UserAgent(),
+			})
+			return factory.ForScope(accID, scope), scope, ctx, nil
 		},
 	}
 
@@ -173,19 +196,19 @@ func main() {
 	// endpoint), since the agent-side client is a bare WebSocket that may not set
 	// an Authorization header. The key's scope must permit tunnels.
 	connectHandler := &connect.Handler{
-		ResolverFor: func(r *http.Request) (mcp.DeviceResolver, string, store.KeyScope, error) {
+		ResolverFor: func(r *http.Request) (mcp.DeviceResolver, string, store.APIKeyRef, store.KeyScope, error) {
 			token := auth.BearerToken(r)
 			if token == "" {
 				token = r.URL.Query().Get("token")
 			}
 			if token == "" {
-				return nil, "", store.KeyScope{}, errors.New("missing API key")
+				return nil, "", store.APIKeyRef{}, store.KeyScope{}, errors.New("missing API key")
 			}
-			accID, scope, err := st.APIKeyScopeByTokenHash(auth.HashToken(token))
+			accID, key, scope, err := st.APIKeyScopeByTokenHash(auth.HashToken(token))
 			if err != nil {
-				return nil, "", store.KeyScope{}, errors.New("invalid API key")
+				return nil, "", store.APIKeyRef{}, store.KeyScope{}, errors.New("invalid API key")
 			}
-			return factory.ForScope(accID, scope), accID, scope, nil
+			return factory.ForScope(accID, scope), accID, key, scope, nil
 		},
 		Activity: trail,
 	}
@@ -201,10 +224,12 @@ func main() {
 	// Audit live-view session boundaries (start / viewer-connected / ended) to the
 	// activity trail — the browser side never touches the device command path, so
 	// this is where those events get recorded.
-	vncMgr.SetAudit(func(accountID, deviceID, event string) {
+	vncMgr.SetAudit(func(accountID, deviceID, event string, actor relay.Actor) {
 		trail.Record(store.Activity{
 			AccountID: accountID, DeviceID: deviceID,
 			Kind: activity.KindCommand, Method: event, Source: "dashboard",
+			ActorKind: actor.Kind, ActorID: actor.ID, ActorLabel: actor.Label,
+			IP: actor.IP, UserAgent: actor.UserAgent,
 		})
 	})
 
@@ -227,7 +252,7 @@ func main() {
 			return blob.Caller{AccountID: acc.ID}, nil // dashboard session: the owner
 		}
 		if tok := auth.BearerToken(r); tok != "" {
-			if accID, scope, err := st.APIKeyScopeByTokenHash(auth.HashToken(tok)); err == nil {
+			if accID, _, scope, err := st.APIKeyScopeByTokenHash(auth.HashToken(tok)); err == nil {
 				return blob.Caller{AccountID: accID, Scope: &scope}, nil // agent API-key bearer
 			}
 		}
@@ -377,7 +402,7 @@ func main() {
 				return acc.ID, nil
 			},
 			// Route only to an owned, online device; pin the target to its sshd.
-			OpenTunnel: func(ctx context.Context, accountID, deviceID string) (io.ReadWriteCloser, error) {
+			OpenTunnel: func(ctx context.Context, accountID, deviceID string, caller sshjump.Caller) (io.ReadWriteCloser, error) {
 				dc, err := factory.For(accountID).Resolve(ctx, deviceID)
 				if err != nil {
 					return nil, err
@@ -391,6 +416,11 @@ func main() {
 					trail.Record(store.Activity{
 						AccountID: accountID, DeviceID: dc.DeviceID,
 						Kind: activity.KindSSHSession, Source: "ssh",
+						// The key fingerprint is the identity here; there is no
+						// User-Agent on an SSH connection. Label with the key's
+						// name when it has one, else the fingerprint stands in.
+						ActorKind: store.ActorSSH, ActorID: caller.KeyFingerprint,
+						ActorLabel: sshKeyLabel(st, caller.KeyFingerprint), IP: caller.IP,
 					})
 				}
 				return s, err
@@ -572,6 +602,15 @@ func blobSigningKey(cfg config.Config) []byte {
 	}
 	log.Printf("blob signing key : generated a random one (set ABACAD_BLOB_SIGNING_KEY to persist signed /blobs URLs)")
 	return k
+}
+
+// sshKeyLabel names an SSH key for the activity trail, falling back to its
+// fingerprint so a row is never left without an identifiable actor.
+func sshKeyLabel(st *store.Store, fingerprint string) string {
+	if name := st.SSHKeyNameByFingerprint(fingerprint); name != "" {
+		return name
+	}
+	return fingerprint
 }
 
 // publicBaseURL is the scheme+host that minted signed URLs point at: the

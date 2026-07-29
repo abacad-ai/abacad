@@ -1,0 +1,12 @@
+-- Provenance for the activity trail, part 2/5: the specific credential, e.g.
+-- apikey_<random> for an agent, the session id for a dashboard action, the device
+-- id for a device-driven event, the SSH key id for a jump-host session.
+--
+-- Deliberately NOT a foreign key, for the same reason account_id isn't one (see
+-- 0003): revoking an API key must not blank the trail of what that key did. The
+-- id is kept for exact filtering ("show me everything this key touched"); the
+-- human-readable name is snapshotted separately in actor_label.
+--
+-- Keep this file to the single ALTER so the runner's duplicate-column skip is
+-- unambiguous.
+ALTER TABLE activities ADD COLUMN actor_id TEXT NOT NULL DEFAULT '';

@@ -13,6 +13,7 @@ import (
 	"github.com/coder/websocket"
 
 	"abacad/internal/activity"
+	"abacad/internal/auth"
 	"abacad/internal/events"
 	"abacad/internal/relay"
 	"abacad/internal/store"
@@ -117,12 +118,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			AccountID: accountID, DeviceID: rec.DeviceID,
 			Kind: activity.KindCommand, Method: rec.Method, Source: rec.Source,
 			Outcome: rec.Outcome, DurationMs: rec.Duration.Milliseconds(), Detail: rec.Detail,
+			// From the caller's context, not this device socket: the observer runs
+			// on the device's goroutine, where r is the device's upgrade request.
+			ActorKind: rec.Actor.Kind, ActorID: rec.Actor.ID, ActorLabel: rec.Actor.Label,
+			IP: rec.Actor.IP, UserAgent: rec.Actor.UserAgent,
 		})
 	})
 	if h.Events != nil {
 		h.Events.Append(deviceID, events.Event{Kind: events.KindConnected})
 	}
-	h.Activity.Record(store.Activity{AccountID: accountID, DeviceID: deviceID, Kind: activity.KindConnected})
+	// The device is its own actor for lifecycle rows: it authenticated with its
+	// device token, and the address is the one it dialled in from. No ActorLabel —
+	// device_id is already on the row, and the dashboard resolves names from it.
+	devIP, devUA := auth.ClientIP(r), r.UserAgent()
+	h.Activity.Record(store.Activity{
+		AccountID: accountID, DeviceID: deviceID, Kind: activity.KindConnected,
+		ActorKind: store.ActorDevice, ActorID: deviceID, IP: devIP, UserAgent: devUA,
+	})
 	h.Hub.Register(dc)
 
 	// ReadPump blocks until the socket closes.
@@ -139,6 +151,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.Activity.Record(store.Activity{
 		AccountID: accountID, DeviceID: deviceID,
 		Kind: activity.KindDisconnected, DurationMs: uptime.Milliseconds(), Detail: reason,
+		ActorKind: store.ActorDevice, ActorID: deviceID, IP: devIP, UserAgent: devUA,
 	})
 }
 

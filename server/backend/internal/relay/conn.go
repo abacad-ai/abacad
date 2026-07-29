@@ -32,6 +32,23 @@ type CommandRecord struct {
 	Duration time.Duration
 	Outcome  string // ok | timeout | device_gone | canceled | error
 	Detail   string // error message when Outcome == error
+	Actor    Actor  // which credential issued it, and from where
+}
+
+// Actor identifies the caller behind a command for the activity trail: which
+// credential, and the address it came from. It rides the request context because
+// the record is emitted deep in Send, far from any http.Request — and, for
+// relayed commands, on a goroutine servicing the *device's* socket rather than
+// the caller's.
+//
+// Label is a snapshot of the credential's name at call time, not a live lookup,
+// so revoking or renaming an API key leaves its past actions attributable.
+type Actor struct {
+	Kind      string // store.ActorSession | ActorAPIKey | ActorDevice | ActorSSH
+	ID        string // apikey_<random>, session id, device id, ssh key id
+	Label     string // human-readable name as of now
+	IP        string // client address (see api.clientIP)
+	UserAgent string
 }
 
 // CommandObserver is notified when a device command completes. It runs inline on
@@ -42,10 +59,29 @@ type CommandObserver func(CommandRecord)
 // the activity log can tell an agent's tap from the dashboard's screenshot poll.
 type sourceKey struct{}
 
+// actorKey tags a request context with the credential driving it. Separate from
+// sourceKey on purpose: source is the channel (agent | dashboard | ssh | tunnel),
+// actor is the identity, and the two vary independently — one API key can drive
+// both an /mcp call and a /connect tunnel.
+type actorKey struct{}
+
 // WithSource returns a context that labels commands issued under it. Empty src is
 // ignored (Send defaults to "agent").
 func WithSource(ctx context.Context, src string) context.Context {
 	return context.WithValue(ctx, sourceKey{}, src)
+}
+
+// WithActor returns a context carrying the credential behind the commands issued
+// under it. Commands sent without one still record — just with a blank actor —
+// so an un-stamped call path degrades to today's behaviour rather than failing.
+func WithActor(ctx context.Context, a Actor) context.Context {
+	return context.WithValue(ctx, actorKey{}, a)
+}
+
+// ActorFrom returns the actor stamped on ctx, or the zero Actor if none.
+func ActorFrom(ctx context.Context) Actor {
+	a, _ := ctx.Value(actorKey{}).(Actor)
+	return a
 }
 
 func sourceFrom(ctx context.Context) string {
@@ -304,17 +340,31 @@ func (c *DeviceConn) Send(ctx context.Context, method protocol.Method, params ma
 		dur := time.Since(start)
 		outcome, detail := classify(err)
 		src := sourceFrom(ctx)
+		actor := ActorFrom(ctx)
+		// actor=<label or id> is appended only when stamped, so log lines for
+		// un-attributed paths keep their existing shape.
+		who := actor.Label
+		if who == "" {
+			who = actor.ID
+		}
+		suffix := ""
+		if who != "" {
+			suffix = fmt.Sprintf(" actor=%s", who)
+		}
+		if actor.IP != "" {
+			suffix += " ip=" + actor.IP
+		}
 		if detail != "" {
-			log.Printf("[cmd] device=%s src=%s method=%s dur=%dms result=%s: %s",
-				c.DeviceID, src, method, dur.Milliseconds(), outcome, detail)
+			log.Printf("[cmd] device=%s src=%s%s method=%s dur=%dms result=%s: %s",
+				c.DeviceID, src, suffix, method, dur.Milliseconds(), outcome, detail)
 		} else {
-			log.Printf("[cmd] device=%s src=%s method=%s dur=%dms result=%s",
-				c.DeviceID, src, method, dur.Milliseconds(), outcome)
+			log.Printf("[cmd] device=%s src=%s%s method=%s dur=%dms result=%s",
+				c.DeviceID, src, suffix, method, dur.Milliseconds(), outcome)
 		}
 		if c.onCmd != nil {
 			c.onCmd(CommandRecord{
 				DeviceID: c.DeviceID, Method: string(method), Source: src,
-				Duration: dur, Outcome: outcome, Detail: detail,
+				Duration: dur, Outcome: outcome, Detail: detail, Actor: actor,
 			})
 		}
 	}()

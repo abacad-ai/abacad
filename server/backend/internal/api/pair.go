@@ -81,7 +81,7 @@ func (a *API) pairPoll(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusInternalServerError, "could not complete pairing")
 			return
 		}
-		a.record(d.AccountID, store.Activity{Kind: activity.KindDeviceCreate, DeviceID: d.ID, Detail: d.Name})
+		a.record(r, d.AccountID, store.Activity{Kind: activity.KindDeviceCreate, DeviceID: d.ID, Detail: d.Name})
 		writeJSON(w, http.StatusOK, map[string]string{
 			"device_token": token, // shown once
 			"wss_url":      wsURL(r, token),
@@ -155,7 +155,7 @@ func (a *API) pairApprove(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not approve pairing")
 		return
 	}
-	a.record(account(r).ID, store.Activity{Kind: activity.KindConsent, Method: "enrollment.accepted", Detail: name})
+	a.record(r, account(r).ID, store.Activity{Kind: activity.KindConsent, Method: "enrollment.accepted", Detail: name})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "approved"})
 }
 

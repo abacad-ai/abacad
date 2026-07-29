@@ -1,0 +1,11 @@
+-- Provenance for the activity trail, part 5/5: the client's User-Agent, matching
+-- what the sessions table already records (0001). Weak evidence on its own —
+-- trivially forged — but it distinguishes a browser action from a CLI or SDK
+-- agent at a glance, which is usually the first question when a row looks odd.
+--
+-- Truncated on write (see store.InsertActivity) so a hostile client can't push
+-- megabytes into the trail.
+--
+-- Keep this file to the single ALTER so the runner's duplicate-column skip is
+-- unambiguous.
+ALTER TABLE activities ADD COLUMN user_agent TEXT NOT NULL DEFAULT '';

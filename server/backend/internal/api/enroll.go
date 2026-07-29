@@ -282,8 +282,8 @@ func (a *API) claimDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.record(acc.ID, store.Activity{Kind: activity.KindConsent, Method: "enrollment.accepted", Detail: d.Name})
-	a.record(acc.ID, store.Activity{Kind: activity.KindDeviceCreate, DeviceID: d.ID, Detail: d.Name})
+	a.record(r, acc.ID, store.Activity{Kind: activity.KindConsent, Method: "enrollment.accepted", Detail: d.Name})
+	a.record(r, acc.ID, store.Activity{Kind: activity.KindDeviceCreate, DeviceID: d.ID, Detail: d.Name})
 	writeJSON(w, http.StatusOK, map[string]any{"device_id": d.ID, "name": d.Name})
 }
 

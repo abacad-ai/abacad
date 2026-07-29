@@ -1,12 +1,12 @@
 package api
 
 import (
-	"net"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
+
+	"abacad/internal/auth"
 )
 
 // loginLimiter throttles password attempts to blunt brute force. It is keyed by
@@ -177,19 +177,8 @@ func writeThrottled(w http.ResponseWriter, retryAfter time.Duration, msg string)
 	writeErr(w, http.StatusTooManyRequests, msg)
 }
 
-// clientIP is the throttle/attribution key for a request: the left-most
-// X-Forwarded-For hop when behind a reverse proxy (this server is designed to run
-// behind one — see isHTTPS), else the direct peer address.
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if i := strings.IndexByte(xff, ','); i >= 0 {
-			return strings.TrimSpace(xff[:i])
-		}
-		return strings.TrimSpace(xff)
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
-}
+// clientIP is the throttle/attribution key for a request. It lives in auth so the
+// device and connect handlers — which record the same address into the activity
+// trail but never import this package — resolve it identically. See isHTTPS for
+// the reverse-proxy assumption it shares.
+func clientIP(r *http.Request) string { return auth.ClientIP(r) }

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"abacad/internal/activity"
+	"abacad/internal/auth"
 	"abacad/internal/store"
 )
 
@@ -154,11 +155,20 @@ func (a *API) googleCallback(w http.ResponseWriter, r *http.Request) {
 		a.oauthFail(w, r, "could not sign you in")
 		return
 	}
-	a.startSession(w, r, acc)
+	sid := a.startSession(w, r, acc)
+	// Attribute to the session just minted; its cookie is on the response, so the
+	// request still carries none. See startSession.
+	fp := auth.SessionFingerprint(sid)
 	if created {
-		a.record(acc.ID, store.Activity{Kind: activity.KindRegister, Source: "google", Detail: acc.Email})
+		a.record(r, acc.ID, store.Activity{
+			Kind: activity.KindRegister, Source: "google", Detail: acc.Email,
+			ActorKind: store.ActorSession, ActorID: fp, ActorLabel: acc.Email,
+		})
 	}
-	a.record(acc.ID, store.Activity{Kind: activity.KindLogin, Source: "google"})
+	a.record(r, acc.ID, store.Activity{
+		Kind: activity.KindLogin, Source: "google",
+		ActorKind: store.ActorSession, ActorID: fp, ActorLabel: acc.Email,
+	})
 	http.Redirect(w, r, a.consumeNext(w, r), http.StatusFound)
 }
 

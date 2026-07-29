@@ -131,9 +131,13 @@ func TestAPIKeys(t *testing.T) {
 		t.Fatalf("unexpected key: %+v", key)
 	}
 
-	accID, got, err := s.APIKeyScopeByTokenHash(auth.HashToken(tok))
+	accID, ref, got, err := s.APIKeyScopeByTokenHash(auth.HashToken(tok))
 	if err != nil || accID != a.ID {
 		t.Fatalf("resolve: %v acc=%s", err, accID)
+	}
+	// The identity the activity trail attributes rows to.
+	if ref.ID != key.ID || ref.Name != "scoped" {
+		t.Fatalf("key ref not resolved: %+v", ref)
 	}
 	if got.AllDevices || got.AllMethods || got.AllowTunnel {
 		t.Fatalf("wildcards should be off: %+v", got)
@@ -159,7 +163,10 @@ func TestAPIKeys(t *testing.T) {
 	if err := s.UpdateAPIKey(key.ID, a.ID, "wide", wide); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	_, got2, _ := s.APIKeyScopeByTokenHash(auth.HashToken(tok))
+	_, ref2, got2, _ := s.APIKeyScopeByTokenHash(auth.HashToken(tok))
+	if ref2.Name != "wide" {
+		t.Fatalf("rename should be visible to the next resolve: %+v", ref2)
+	}
 	d3, _, _ := s.CreateDevice(a.ID, "later", "browser", 0) // created AFTER the key
 	if !got2.AllDevices || !got2.AllowsDevice(d3.ID) || !got2.AllowsTunnel() {
 		t.Fatalf("all-devices wildcard should cover future devices: %+v", got2)
@@ -172,7 +179,7 @@ func TestAPIKeys(t *testing.T) {
 	if err := s.DeleteAPIKey(key.ID, a.ID); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if _, _, err := s.APIKeyScopeByTokenHash(auth.HashToken(tok)); err != ErrNotFound {
+	if _, _, _, err := s.APIKeyScopeByTokenHash(auth.HashToken(tok)); err != ErrNotFound {
 		t.Fatalf("deleted key should be dead, got %v", err)
 	}
 }

@@ -19,12 +19,12 @@ func TestDeviceIDFromHost(t *testing.T) {
 		wantErr          bool
 	}{
 		{"ab3xk9t2wq.abacad.ai", "abacad.ai", "ab3xk9t2wq", false}, // bare base32 id (current format)
-		{"dev-ab3x.abacad.ai", "abacad.ai", "dev_ab3x", false},    // legacy prefixed id still round-trips
-		{"DEV-AB3X.Abacad.AI", "abacad.ai", "dev_ab3x", false},    // case-insensitive
-		{"dev-ab3x.abacad.ai.", "abacad.ai", "dev_ab3x", false},   // trailing dot
-		{"dev-ab3x.example.com", "abacad.ai", "", true},         // wrong domain
-		{"abacad.ai", "abacad.ai", "", true},                    // no label
-		{"a.b.abacad.ai", "abacad.ai", "", true},                // multi-label
+		{"dev-ab3x.abacad.ai", "abacad.ai", "dev_ab3x", false},     // legacy prefixed id still round-trips
+		{"DEV-AB3X.Abacad.AI", "abacad.ai", "dev_ab3x", false},     // case-insensitive
+		{"dev-ab3x.abacad.ai.", "abacad.ai", "dev_ab3x", false},    // trailing dot
+		{"dev-ab3x.example.com", "abacad.ai", "", true},            // wrong domain
+		{"abacad.ai", "abacad.ai", "", true},                       // no label
+		{"a.b.abacad.ai", "abacad.ai", "", true},                   // multi-label
 	}
 	for _, c := range cases {
 		got, err := DeviceIDFromHost(c.host, c.base)
@@ -67,11 +67,18 @@ func newSigner(t *testing.T) ssh.Signer {
 
 // startJump wires a Server whose OpenTunnel echoes bytes back and records the
 // device id it was asked for. Returns the listen addr and a pointer to the last
-// requested device id.
+// requested device id. lastCaller captures the provenance the server derived for
+// the connection (peer address + key fingerprint).
 func startJump(t *testing.T, authorized ssh.PublicKey, accountForKey func(ssh.PublicKey) (string, error), openErr error) (addr string, lastDevice *string) {
+	a, d, _ := startJumpWithCaller(t, authorized, accountForKey, openErr)
+	return a, d
+}
+
+func startJumpWithCaller(t *testing.T, authorized ssh.PublicKey, accountForKey func(ssh.PublicKey) (string, error), openErr error) (addr string, lastDevice *string, lastCaller *Caller) {
 	t.Helper()
 	host := newSigner(t)
 	lastDevice = new(string)
+	lastCaller = new(Caller)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -83,8 +90,9 @@ func startJump(t *testing.T, authorized ssh.PublicKey, accountForKey func(ssh.Pu
 		BaseDomain:    "abacad.ai",
 		HostSigner:    host,
 		AccountForKey: accountForKey,
-		OpenTunnel: func(_ context.Context, accountID, deviceID string) (io.ReadWriteCloser, error) {
+		OpenTunnel: func(_ context.Context, accountID, deviceID string, caller Caller) (io.ReadWriteCloser, error) {
 			*lastDevice = deviceID
+			*lastCaller = caller
 			if openErr != nil {
 				return nil, openErr
 			}
@@ -96,7 +104,7 @@ func startJump(t *testing.T, authorized ssh.PublicKey, accountForKey func(ssh.Pu
 	}
 	go srv.Serve(ln) //nolint:errcheck
 
-	return ln.Addr().String(), lastDevice
+	return ln.Addr().String(), lastDevice, lastCaller
 }
 
 func dialJump(t *testing.T, addr string, clientKey ssh.Signer) (*ssh.Client, error) {
@@ -147,6 +155,40 @@ func TestJumpRoutesToOwnedDevice(t *testing.T) {
 	}
 	if *lastDevice != "dev_ab3x" {
 		t.Errorf("routed to device %q, want dev_ab3x", *lastDevice)
+	}
+}
+
+// The jump has no HTTP request to read provenance from, so it must derive the
+// caller from the connection itself: the authorizing key's fingerprint and the
+// true peer address. Both land on the activity trail's ssh.session rows.
+func TestJumpReportsCallerProvenance(t *testing.T) {
+	clientKey := newSigner(t)
+	wantFP := ssh.FingerprintSHA256(clientKey.PublicKey())
+	addr, _, lastCaller := startJumpWithCaller(t, clientKey.PublicKey(),
+		func(k ssh.PublicKey) (string, error) {
+			if ssh.FingerprintSHA256(k) == wantFP {
+				return "acc_1", nil
+			}
+			return "", errors.New("unknown key")
+		}, nil)
+
+	client, err := dialJump(t, addr, clientKey)
+	if err != nil {
+		t.Fatalf("dial jump: %v", err)
+	}
+	defer client.Close()
+	conn, err := client.Dial("tcp", "dev-ab3x.abacad.ai:22")
+	if err != nil {
+		t.Fatalf("channel dial: %v", err)
+	}
+	defer conn.Close()
+
+	if lastCaller.KeyFingerprint != wantFP {
+		t.Errorf("caller fingerprint = %q, want %q", lastCaller.KeyFingerprint, wantFP)
+	}
+	// Host only, no port — the trail stores an address, not a socket.
+	if lastCaller.IP != "127.0.0.1" {
+		t.Errorf("caller IP = %q, want 127.0.0.1", lastCaller.IP)
 	}
 }
 

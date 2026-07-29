@@ -35,7 +35,14 @@ type BlobStore interface {
 // ResolverFunc builds the per-request DeviceResolver and method Scope from the
 // HTTP request (bearer API key -> account + scope). Returning an error rejects the
 // request with 401 before any JSON-RPC dispatch.
-type ResolverFunc func(r *http.Request) (DeviceResolver, Scope, error)
+//
+// The returned context is the one dispatch runs under. It exists so the caller
+// can attach request-scoped attribution (which API key, from which IP) that has
+// to reach the activity trail: commands are recorded deep inside the relay, on a
+// goroutine servicing the *device's* socket, where this request is long out of
+// scope. Returning a nil context means "use the request's own" — this package
+// deliberately knows nothing about what is attached.
+type ResolverFunc func(r *http.Request) (DeviceResolver, Scope, context.Context, error)
 
 // Handler serves POST /mcp (Streamable HTTP, stateless).
 type Handler struct {
@@ -55,11 +62,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resolver, scope, err := h.ResolverFor(r)
+	resolver, scope, ctx, err := h.ResolverFor(r)
 	if err != nil {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="abacad"`)
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
 		return
+	}
+	if ctx == nil {
+		ctx = r.Context()
 	}
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxBody))
@@ -77,7 +87,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := dispatch(context.WithoutCancel(r.Context()), req, resolver, scope, h.Blobs)
+	resp := dispatch(context.WithoutCancel(ctx), req, resolver, scope, h.Blobs)
 	if resp == nil {
 		// Notification (e.g. notifications/initialized): acknowledge, no body.
 		w.WriteHeader(http.StatusAccepted)

@@ -1,0 +1,13 @@
+-- Provenance for the activity trail, part 4/5: the client IP the action came
+-- from, so "this key ran a screenshot from an address I don't recognise" is
+-- answerable from the dashboard.
+--
+-- The value is whatever api.clientIP() resolves: the left-most X-Forwarded-For
+-- hop when present, else the peer address. That header is TRUSTED, so the
+-- reverse proxy in front of this server MUST overwrite X-Forwarded-For rather
+-- than append to it — otherwise a client can choose the IP that appears here.
+-- See guides/self-hosting for the deployment requirement.
+--
+-- Keep this file to the single ALTER so the runner's duplicate-column skip is
+-- unambiguous.
+ALTER TABLE activities ADD COLUMN ip TEXT NOT NULL DEFAULT '';

@@ -55,7 +55,7 @@ type Manager struct {
 	// for the activity trail; set by the host. nil disables it. The device-side
 	// "vnc" command is already logged by the device handler's command observer;
 	// this covers the browser side, which never touches that path.
-	audit func(accountID, deviceID, event string)
+	audit func(accountID, deviceID, event string, actor relay.Actor)
 
 	mu        sync.Mutex
 	byDevice  map[string]*session
@@ -76,12 +76,14 @@ func NewManager(hub *relay.Hub, ingressBase string, account Account) *Manager {
 	}
 }
 
-// SetAudit installs the session-boundary audit hook.
-func (m *Manager) SetAudit(f func(accountID, deviceID, event string)) { m.audit = f }
+// SetAudit installs the session-boundary audit hook. The actor is whoever started
+// the session — carried on the session itself, since only the "started" event has
+// a request behind it.
+func (m *Manager) SetAudit(f func(accountID, deviceID, event string, actor relay.Actor)) { m.audit = f }
 
-func (m *Manager) recordAudit(accountID, deviceID, event string) {
+func (m *Manager) recordAudit(accountID, deviceID, event string, actor relay.Actor) {
 	if m.audit != nil {
-		m.audit(accountID, deviceID, event)
+		m.audit(accountID, deviceID, event, actor)
 	}
 }
 
@@ -99,6 +101,7 @@ type session struct {
 	ingressTok string
 	ticket     string
 	expiresAt  time.Time
+	actor      relay.Actor // who started the session; reused for its later events
 
 	mu        sync.Mutex
 	device    *websocket.Conn
@@ -135,6 +138,9 @@ func (m *Manager) Start(ctx context.Context, deviceID, accountID string) (ticket
 		ingressTok: randToken(), ticket: randToken(),
 		expiresAt: time.Now().Add(defaultTTL),
 		done:      make(chan struct{}),
+		// Captured once, here: the later boundary events (viewer connected, ended)
+		// fire from the viewer's socket or a timer, with no request in reach.
+		actor: relay.ActorFrom(ctx),
 	}
 	m.mu.Lock()
 	m.byDevice[deviceID] = s
@@ -155,7 +161,7 @@ func (m *Manager) Start(ctx context.Context, deviceID, accountID string) (ticket
 		return "", time.Time{}, err
 	}
 
-	m.recordAudit(accountID, deviceID, "live_view_started")
+	m.recordAudit(accountID, deviceID, "live_view_started", s.actor)
 	time.AfterFunc(defaultTTL, s.close)
 	return s.ticket, s.expiresAt, nil
 }
@@ -231,7 +237,7 @@ func (m *Manager) ServeWatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c.SetReadLimit(readLimit)
-	m.recordAudit(s.accountID, s.deviceID, "live_view_viewer_connected")
+	m.recordAudit(s.accountID, s.deviceID, "live_view_viewer_connected", s.actor)
 	s.attach(c, false)
 }
 
@@ -298,7 +304,7 @@ func (s *session) close() {
 		}
 		s.mgr.remove(s)
 		s.mgr.tellDeviceStop(s.deviceID)
-		s.mgr.recordAudit(s.accountID, s.deviceID, "live_view_ended")
+		s.mgr.recordAudit(s.accountID, s.deviceID, "live_view_ended", s.actor)
 		close(s.done)
 	})
 }

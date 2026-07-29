@@ -1,0 +1,13 @@
+-- Provenance for the activity trail, part 3/5: the actor's human-readable name as
+-- it was AT THE TIME OF THE ACTION — the API key's name ("laptop agent"), the
+-- account email for a dashboard action, the device name.
+--
+-- This is a snapshot on purpose, not a join. An audit trail that renders "(key
+-- deleted)" for exactly the credential you are investigating is useless, and a
+-- renamed key would silently rewrite history. The cost is that a renamed key
+-- shows its old name on old rows — which is the correct answer to "what was this
+-- called when it did that", even though it can differ from the current key list.
+--
+-- Keep this file to the single ALTER so the runner's duplicate-column skip is
+-- unambiguous.
+ALTER TABLE activities ADD COLUMN actor_label TEXT NOT NULL DEFAULT '';

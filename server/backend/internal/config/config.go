@@ -17,6 +17,12 @@ type Config struct {
 	DevCORS       bool   // permissive CORS for local dev (Vite / smoke.mjs hitting Go directly)
 	Seed          bool   // create a dev account/device/tokens on boot
 
+	// GeoIPDB is the path to a MaxMind GeoLite2/GeoIP2 *City* database. Empty
+	// disables geo: activity rows then carry an IP but no country or city. The
+	// database is not shipped with abacad — MaxMind's terms don't permit
+	// redistributing it — so operators download their own and keep it updated.
+	GeoIPDB string
+
 	ActivityRetentionDays    int // prune activity-trail rows older than this (0 = keep forever)
 	BlobRetentionDays        int // delete data-plane blobs (files, recordings) older than this (0 = keep forever)
 	ScreenshotRetentionHours int // delete cached per-device screenshots older than this (0 = keep forever)
@@ -67,6 +73,7 @@ func Load() Config {
 	flag.Int64Var(&c.MaxBlobBytes, "max-blob-bytes", envOrInt64("ABACAD_MAX_BLOB_BYTES", 1<<30), "reject a single /blobs upload larger than this (bytes)")
 	flag.BoolVar(&c.DevCORS, "dev-cors", os.Getenv("ABACAD_DEV_CORS") == "1", "enable permissive CORS for local dev")
 	flag.BoolVar(&c.Seed, "seed", false, "seed a dev account/device/tokens on boot and print them")
+	flag.StringVar(&c.GeoIPDB, "geoip-db", envOr("ABACAD_GEOIP_DB", ""), "path to a MaxMind GeoLite2/GeoIP2 City .mmdb, to record the country/city an activity came from (empty disables geo)")
 	flag.IntVar(&c.ActivityRetentionDays, "activity-retention-days", int(envOrInt64("ABACAD_ACTIVITY_RETENTION_DAYS", 90)), "prune activity-trail rows older than this many days (0 keeps them forever)")
 	flag.IntVar(&c.BlobRetentionDays, "blob-retention-days", int(envOrInt64("ABACAD_BLOB_RETENTION_DAYS", 7)), "delete data-plane blobs (transferred files, screen recordings) older than this many days (0 keeps them forever)")
 	flag.IntVar(&c.ScreenshotRetentionHours, "screenshot-retention-hours", int(envOrInt64("ABACAD_SCREENSHOT_RETENTION_HOURS", 24)), "delete cached per-device screenshots older than this many hours (0 keeps them forever)")

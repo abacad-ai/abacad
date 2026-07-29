@@ -1,0 +1,16 @@
+-- Where the client IP resolved to, part 1/2: ISO 3166-1 alpha-2 country code
+-- ("GB", "SE"), looked up against the operator's MaxMind City database when one
+-- is configured (-geoip-db). Empty when geo is switched off, when the address is
+-- private, or when the database has no entry for it.
+--
+-- The code is stored rather than a country name: it is stable, compact and exact
+-- to filter on, and rendering it as a name or flag is the dashboard's job.
+--
+-- Resolved once at write time and stored, not joined at read time. The geo
+-- database is replaced weekly, so a lookup done today would answer a different
+-- question than "where did this come from when it happened" — the same reasoning
+-- that makes actor_label a snapshot (0017).
+--
+-- Keep this file to the single ALTER so the runner's duplicate-column skip is
+-- unambiguous.
+ALTER TABLE activities ADD COLUMN country TEXT NOT NULL DEFAULT '';

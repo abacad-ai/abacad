@@ -51,6 +51,65 @@ proxy actually serves.
 **TLS is not optional.** Every native client refuses a plaintext `ws://` relay unless it
 resolves to loopback, so a relay without a certificate simply won't accept devices.
 
+### Your proxy must set `X-Forwarded-For`
+
+The server reads the client's address from the left-most `X-Forwarded-For` hop and trusts
+it. That address is used for two things: per-IP rate limiting on sign-in and enrollment,
+and the "from where" column in your dashboard's activity trail.
+
+So the proxy in front of the relay must **overwrite** that header with the real peer
+address, not append to it. If it appends — or if you expose the binary directly with no
+proxy at all — any client can send its own `X-Forwarded-For` and choose the address that
+lands in your audit log and your rate limiter. The trail will look completely normal
+while attributing actions to an address the caller picked.
+
+Caddy's `reverse_proxy` does the right thing by default. On nginx, set it explicitly:
+
+```nginx
+proxy_set_header X-Forwarded-For $remote_addr;   # NOT $proxy_add_x_forwarded_for
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_set_header X-Forwarded-Host $host;
+```
+
+`$proxy_add_x_forwarded_for` **appends** to whatever the client sent, which leaves the
+client's forged value in the left-most position — exactly the case to avoid. Use
+`$remote_addr` unless you run a further trusted proxy in front, in which case that one
+must be the thing sanitising the header.
+
+The SSH jump host is unaffected: it reads the peer address straight off the socket, so
+those rows are always the true origin.
+
+### Optional: country and city in the activity trail
+
+The relay can record the country and city an activity came from, so an unfamiliar entry
+reads as "from a country I've never worked from" rather than a bare number. This is off
+by default and needs a MaxMind database, which **abacad does not ship** — MaxMind's terms
+don't permit redistributing it.
+
+1. Create a free [MaxMind account](https://www.maxmind.com/en/geolite2/signup) and
+   generate a licence key.
+2. Download the **GeoLite2 City** database (`.mmdb`, not the CSV).
+3. Point the relay at it:
+
+```sh
+abacad-server -geoip-db /var/lib/abacad/GeoLite2-City.mmdb   # or ABACAD_GEOIP_DB
+```
+
+The file is read once at boot, so **re-download it periodically and restart** — MaxMind
+republishes weekly and a stale database drifts. If the path is missing or unreadable the
+relay logs `geoip DISABLED: …` and starts anyway: activity rows then carry an IP and no
+location, which is the same as running without geo at all. Nothing else degrades.
+
+**Country is dependable; city is not.** City-level geolocation is regularly the wrong
+city in the right region, and for mobile carriers, VPNs and CGNAT it can be off by a
+country. The dashboard shows the country code first for that reason. Treat a surprising
+city as a prompt to look at the IP and the credential, not as a finding on its own.
+
+Private, loopback and CGNAT addresses are never looked up, so on a relay reached over a
+LAN or VPN these columns stay empty by design. And because the location is derived from
+the same `X-Forwarded-For` described above, it inherits that header's trust: if the proxy
+appends instead of overwriting, the country is as forgeable as the address it came from.
+
 ## Pointing clients at it
 
 Each client has a **relay** setting. Change it and the client re-enrolls against the new

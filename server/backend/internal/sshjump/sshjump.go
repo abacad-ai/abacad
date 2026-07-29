@@ -51,7 +51,18 @@ type Server struct {
 	// OpenTunnel bridges to the device's local sshd. It must enforce that the
 	// account owns the device and that it is online, then open a stream to the
 	// device's 127.0.0.1:22. A non-nil error rejects the channel.
-	OpenTunnel func(ctx context.Context, accountID, deviceID string) (io.ReadWriteCloser, error)
+	OpenTunnel func(ctx context.Context, accountID, deviceID string, caller Caller) (io.ReadWriteCloser, error)
+}
+
+// Caller is the provenance of one jump connection, for the activity trail. There
+// is no HTTP request anywhere on this path, so the address comes off the accepted
+// socket and the identity is the public key that authorized the connection.
+//
+// Unlike the HTTP paths, IP here is the true peer: nothing on this path consults
+// X-Forwarded-For, so a client cannot choose the address that gets recorded.
+type Caller struct {
+	IP             string // peer address, host only
+	KeyFingerprint string // SHA256:… of the public key that authorized the session
 }
 
 // ListenAndServe binds Addr and serves until the listener errors. It blocks.
@@ -73,8 +84,13 @@ func (s *Server) Serve(ln net.Listener) error {
 				return nil, errors.New("unauthorized key — add it to your abacad account")
 			}
 			// Carry the account id to the channel handler via the connection's
-			// permissions (the only per-connection state ssh exposes to us).
-			return &ssh.Permissions{Extensions: map[string]string{"account_id": accountID}}, nil
+			// permissions (the only per-connection state ssh exposes to us). The
+			// key fingerprint rides along so the trail can name which key was used,
+			// not just which account.
+			return &ssh.Permissions{Extensions: map[string]string{
+				"account_id": accountID,
+				"key_fp":     ssh.FingerprintSHA256(key),
+			}}, nil
 		},
 	}
 	cfg.AddHostKey(s.HostSigner)
@@ -96,6 +112,12 @@ func (s *Server) handleConn(nConn net.Conn, cfg *ssh.ServerConfig) {
 	}
 	defer sshConn.Close()
 	accountID := sshConn.Permissions.Extensions["account_id"]
+	caller := Caller{KeyFingerprint: sshConn.Permissions.Extensions["key_fp"]}
+	if host, _, err := net.SplitHostPort(nConn.RemoteAddr().String()); err == nil {
+		caller.IP = host
+	} else {
+		caller.IP = nConn.RemoteAddr().String()
+	}
 
 	go ssh.DiscardRequests(reqs) // no global requests are meaningful to a jump
 	for newChan := range chans {
@@ -105,7 +127,7 @@ func (s *Server) handleConn(nConn net.Conn, cfg *ssh.ServerConfig) {
 			_ = newChan.Reject(ssh.Prohibited, "this is a jump host: only direct-tcpip is served")
 			continue
 		}
-		go s.handleForward(accountID, newChan)
+		go s.handleForward(accountID, caller, newChan)
 	}
 }
 
@@ -117,7 +139,7 @@ type directTCPIP struct {
 	OriginatorPort uint32
 }
 
-func (s *Server) handleForward(accountID string, newChan ssh.NewChannel) {
+func (s *Server) handleForward(accountID string, caller Caller, newChan ssh.NewChannel) {
 	var req directTCPIP
 	if err := ssh.Unmarshal(newChan.ExtraData(), &req); err != nil {
 		_ = newChan.Reject(ssh.ConnectionFailed, "malformed direct-tcpip request")
@@ -134,7 +156,7 @@ func (s *Server) handleForward(accountID string, newChan ssh.NewChannel) {
 	// ports on the device's host — it forwards to SSH and nothing else.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	tunnel, err := s.OpenTunnel(ctx, accountID, deviceID)
+	tunnel, err := s.OpenTunnel(ctx, accountID, deviceID, caller)
 	if err != nil {
 		_ = newChan.Reject(ssh.ConnectionFailed, err.Error())
 		return

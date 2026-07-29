@@ -12,7 +12,7 @@ import {
   TerminalSquare,
 } from "lucide-react";
 import { api, type ActivityItem, type DeviceView } from "@/lib/api";
-import { clockTime } from "@/lib/utils";
+import { actorText, clockTime, locationText } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/PageHeader";
@@ -39,7 +39,12 @@ const SOURCES = [
 ] as const;
 
 // A row is either one activity or a run of consecutive identical commands
-// (same device/method/source/outcome) collapsed so agent bursts stay scannable.
+// (same device/method/source/outcome AND same actor/IP) collapsed so agent bursts
+// stay scannable.
+//
+// Actor and IP are part of the identity on purpose: collapsing a run that spans
+// two different credentials, or the same credential from two addresses, would
+// hide the exact change this page exists to surface.
 interface Row {
   first: ActivityItem; // newest in the run
   last: ActivityItem; // oldest in the run
@@ -57,7 +62,9 @@ function collapse(items: ActivityItem[]): Row[] {
       prev.first.device_id === item.device_id &&
       prev.first.method === item.method &&
       prev.first.source === item.source &&
-      prev.first.outcome === item.outcome
+      prev.first.outcome === item.outcome &&
+      prev.first.actor_id === item.actor_id &&
+      prev.first.ip === item.ip
     ) {
       prev.last = item;
       prev.count += 1;
@@ -173,6 +180,11 @@ export function ActivitiesPage() {
   const [category, setCategory] = useState<string>("");
   const [deviceId, setDeviceId] = useState<string>("");
   const [source, setSource] = useState<string>("");
+  // Drill-downs, set by clicking an actor or address on a row rather than from a
+  // dropdown: the useful values are whatever is already in the trail.
+  const [actor, setActor] = useState<string>("");
+  const [ip, setIp] = useState<string>("");
+  const [country, setCountry] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const generation = useRef(0);
@@ -186,7 +198,7 @@ export function ActivitiesPage() {
     setItems(null);
     setError(null);
     api
-      .activities({ kind: category, device: deviceId, source, limit: PAGE_SIZE })
+      .activities({ kind: category, device: deviceId, source, actor, ip, country, limit: PAGE_SIZE })
       .then((result) => {
         if (generation.current !== gen) return;
         setItems(result.activities);
@@ -195,7 +207,7 @@ export function ActivitiesPage() {
       .catch((err) => {
         if (generation.current === gen) setError((err as Error).message);
       });
-  }, [category, deviceId, source]);
+  }, [category, deviceId, source, actor, ip, country]);
 
   const loadOlder = async () => {
     if (!nextBefore || loadingMore) return;
@@ -206,6 +218,9 @@ export function ActivitiesPage() {
         kind: category,
         device: deviceId,
         source,
+        actor,
+        ip,
+        country,
         before: nextBefore,
         limit: PAGE_SIZE,
       });
@@ -223,6 +238,15 @@ export function ActivitiesPage() {
     if (!id) return "device";
     return devices.find((d) => d.id === id)?.name ?? id;
   };
+
+  // Label for the active credential filter. Read off a matching row so the chip
+  // shows "key laptop agent" rather than the raw id; falls back to the id when
+  // the filter is on but no loaded row carries it (e.g. an empty result).
+  const actorChip = useMemo(() => {
+    if (!actor) return "";
+    const match = items?.find((i) => i.actor_id === actor);
+    return (match && actorText(match)) || actor;
+  }, [actor, items]);
 
   // Collapse command bursts, then group rows by day for the timeline headers.
   const dayGroups = useMemo(() => {
@@ -280,6 +304,42 @@ export function ActivitiesPage() {
             </option>
           ))}
         </select>
+        {/* Drill-downs have no dropdown to show they are on, so they get an
+            explicit dismissable chip — otherwise a filtered trail is easy to
+            misread as an empty one. */}
+        {actorChip && (
+          <button
+            type="button"
+            onClick={() => setActor("")}
+            className="flex h-8 items-center gap-1.5 rounded-full border border-border bg-brand-soft px-3 font-mono text-[11px] text-brand hover:opacity-80"
+          >
+            {actorChip}
+            <span aria-hidden>×</span>
+            <span className="sr-only">Clear credential filter</span>
+          </button>
+        )}
+        {country && (
+          <button
+            type="button"
+            onClick={() => setCountry("")}
+            className="flex h-8 items-center gap-1.5 rounded-full border border-border bg-brand-soft px-3 font-mono text-[11px] text-brand hover:opacity-80"
+          >
+            {country}
+            <span aria-hidden>×</span>
+            <span className="sr-only">Clear country filter</span>
+          </button>
+        )}
+        {ip && (
+          <button
+            type="button"
+            onClick={() => setIp("")}
+            className="flex h-8 items-center gap-1.5 rounded-full border border-border bg-brand-soft px-3 font-mono text-[11px] text-brand hover:opacity-80"
+          >
+            {ip}
+            <span aria-hidden>×</span>
+            <span className="sr-only">Clear address filter</span>
+          </button>
+        )}
       </div>
 
       {error && (
@@ -342,6 +402,45 @@ export function ActivitiesPage() {
                             : clockTime(row.first.ts)}
                           {row.first.source ? ` · ${row.first.source}` : ""}
                           {row.count === 1 && row.first.duration_ms ? ` · ${row.first.duration_ms}ms` : ""}
+                          {actorText(row.first) && (
+                            <>
+                              {" · "}
+                              <button
+                                type="button"
+                                onClick={() => setActor(row.first.actor_id ?? "")}
+                                title="Show only this credential"
+                                className="underline decoration-dotted underline-offset-2 hover:text-ink"
+                              >
+                                {actorText(row.first)}
+                              </button>
+                            </>
+                          )}
+                          {row.first.ip && (
+                            <>
+                              {" · "}
+                              <button
+                                type="button"
+                                onClick={() => setIp(row.first.ip ?? "")}
+                                title="Show only this address"
+                                className="underline decoration-dotted underline-offset-2 hover:text-ink"
+                              >
+                                {row.first.ip}
+                              </button>
+                            </>
+                          )}
+                          {locationText(row.first) && (
+                            <>
+                              {" · "}
+                              <button
+                                type="button"
+                                onClick={() => setCountry(row.first.country ?? "")}
+                                title={`Show only activity from ${row.first.country}`}
+                                className="underline decoration-dotted underline-offset-2 hover:text-ink"
+                              >
+                                {locationText(row.first)}
+                              </button>
+                            </>
+                          )}
                         </p>
                       </div>
                       {isCommand && (

@@ -188,8 +188,11 @@ func (a *API) register(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not create account")
 		return
 	}
-	a.startSession(w, r, acc)
-	a.record(acc.ID, store.Activity{Kind: activity.KindRegister, Detail: acc.Email})
+	sid := a.startSession(w, r, acc)
+	a.record(r, acc.ID, store.Activity{
+		Kind: activity.KindRegister, Detail: acc.Email,
+		ActorKind: store.ActorSession, ActorID: auth.SessionFingerprint(sid), ActorLabel: acc.Email,
+	})
 	writeJSON(w, http.StatusCreated, map[string]string{"account_id": acc.ID, "email": acc.Email})
 }
 
@@ -211,21 +214,24 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 		// A wrong password on a real account is worth the trail; an unknown email
 		// has no account to attach it to.
 		if err == nil {
-			a.record(acc.ID, store.Activity{Kind: activity.KindLoginFailed, Outcome: "failed", Detail: "wrong password"})
+			a.record(r, acc.ID, store.Activity{Kind: activity.KindLoginFailed, Outcome: "failed", Detail: "wrong password"})
 		}
 		writeErr(w, http.StatusUnauthorized, "invalid email or password")
 		return
 	}
 	a.logins.reset(ip)
-	a.startSession(w, r, acc)
-	a.record(acc.ID, store.Activity{Kind: activity.KindLogin})
+	sid := a.startSession(w, r, acc)
+	a.record(r, acc.ID, store.Activity{
+		Kind:      activity.KindLogin,
+		ActorKind: store.ActorSession, ActorID: auth.SessionFingerprint(sid), ActorLabel: acc.Email,
+	})
 	writeJSON(w, http.StatusOK, map[string]string{"account_id": acc.ID, "email": acc.Email})
 }
 
 func (a *API) logout(w http.ResponseWriter, r *http.Request) {
 	if sid := auth.SessionID(r); sid != "" {
 		if acc, err := a.Store.AccountBySession(sid); err == nil {
-			a.record(acc.ID, store.Activity{Kind: activity.KindLogout})
+			a.record(r, acc.ID, store.Activity{Kind: activity.KindLogout})
 		}
 		_ = a.Store.DeleteSession(sid)
 	}
@@ -312,7 +318,7 @@ func (a *API) createDevice(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not create device")
 		return
 	}
-	a.record(account(r).ID, store.Activity{Kind: activity.KindDeviceCreate, DeviceID: d.ID, Detail: d.Name})
+	a.record(r, account(r).ID, store.Activity{Kind: activity.KindDeviceCreate, DeviceID: d.ID, Detail: d.Name})
 	resp := map[string]any{
 		"id":           d.ID,
 		"name":         d.Name,
@@ -364,7 +370,7 @@ func (a *API) updateDevice(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
-		a.record(accID, store.Activity{Kind: activity.KindDeviceRename, DeviceID: id, Detail: name})
+		a.record(r, accID, store.Activity{Kind: activity.KindDeviceRename, DeviceID: id, Detail: name})
 	}
 
 	if body.Humanize != nil {
@@ -383,12 +389,12 @@ func (a *API) updateDevice(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if *body.Humanize {
-			a.record(accID, store.Activity{Kind: activity.KindConsent, DeviceID: id, Method: "humanize.enable"})
+			a.record(r, accID, store.Activity{Kind: activity.KindConsent, DeviceID: id, Method: "humanize.enable"})
 		}
 	}
 
 	if body.Capabilities != nil {
-		if err := a.setCapabilities(w, id, accID, *body.Capabilities); err != nil {
+		if err := a.setCapabilities(w, r, id, accID, *body.Capabilities); err != nil {
 			return
 		}
 	}
@@ -410,7 +416,7 @@ func (a *API) updateDevice(w http.ResponseWriter, r *http.Request) {
 		if err := a.setExpiryOr404(w, id, accID, 0); err != nil {
 			return
 		}
-		a.record(accID, store.Activity{Kind: activity.KindConsent, DeviceID: id, Method: "enrollment.permanent"})
+		a.record(r, accID, store.Activity{Kind: activity.KindConsent, DeviceID: id, Method: "enrollment.permanent"})
 	}
 
 	w.WriteHeader(http.StatusNoContent)
@@ -432,7 +438,7 @@ var errHandled = errors.New("response written")
 // Order matters here, and not incidentally: live view is stopped BEFORE the new
 // set is persisted. The stop is itself a command to the device, so persisting
 // first would have the gate deny the very instruction that ends the session.
-func (a *API) setCapabilities(w http.ResponseWriter, id, accID string, names []string) error {
+func (a *API) setCapabilities(w http.ResponseWriter, r *http.Request, id, accID string, names []string) error {
 	caps := make([]protocol.Capability, 0, len(names))
 	seen := map[protocol.Capability]bool{}
 	for _, n := range names {
@@ -478,7 +484,7 @@ func (a *API) setCapabilities(w http.ResponseWriter, id, accID string, names []s
 		}
 	}
 
-	a.record(accID, store.Activity{
+	a.record(r, accID, store.Activity{
 		Kind: activity.KindConsent, DeviceID: id, Method: "capabilities.set",
 		Detail: next.String(),
 	})
@@ -519,7 +525,7 @@ func (a *API) deleteDevice(w http.ResponseWriter, r *http.Request) {
 	if a.Shots != nil {
 		a.Shots.Delete(r.PathValue("id"))
 	}
-	a.record(account(r).ID, store.Activity{Kind: activity.KindDeviceDelete, DeviceID: r.PathValue("id"), Detail: name})
+	a.record(r, account(r).ID, store.Activity{Kind: activity.KindDeviceDelete, DeviceID: r.PathValue("id"), Detail: name})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -533,7 +539,7 @@ func (a *API) rotateDeviceToken(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not rotate token")
 		return
 	}
-	a.record(account(r).ID, store.Activity{Kind: activity.KindDeviceToken, DeviceID: r.PathValue("id")})
+	a.record(r, account(r).ID, store.Activity{Kind: activity.KindDeviceToken, DeviceID: r.PathValue("id")})
 	writeJSON(w, http.StatusOK, map[string]string{"device_token": token, "wss_url": wsURL(r, token)})
 }
 
@@ -587,8 +593,8 @@ func (a *API) captureLive(r *http.Request, deviceID string) ([]byte, bool) {
 		return nil, false
 	}
 	// Tag this as a dashboard-originated command so the activity log can tell it
-	// apart from the agent's own screenshots.
-	ctx := relay.WithSource(r.Context(), "dashboard")
+	// apart from the agent's own screenshots, and attribute it to the session.
+	ctx := relay.WithActor(relay.WithSource(r.Context(), "dashboard"), sessionActor(r))
 	raw, err := dc.Send(ctx, protocol.MethodScreenshot, map[string]any{"include_ui_tree": false}, 0)
 	if err != nil {
 		return nil, false
@@ -720,7 +726,7 @@ func (a *API) createKey(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not create key")
 		return
 	}
-	a.record(account(r).ID, store.Activity{Kind: activity.KindAPIKeyCreate, Detail: name})
+	a.record(r, account(r).ID, store.Activity{Kind: activity.KindAPIKeyCreate, Detail: name})
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"secret":  token, // shown once
 		"mcp_url": httpURL(r, "/mcp"),
@@ -747,7 +753,7 @@ func (a *API) updateKey(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not update key")
 		return
 	}
-	a.record(account(r).ID, store.Activity{Kind: activity.KindAPIKeyUpdate, Detail: name})
+	a.record(r, account(r).ID, store.Activity{Kind: activity.KindAPIKeyUpdate, Detail: name})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -770,7 +776,7 @@ func (a *API) deleteKey(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not delete key")
 		return
 	}
-	a.record(account(r).ID, store.Activity{Kind: activity.KindAPIKeyDelete, Detail: detail})
+	a.record(r, account(r).ID, store.Activity{Kind: activity.KindAPIKeyDelete, Detail: detail})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -886,7 +892,7 @@ func (a *API) addSSHKey(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not add ssh key")
 		return
 	}
-	a.record(account(r).ID, store.Activity{Kind: activity.KindSSHKeyAdd, Detail: k.Name + " " + k.Fingerprint})
+	a.record(r, account(r).ID, store.Activity{Kind: activity.KindSSHKeyAdd, Detail: k.Name + " " + k.Fingerprint})
 	writeJSON(w, http.StatusCreated, sshKeyView{
 		ID: k.ID, Name: k.Name, Fingerprint: k.Fingerprint, PublicKey: k.PublicKey,
 		CreatedAt: time.Unix(k.CreatedAt, 0).UTC().Format(time.RFC3339),
@@ -912,17 +918,23 @@ func (a *API) deleteSSHKey(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not delete ssh key")
 		return
 	}
-	a.record(account(r).ID, store.Activity{Kind: activity.KindSSHKeyRemove, Detail: detail})
+	a.record(r, account(r).ID, store.Activity{Kind: activity.KindSSHKeyRemove, Detail: detail})
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // --- session cookie ---
 
-func (a *API) startSession(w http.ResponseWriter, r *http.Request, acc store.Account) {
+// startSession mints a session and sets its cookie, returning the new session id
+// so the caller can attribute the sign-in row to the session it just created —
+// the cookie is on the *response*, so auth.SessionID(r) is still empty here.
+// Linking them is what lets an unfamiliar sign-in be traced to what that session
+// went on to do. Returns "" if the session could not be created (response already
+// written).
+func (a *API) startSession(w http.ResponseWriter, r *http.Request, acc store.Account) string {
 	sid, err := a.Store.CreateSession(acc.ID, r.UserAgent(), sessionTTL)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "could not start session")
-		return
+		return ""
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     auth.SessionCookie,
@@ -933,6 +945,7 @@ func (a *API) startSession(w http.ResponseWriter, r *http.Request, acc store.Acc
 		Secure:   isHTTPS(r),
 		Expires:  time.Now().Add(sessionTTL),
 	})
+	return sid
 }
 
 func (a *API) clearCookie(r *http.Request) *http.Cookie {

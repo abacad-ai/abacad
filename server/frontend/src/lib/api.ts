@@ -106,6 +106,18 @@ export interface ActivityItem {
   outcome?: string;
   duration_ms?: number;
   detail?: string;
+  // Provenance: which credential caused this, and from where. Absent on rows
+  // recorded before the trail tracked it, and on events with no actor (a failed
+  // sign-in is by definition an unknown party).
+  actor_kind?: "session" | "apikey" | "device" | "ssh";
+  actor_id?: string; // key id, or a session fingerprint — never a live credential
+  actor_label?: string; // name as of the moment it acted, not a live lookup
+  ip?: string;
+  user_agent?: string;
+  // Where the IP resolved to when the row was written, when the relay has a geo
+  // database configured. Absent otherwise, and for private addresses.
+  country?: string; // ISO 3166-1 alpha-2, e.g. "GB"
+  city?: string; // approximate, and often absent even when country is known
 }
 
 export interface ActivitiesResult {
@@ -139,6 +151,9 @@ export interface ActivityQuery {
   device?: string;
   kind?: string; // category prefix ("device") or exact kind
   source?: string;
+  actor?: string; // exact credential id ("everything this key did")
+  ip?: string; // exact client address
+  country?: string; // ISO 3166-1 alpha-2
   limit?: number;
 }
 
@@ -276,6 +291,9 @@ export const api = {
     if (q.device) params.set("device", q.device);
     if (q.kind) params.set("kind", q.kind);
     if (q.source) params.set("source", q.source);
+    if (q.actor) params.set("actor", q.actor);
+    if (q.ip) params.set("ip", q.ip);
+    if (q.country) params.set("country", q.country);
     if (q.limit) params.set("limit", String(q.limit));
     const qs = params.toString();
     return req<ActivitiesResult>(`/api/activities${qs ? `?${qs}` : ""}`);
