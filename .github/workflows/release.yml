@@ -18,7 +18,8 @@
 #   - macOS (.dmg, Developer ID + notarized) and Android (signed APK) build on
 #     the self-hosted Mac mini, where the keys live — they never touch GitHub
 #     secrets. See the repo README / Makefile header for the box's prerequisites
-#     (login-keychain Developer ID cert, `abacad-notary` profile,
+#     (Developer ID cert + `abacad-notary` profile in ci.keychain — NOT the login
+#     keychain — unlocked per-job from ~/.config/ci-keychain.pw, plus
 #     ~/.abacad/android-release.jks + ~/.gradle/gradle.properties).
 #
 # Each job builds its client and stages it (via `make stage-<platform>`) under the
@@ -101,6 +102,19 @@ jobs:
         shell: zsh -l -e -o pipefail {0}
     steps:
       - uses: actions/checkout@v4
+      # The Developer ID identity AND the abacad-notary profile live in
+      # ci.keychain, not the login keychain. This box has no auto-login (a
+      # deliberate choice — auto-login would store the account password in
+      # /etc/kcpassword), so the runner has no logged-in desktop session and
+      # EVERY keychain is locked when a job starts. Without this, codesign fails
+      # with a bare `errSecInternalComponent` that names neither the keychain nor
+      # the lock. The password is a random throwaway that exists only on this
+      # machine (mode 600) — deliberately not a GitHub secret, so the signing
+      # material never leaves the box.
+      - name: Unlock the signing keychain
+        run: |
+          security unlock-keychain -p "$(cat ~/.config/ci-keychain.pw)" ci.keychain
+          security set-keychain-settings ci.keychain   # no auto-lock while we build
       - name: Build, sign & notarize
         run: make macos-release
       - name: Stage under the published name
