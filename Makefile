@@ -47,6 +47,20 @@ BUNDLE_ID      ?= ai.abacad.mac
 TEAM_ID        ?= R3845XW5FZ
 NOTARY_PROFILE ?= abacad-notary
 
+# Which keychain holds that profile. notarytool reads the DEFAULT (login)
+# keychain unless told otherwise, but on the CI Mac the profile lives in
+# ci.keychain alongside the Developer ID identity — and that box has no desktop
+# session, so the login keychain is locked and notarytool dies with
+# `keychainLocked(keychainName: "default")` even though signing just succeeded.
+# Point it at ci.keychain when that keychain exists; on a dev Mac that has no
+# ci.keychain the flag is omitted and the default keychain is used as before.
+CI_KEYCHAIN := $(HOME)/Library/Keychains/ci.keychain-db
+ifneq ($(wildcard $(CI_KEYCHAIN)),)
+NOTARY_KEYCHAIN := --keychain "$(CI_KEYCHAIN)"
+else
+NOTARY_KEYCHAIN :=
+endif
+
 DEV_ID := Developer ID Application: Beijing Xiaoyuanzhu Technology Co., Ltd. ($(TEAM_ID))
 ifeq ($(shell security find-identity -v -p codesigning 2>/dev/null | grep -c "$(TEAM_ID)"),0)
 SIGN_IDENTITY ?= -
@@ -375,14 +389,14 @@ endif
 _mac-notarize-app:
 	rm -f macos/build/abacad-notarize.zip
 	ditto -c -k --keepParent "$(MAC_APP)" macos/build/abacad-notarize.zip
-	xcrun notarytool submit macos/build/abacad-notarize.zip --keychain-profile "$(NOTARY_PROFILE)" --wait
+	xcrun notarytool submit macos/build/abacad-notarize.zip --keychain-profile "$(NOTARY_PROFILE)" $(NOTARY_KEYCHAIN) --wait
 	xcrun stapler staple "$(MAC_APP)"
 	rm -f macos/build/abacad-notarize.zip
 	@echo "Notarized + stapled $(MAC_APP)"
 
 # Notarize + staple the dmg itself (the artifact users actually download).
 _mac-notarize-dmg:
-	xcrun notarytool submit "$(MAC_DMG)" --keychain-profile "$(NOTARY_PROFILE)" --wait
+	xcrun notarytool submit "$(MAC_DMG)" --keychain-profile "$(NOTARY_PROFILE)" $(NOTARY_KEYCHAIN) --wait
 	xcrun stapler staple "$(MAC_DMG)"
 	@echo "Notarized + stapled $(MAC_DMG)"
 
