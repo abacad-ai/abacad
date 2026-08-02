@@ -401,15 +401,17 @@ windows-release:
 # the .iss — sign the installer there, not the payload exe, so reputation accrues
 # to the certificate instead of to a per-release file hash.
 #
-# The doubled slash in //D is not a typo. These recipes run under Git Bash on the
-# runner, and MSYS rewrites a lone /DAppVersion=... into a Windows path
-# (C:/Program Files/Git/DAppVersion=...) before ISCC ever sees it. A leading //
-# is the documented escape and reaches the program as /D.
+# -D, not /D, and not //D either. A lone /DAppVersion=... is rewritten by MSYS
+# into a Windows path (C:/Program Files/Git/DAppVersion=...) before ISCC sees it.
+# The usual // escape is NOT a fix here: it only collapses back to / when an MSYS
+# shell spawns the program itself, and make (native Win32) does not, so ISCC gets
+# a literal //DAppVersion=... and rejects it with "Unknown option". ISCC accepts
+# -D for every /-option, which has no leading slash and so is immune to both.
 # Output: windows/installer/Output/abacad-setup.exe
 windows-installer: windows-release
 	@command -v ISCC.exe >/dev/null 2>&1 || \
 	   { echo "error: ISCC.exe not on PATH — install Inno Setup 6.3+ (machine scope)" >&2; exit 1; }
-	ISCC.exe //DAppVersion=$(VERSION) windows/installer/abacad.iss
+	ISCC.exe -DAppVersion=$(VERSION) windows/installer/abacad.iss
 
 # The console build of the same agent — no WinUI, no tray, so unlike the app it
 # cross-compiles from any host with the .NET 8 SDK (EnableWindowsTargeting in the
