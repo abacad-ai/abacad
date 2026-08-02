@@ -7,5 +7,5 @@
 // committed instead. Keep it in sync by using `make bump-version`; the CI release
 // job fails the build if the tag and VERSION disagree, which catches a stale one.
 public enum AbacadVersion {
-    public static let current = "0.4.2"
+    public static let current = "0.5.0"
 }
