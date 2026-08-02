@@ -26,6 +26,17 @@
   #define AppVersion "0.0.0"
 #endif
 
+; ArchitecturesAllowed=x64compatible below needs Inno Setup 6.3+. The assertion
+; lives here rather than in the Makefile because there is no way to ask ISCC its
+; version from outside: --version is not an option (it prints a banner and exits
+; 1), the banner names the major version only, and ISCC.exe carries no PE version
+; resource. ISPP's VER does know, and the preprocessor runs before any file is
+; packaged — so an old compiler fails in milliseconds with this message instead
+; of a confusing parse error pointing at the directive itself.
+#if VER < EncodeVer(6,3,0)
+  #error abacad.iss needs Inno Setup 6.3+ for ArchitecturesAllowed=x64compatible
+#endif
+
 [Setup]
 ; Fixed forever — this is what makes an install an UPGRADE rather than a second
 ; parallel entry in Add/Remove Programs. Derived reproducibly from the Win32
@@ -56,8 +67,8 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ; x64compatible, not x64: the payload is win-x64 but runs fine under Arm64
 ; Windows 11's x64 emulation, and plain `x64` would lock those users out. This is
-; the directive that requires Inno 6.3+ — the Makefile asserts the version before
-; invoking ISCC so this fails as a prerequisite error, not mid-compile.
+; the directive that requires Inno 6.3+, asserted by the #if VER check at the top
+; of this file so an old compiler fails with a named error, not mid-compile.
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.17763

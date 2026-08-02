@@ -390,6 +390,12 @@ windows-release:
 # NT AUTHORITY\NETWORK SERVICE on the self-hosted runner — same provisioning
 # trap that release.yml documents for make and dotnet).
 #
+# Only PRESENCE is asserted here. ISCC has no --version flag (it prints a banner
+# and exits 1), its banner carries the major version only — "Inno Setup 6" — and
+# the exe ships no PE version resource (0.0.0.0), so there is nothing to parse
+# before a compile begins. The 6.3+ assertion therefore lives in abacad.iss as an
+# ISPP #if on VER, which the preprocessor evaluates before packaging any file.
+#
 # Still UNSIGNED: there is no Authenticode certificate in the repo yet, so
 # SmartScreen warns on download. The hook is the commented SignTool directive in
 # the .iss — sign the installer there, not the payload exe, so reputation accrues
@@ -401,10 +407,8 @@ windows-release:
 # is the documented escape and reaches the program as /D.
 # Output: windows/installer/Output/abacad-setup.exe
 windows-installer: windows-release
-	@v=$$(ISCC.exe --version 2>/dev/null | tr -d '\r' | grep -oE '[0-9]+\.[0-9]+' | head -1); \
-	 test -n "$$v" || { echo "error: ISCC.exe not on PATH — install Inno Setup 6.3+ (machine scope)" >&2; exit 1; }; \
-	 echo "$$v" | awk -F. '{ exit !($$1 > 6 || ($$1 == 6 && $$2 >= 3)) }' || \
-	   { echo "error: Inno Setup $$v is too old — abacad.iss needs 6.3+ for ArchitecturesAllowed=x64compatible" >&2; exit 1; }
+	@command -v ISCC.exe >/dev/null 2>&1 || \
+	   { echo "error: ISCC.exe not on PATH — install Inno Setup 6.3+ (machine scope)" >&2; exit 1; }
 	ISCC.exe //DAppVersion=$(VERSION) windows/installer/abacad.iss
 
 # The console build of the same agent — no WinUI, no tray, so unlike the app it
