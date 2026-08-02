@@ -198,11 +198,21 @@ jobs:
       # Every client stamps its build from the repo-root VERSION file, so the tag
       # must agree with it — otherwise the Release name and the binaries inside
       # would report different versions. Bump VERSION, commit, then tag v<VERSION>.
+      # AbacadVersion is the one number that can't be read from VERSION at build
+      # time (SwiftPM has no substitution hook for a plain executable), so it is
+      # committed — and can therefore go stale on its own. v0.5.1 shipped that
+      # way. Check it here too, not just the tag.
       - name: Tag must match VERSION
         run: |
           want="v$(cat VERSION)"
           if [ "${GITHUB_REF_NAME}" != "$want" ]; then
             echo "::error::tag ${GITHUB_REF_NAME} != v$(cat VERSION) (run 'make bump-version' and re-tag)"
+            exit 1
+          fi
+          swift_ver=$(sed -n 's/.*public static let current = "\([^"]*\)".*/\1/p' \
+            macos/Sources/AbacadKit/Version.swift)
+          if [ "$swift_ver" != "$(cat VERSION)" ]; then
+            echo "::error::AbacadVersion $swift_ver != VERSION $(cat VERSION) (run 'make bump-version' and re-tag)"
             exit 1
           fi
       - uses: actions/download-artifact@v4

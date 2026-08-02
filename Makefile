@@ -245,20 +245,30 @@ tokens:
 #   make bump-version V=0.5.0
 #
 # Then rebuild the clients/server to stamp it in, and commit VERSION + the json/lock.
+#
+# Every file the bump rewrites, grouped by how it has to be rewritten. `version`
+# stages exactly VERSIONED_FILES, so the two targets can no longer drift — they
+# did once, and v0.5.1 was tagged with a stale AbacadVersion because the Swift
+# file was added to the bump but not to the release commit's `git add` list.
+VERSION_PKG_JSON := server/package.json server/frontend/package.json
+VERSION_PKG_LOCK := server/package-lock.json server/frontend/package-lock.json
+VERSION_SWIFT    := macos/Sources/AbacadKit/Version.swift
+VERSIONED_FILES  := VERSION $(VERSION_PKG_JSON) $(VERSION_PKG_LOCK) $(VERSION_SWIFT)
+
 bump-version:
 	@test -n "$(V)" || { echo "usage: make bump-version V=x.y.z" >&2; exit 1; }
 	@printf '%s\n' "$(V)" > VERSION
-	@for f in server/package.json server/frontend/package.json; do \
+	@for f in $(VERSION_PKG_JSON); do \
 	  awk -v v="$(V)" 'BEGIN{d=0} /"version":/ && !d {sub(/"version":[ \t]*"[^"]*"/, "\"version\": \"" v "\""); d=1} {print}' "$$f" > "$$f.tmp" && mv "$$f.tmp" "$$f"; \
 	done
-	@for f in server/package-lock.json server/frontend/package-lock.json; do \
+	@for f in $(VERSION_PKG_LOCK); do \
 	  [ -f "$$f" ] || continue; \
 	  awk -v v="$(V)" 'BEGIN{d=0} /"version":/ && d<2 {sub(/"version":[ \t]*"[^"]*"/, "\"version\": \"" v "\""); d++} {print}' "$$f" > "$$f.tmp" && mv "$$f.tmp" "$$f"; \
 	done
 	@# The macOS CLI is the other spot that can't read VERSION at build time:
 	@# SwiftPM has no build-time substitution and a bare binary has no Info.plist,
 	@# so the number is committed in AbacadVersion (see macos/.../Version.swift).
-	@f=macos/Sources/AbacadKit/Version.swift; \
+	@f=$(VERSION_SWIFT); \
 	  awk -v v="$(V)" '/public static let current =/ {sub(/"[^"]*"/, "\"" v "\"")} {print}' "$$f" > "$$f.tmp" && mv "$$f.tmp" "$$f"
 	@echo "Bumped abacad to $(V) (VERSION + package.json + package-lock.json + AbacadVersion). Rebuild to stamp clients/server."
 
@@ -277,7 +287,7 @@ version:
 	case "$$v" in [0-9]*.[0-9]*.[0-9]*) ;; *) echo "error: not an x.y.z version: $$v" >&2; exit 1;; esac; \
 	if git rev-parse -q --verify "refs/tags/v$$v" >/dev/null 2>&1; then echo "error: tag v$$v already exists" >&2; exit 1; fi; \
 	"$${MAKE:-make}" --no-print-directory bump-version V="$$v" && \
-	{ git add VERSION; for f in server/package.json server/frontend/package.json server/package-lock.json server/frontend/package-lock.json; do [ -f "$$f" ] && git add "$$f"; done; true; } && \
+	{ for f in $(VERSIONED_FILES); do [ -f "$$f" ] && git add "$$f"; done; true; } && \
 	git commit -m "release v$$v" && \
 	git tag "v$$v" && \
 	git push origin HEAD && \
