@@ -54,6 +54,11 @@ make android-release      # -> app/build/outputs/apk/release/app-release.apk
 make stage-android        # copied into the downloads dir as abacad-<version>-android-universal.apk
 ```
 
+The size win came from R8 instead — the release build is minified and
+resource-shrunk, **18,754,025 B → 2,501,465 B (−87%)**. See
+`app/proguard-rules.pro` for the short list of names that must survive
+obfuscation, and why that list is short.
+
 The release key is **permanent**: Android refuses to install an update signed by a
 different key, so replacing it means every user must uninstall first (losing their
 pairing). It therefore lives outside the repo and outside any build tree, at

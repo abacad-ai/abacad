@@ -85,7 +85,29 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8: shrink + obfuscate the dex and drop unreferenced resources.
+            //
+            // This is the lever that actually moves APK size, and by a lot —
+            // measured on v0.4.2:
+            //
+            //     minify off   18,754,025 B   (17.9 MB)
+            //     minify on     2,501,465 B    (2.4 MB)   -87%
+            //
+            // which is why ABI splitting was not worth doing (see defaultConfig
+            // above): almost none of this package is native code. It is dex and
+            // resources, most of it Compose/Material3 that the app never calls.
+            //
+            // proguard-rules.pro documents every name that something outside
+            // the Kotlin code (the JNI linker, the OS, our own crash reporting)
+            // depends on. That list is short because all JSON here is
+            // hand-rolled org.json with string-literal keys; read the header of
+            // that file before adding a reflective library.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             // Deliberately no fallback to the debug key: a release APK signed
             // with a throwaway key is worse than no APK, because shipping it
             // once locks users out of every properly signed update.
