@@ -1,4 +1,6 @@
-# abacad dev tasks. Every target lives here — there is no per-platform Makefile.
+# abacad dev tasks. Every target you invoke lives here. The one exception is the
+# Linux GUI (linux/Makefile), whose recipes need a toolchain the other targets
+# deliberately avoid — `linux-gui` / `linux-deb` below are passthroughs to it.
 
 # ── Version ───────────────────────────────────────────────────────────────────
 # One number for the whole monorepo (server + every client). The VERSION file at
@@ -85,28 +87,60 @@ else
 CODESIGN_FLAGS := --options runtime --timestamp
 endif
 
+# The .deb's architecture is whatever this host is, because the GUI links cgo
+# against the host's own GTK and so never cross-compiles. Releases build on an
+# amd64 runner and publish amd64; an arm64 Linux dev box gets a correctly labelled
+# arm64 package instead of a mislabelled one. Non-Debian hosts have no dpkg, and
+# there the .deb simply isn't built — the fallback only keeps the name well-formed.
+DEB_ARCH := $(shell dpkg --print-architecture 2>/dev/null || echo amd64)
+
 # ── Published artifact names ──────────────────────────────────────────────────
-# One convention for every platform: abacad-<version>-<platform>-<arch>.<suffix>.
+# One convention for every platform:
+#
+#     abacad-<kind>-<version>-<platform>-<arch>.<suffix>
+#
+# `kind` is app or cli, and it is part of the name because most platforms ship
+# both: the app is the one with a window (menu bar, tray, GTK, launcher), the cli
+# is the one you drive from a terminal. It is also load-bearing for the manifest —
+# gen-manifest.mjs keeps the newest build per kind+platform+arch, so without the
+# kind a .deb and a .tar.gz for the same linux-amd64 would collide and one would
+# silently vanish from the downloads page.
+#
 # The `stage` target below copies each build to these names in $(DOWNLOADS) and
 # regenerates manifest.json; nothing carries a "latest" name anymore — the
-# manifest is what points at the current version. Arch is Go's GOARCH vocabulary
-# (amd64/arm64); the Android APK carries every ABI the app supports (arm64-v8a +
-# x86_64 — see android/app/build.gradle.kts), so it's "universal".
-PKG_MACOS       := abacad-$(VERSION)-macos-arm64.dmg
-PKG_ANDROID     := abacad-$(VERSION)-android-universal.apk
-PKG_WINDOWS     := abacad-$(VERSION)-windows-amd64.exe
-PKG_LINUX_AMD64 := abacad-$(VERSION)-linux-amd64.tar.gz
-PKG_LINUX_ARM64 := abacad-$(VERSION)-linux-arm64.tar.gz
+# manifest is what points at the current version.
+#
+# Arch is whatever that platform's own users call it, not one repo-wide spelling:
+# Microsoft's downloads say x64, Apple says Apple silicon, and Debian's package
+# architecture really is amd64 (it is the value in the .deb's own control file).
+# Someone downloading a build reads the name to answer "is this the one for my
+# machine", and a Go-flavoured `amd64` makes a Windows user guess. Matching
+# sibling filenames only helps whoever greps the downloads dir, which is nobody.
+# The Android APK carries every ABI the app supports (arm64-v8a + x86_64 — see
+# android/app/build.gradle.kts), so it's "universal".
+PKG_MACOS           := abacad-app-$(VERSION)-macos-apple-silicon.dmg
+PKG_MACOS_CLI       := abacad-cli-$(VERSION)-macos-apple-silicon.tar.gz
+PKG_ANDROID         := abacad-app-$(VERSION)-android-universal.apk
+PKG_WINDOWS         := abacad-app-$(VERSION)-windows-x64.exe
+PKG_WINDOWS_CLI     := abacad-cli-$(VERSION)-windows-x64.zip
+PKG_LINUX_DEB       := abacad-app-$(VERSION)-linux-$(DEB_ARCH).deb
+PKG_LINUX_CLI_AMD64 := abacad-cli-$(VERSION)-linux-amd64.tar.gz
+PKG_LINUX_CLI_ARM64 := abacad-cli-$(VERSION)-linux-arm64.tar.gz
 
 # Where each platform's release build leaves its artifact (staged from here).
+# dpkg-deb names the package itself (abacad_<version>_<arch>.deb), so the .deb is
+# renamed to the repo convention on the way into $(DOWNLOADS) like everything else.
 APK_RELEASE := android/app/build/outputs/apk/release/app-release.apk
 WIN_EXE     := windows/publish/Abacad.exe
+WIN_CLI_EXE := windows/publish-cli/abacad.exe
+LINUX_DEB   := linux/build/abacad_$(VERSION)_$(DEB_ARCH).deb
+MAC_CLI_BIN := macos/build/abacad-cli/abacad
 
 .PHONY: build build-debug build-release debug release \
         dev server tokens bump-version version android android-release \
-        linux linux-release linux-run linux-test \
-        macos macos-icon macos-dmg macos-release macos-trust-reset macos-clean \
-        windows windows-debug windows-release \
+        linux linux-release linux-run linux-test linux-gui linux-deb linux-app \
+        macos macos-icon macos-dmg macos-release macos-cli macos-cli-release macos-trust-reset macos-clean \
+        windows windows-debug windows-release windows-cli-release \
         publish stage stage-macos stage-android stage-linux stage-windows manifest \
         _mac-pkg-dmg _mac-notarize-app _mac-notarize-dmg
 
@@ -149,8 +183,12 @@ debug release:
 # whereas a loop lets a failed platform be skipped so the rest still build. The
 # run exits 0 even when a platform is skipped — a partial local build is a success
 # here, not an error — but prints a loud SKIPPED line so it's never silent.
+# Both kinds per platform, since a release publishes both: linux-deb and the two
+# CLIs sit alongside the app targets rather than under them, so a failure to build
+# (say) the GTK app still ships the Linux CLI.
 DEBUG_PLATFORMS   := android linux macos windows-debug
-RELEASE_PLATFORMS := android-release linux-release macos-release windows-release
+RELEASE_PLATFORMS := android-release linux-release linux-deb macos-release macos-cli-release \
+                     windows-release windows-cli-release
 
 build-debug:
 	@failed=""; \
@@ -217,7 +255,12 @@ bump-version:
 	  [ -f "$$f" ] || continue; \
 	  awk -v v="$(V)" 'BEGIN{d=0} /"version":/ && d<2 {sub(/"version":[ \t]*"[^"]*"/, "\"version\": \"" v "\""); d++} {print}' "$$f" > "$$f.tmp" && mv "$$f.tmp" "$$f"; \
 	done
-	@echo "Bumped abacad to $(V) (VERSION + package.json + package-lock.json). Rebuild to stamp clients/server."
+	@# The macOS CLI is the other spot that can't read VERSION at build time:
+	@# SwiftPM has no build-time substitution and a bare binary has no Info.plist,
+	@# so the number is committed in AbacadVersion (see macos/.../Version.swift).
+	@f=macos/Sources/AbacadKit/Version.swift; \
+	  awk -v v="$(V)" '/public static let current =/ {sub(/"[^"]*"/, "\"" v "\"")} {print}' "$$f" > "$$f.tmp" && mv "$$f.tmp" "$$f"
+	@echo "Bumped abacad to $(V) (VERSION + package.json + package-lock.json + AbacadVersion). Rebuild to stamp clients/server."
 
 # Cut a release. Prints the current version, proposes a patch bump x.y.(z+1),
 # and lets you accept it with Enter or type a different one. Then it bumps the
@@ -256,24 +299,45 @@ android-release:
 	cd android && ./gradlew assembleRelease
 
 # ── Linux ────────────────────────────────────────────────────────────────────
-# Headless X11 device client (pure-Go, no cgo). Builds anywhere with a Go
-# toolchain. Output: linux/build/abacad
+# One X11 device client, built two ways from the same tree:
+#
+#   cli — pure-Go, no cgo, no GTK. The headless daemon plus `abacad connect` /
+#         `abacad capabilities`. Cross-compiles anywhere with a Go toolchain, and
+#         is what install.sh serves. Output: linux/build/abacad
+#   app — the same binary built `-tags gui` (cgo + GTK4 + libadwaita), so
+#         `abacad --gui` opens the desktop window. Shipped as a .deb with a
+#         launcher and a systemd user service. Needs a Linux host with the GTK
+#         dev packages; it does not cross-compile.
+#
+# The GUI recipes live in linux/Makefile (they need the gui-only toolchain);
+# these are passthroughs so `make linux-deb` works from the repo root like every
+# other platform's release target.
 
 # Build the daemon.
 linux:
 	cd linux && go build -ldflags "$(GO_LINUX_LDFLAGS)" -o build/abacad ./cmd/abacad
 
-# Cross-compile the release tarballs install.sh serves (pure-Go → CGO off, any
-# host cross-compiles). Each holds a single `abacad` binary, so install.sh just
-# untars and moves it. `make stage` copies these into the downloads dir.
-# Output: linux/build/abacad-<version>-linux-{amd64,arm64}.tar.gz
+# Build the GTK4/libadwaita desktop binary (cgo). Needs libgtk-4-dev and
+# libadwaita-1-dev (>= 1.4). Output: linux/build/abacad-gui
+linux-gui:
+	$(MAKE) -C linux gui GO_LDFLAGS="$(GO_LINUX_LDFLAGS)"
+
+# Package that binary as a Debian/Ubuntu .deb — the Linux app download.
+# Output: linux/build/abacad_<version>_amd64.deb, staged as $(PKG_LINUX_DEB)
+linux-deb linux-app:
+	$(MAKE) -C linux deb GO_LDFLAGS="$(GO_LINUX_LDFLAGS)"
+
+# Cross-compile the CLI tarballs install.sh serves (pure-Go → CGO off, any host
+# cross-compiles). Each holds a single `abacad` binary, so install.sh just untars
+# and moves it. `make stage` copies these into the downloads dir.
+# Output: linux/build/abacad-cli-<version>-linux-{amd64,arm64}.tar.gz
 linux-release:
 	cd linux && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$(GO_LINUX_LDFLAGS)" -o build/abacad ./cmd/abacad
-	tar -czf linux/build/$(PKG_LINUX_AMD64) -C linux/build abacad
+	tar -czf linux/build/$(PKG_LINUX_CLI_AMD64) -C linux/build abacad
 	cd linux && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$(GO_LINUX_LDFLAGS)" -o build/abacad ./cmd/abacad
-	tar -czf linux/build/$(PKG_LINUX_ARM64) -C linux/build abacad
+	tar -czf linux/build/$(PKG_LINUX_CLI_ARM64) -C linux/build abacad
 	rm -f linux/build/abacad
-	@echo "Built linux/build/$(PKG_LINUX_AMD64) and $(PKG_LINUX_ARM64) (v$(VERSION))"
+	@echo "Built linux/build/$(PKG_LINUX_CLI_AMD64) and $(PKG_LINUX_CLI_ARM64) (v$(VERSION))"
 
 # Build + run against a relay: make linux-run URL=wss://host/device?token=…
 linux-run: linux
@@ -303,6 +367,13 @@ windows-debug:
 windows-release:
 	dotnet publish windows/Abacad.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o windows/publish
 
+# The console build of the same agent — no WinUI, no tray, so unlike the app it
+# cross-compiles from any host with the .NET 8 SDK (EnableWindowsTargeting in the
+# csproj). Also unsigned; same missing-cert story as above.
+# Output: windows/publish-cli/abacad.exe
+windows-cli-release:
+	dotnet publish windows/cli/Abacad.Cli.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o windows/publish-cli
+
 # ── macOS ────────────────────────────────────────────────────────────────────
 # Needs a Mac with the Swift/Xcode toolchain; these targets do not build elsewhere.
 
@@ -310,7 +381,7 @@ windows-release:
 # a Developer ID identity it is a distributable, hardened, timestamped signature.
 # Output: macos/build/abacad.app
 macos:
-	swift build --package-path macos -c $(MAC_CONF)
+	swift build --package-path macos -c $(MAC_CONF) --product abacad
 	rm -rf "$(MAC_APP)"
 	mkdir -p "$(MAC_APP)/Contents/MacOS" "$(MAC_APP)/Contents/Resources"
 	cp "$(MAC_BINARY)" "$(MAC_APP)/Contents/MacOS/abacad"
@@ -363,6 +434,39 @@ macos-trust-reset:
 	-tccutil reset ScreenCapture $(BUNDLE_ID)
 	-tccutil reset Accessibility $(BUNDLE_ID)
 	@echo "Cleared TCC grants for $(BUNDLE_ID) — relaunch and grant once more."
+
+# ── macOS command line ───────────────────────────────────────────────────────
+# `abacad connect` / `capabilities` / `status` as a standalone binary, for a Mac
+# you administer over ssh. It configures; the .app still does the driving (TCC
+# keys Screen Recording and Accessibility to the bundle identity, so a bare
+# binary cannot hold those grants) — see macos/Sources/abacad-cli/main.swift.
+#
+# Signed with its own identifier: it is a separate distributable from the app,
+# and sharing $(BUNDLE_ID) would make two different binaries claim one identity.
+# Output: $(MAC_CLI_BIN)
+MAC_CLI_BUILT := macos/.build/$(MAC_CONF)/abacad-cli
+CLI_BUNDLE_ID ?= ai.abacad.cli
+
+macos-cli:
+	swift build --package-path macos -c $(MAC_CONF) --product abacad-cli
+	mkdir -p "$(dir $(MAC_CLI_BIN))"
+	cp "$(MAC_CLI_BUILT)" "$(MAC_CLI_BIN)"
+	codesign --force $(CODESIGN_FLAGS) --sign "$(SIGN_IDENTITY)" --identifier "$(CLI_BUNDLE_ID)" "$(MAC_CLI_BIN)"
+	codesign --verify --strict --verbose=2 "$(MAC_CLI_BIN)"
+	@echo "Built $(MAC_CLI_BIN) (signed as $(SIGN_IDENTITY), id $(CLI_BUNDLE_ID))"
+
+# Notarize the CLI. There is no stapling step: a ticket can only be stapled to a
+# bundle, dmg or pkg, never to a bare Mach-O, so the notarization lives on
+# Apple's side and Gatekeeper checks it online. That is fine for how this is
+# installed — `curl | tar` sets no quarantine attribute, so Gatekeeper is not in
+# the path at all; notarizing is for the person who downloads it in a browser.
+macos-cli-release: macos-cli
+	@test "$(SIGN_IDENTITY)" != "-" || { echo "ERROR: macos-cli-release needs a Developer ID SIGN_IDENTITY, not ad-hoc '-'." >&2; exit 1; }
+	rm -f macos/build/abacad-cli-notarize.zip
+	ditto -c -k "$(MAC_CLI_BIN)" macos/build/abacad-cli-notarize.zip
+	xcrun notarytool submit macos/build/abacad-cli-notarize.zip --keychain-profile "$(NOTARY_PROFILE)" $(NOTARY_KEYCHAIN) --wait
+	rm -f macos/build/abacad-cli-notarize.zip
+	@echo "Notarized $(MAC_CLI_BIN)"
 
 macos-clean:
 	rm -rf macos/.build macos/build
@@ -436,7 +540,13 @@ manifest:
 stage-macos:
 	@mkdir -p "$(DOWNLOADS)"
 	@if [ -f "$(MAC_DMG)" ]; then cp "$(MAC_DMG)" "$(DOWNLOADS)/$(PKG_MACOS)"; echo "  staged $(PKG_MACOS)"; \
-	 else echo "  (skip macos: no $(MAC_DMG) — run 'make macos-release')"; fi
+	 else echo "  (skip macos app: no $(MAC_DMG) — run 'make macos-release')"; fi
+	@# COPYFILE_DISABLE stops bsdtar writing AppleDouble ._ sidecars for any xattrs
+	@# on the binary — they would extract next to `abacad` and confuse anyone
+	@# untarring it. The Developer ID signature is embedded in the Mach-O itself,
+	@# so nothing is lost by dropping them.
+	@if [ -f "$(MAC_CLI_BIN)" ]; then COPYFILE_DISABLE=1 tar -czf "$(DOWNLOADS)/$(PKG_MACOS_CLI)" -C "$(dir $(MAC_CLI_BIN))" abacad; echo "  staged $(PKG_MACOS_CLI)"; \
+	 else echo "  (skip macos cli: no $(MAC_CLI_BIN) — run 'make macos-cli-release')"; fi
 
 # The debug APK is debuggable — anyone with ADB access to a user's phone could
 # attach to a service that reads the screen and injects taps. Stage the release
@@ -446,14 +556,25 @@ stage-android:
 	@if [ -f "$(APK_RELEASE)" ]; then cp "$(APK_RELEASE)" "$(DOWNLOADS)/$(PKG_ANDROID)"; echo "  staged $(PKG_ANDROID)"; \
 	 else echo "  (skip android: no release APK — run 'make android-release')"; fi
 
+# Linux ships both kinds: the cgo-free CLI tarballs (both arches) and the GTK
+# desktop .deb (amd64 only — it needs cgo, so it doesn't cross-compile).
 stage-linux:
 	@mkdir -p "$(DOWNLOADS)"
-	@for f in "$(PKG_LINUX_AMD64)" "$(PKG_LINUX_ARM64)"; do \
+	@for f in "$(PKG_LINUX_CLI_AMD64)" "$(PKG_LINUX_CLI_ARM64)"; do \
 	  if [ -f "linux/build/$$f" ]; then cp "linux/build/$$f" "$(DOWNLOADS)/$$f"; echo "  staged $$f"; \
-	  else echo "  (skip linux: no linux/build/$$f — run 'make linux-release')"; fi; \
+	  else echo "  (skip linux cli: no linux/build/$$f — run 'make linux-release')"; fi; \
 	done
+	@if [ -f "$(LINUX_DEB)" ]; then cp "$(LINUX_DEB)" "$(DOWNLOADS)/$(PKG_LINUX_DEB)"; echo "  staged $(PKG_LINUX_DEB)"; \
+	 else echo "  (skip linux app: no $(LINUX_DEB) — run 'make linux-deb')"; fi
 
 stage-windows:
 	@mkdir -p "$(DOWNLOADS)"
 	@if [ -f "$(WIN_EXE)" ]; then cp "$(WIN_EXE)" "$(DOWNLOADS)/$(PKG_WINDOWS)"; echo "  staged $(PKG_WINDOWS)"; \
-	 else echo "  (skip windows: no $(WIN_EXE) — run 'make windows-release')"; fi
+	 else echo "  (skip windows app: no $(WIN_EXE) — run 'make windows-release')"; fi
+	@# .zip rather than .tar.gz: Windows opens one without extra tooling. -j junks
+	@# the path so the archive holds a bare abacad.exe.
+	@if [ ! -f "$(WIN_CLI_EXE)" ]; then echo "  (skip windows cli: no $(WIN_CLI_EXE) — run 'make windows-cli-release')"; \
+	 elif ! command -v zip >/dev/null 2>&1; then echo "  (skip windows cli: no zip on PATH — install it to stage $(PKG_WINDOWS_CLI))"; \
+	 else rm -f "$(DOWNLOADS)/$(PKG_WINDOWS_CLI)"; \
+	   zip -qj "$(DOWNLOADS)/$(PKG_WINDOWS_CLI)" "$(WIN_CLI_EXE)"; \
+	   echo "  staged $(PKG_WINDOWS_CLI)"; fi

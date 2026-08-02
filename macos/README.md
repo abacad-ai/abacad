@@ -50,7 +50,7 @@ make macos-release SIGN_IDENTITY="Developer ID Application: Beijing Xiaoyuanzhu 
 
 Team `R3845XW5FZ`. Publishing the result is a separate step: `make stage-macos`
 copies the dmg into the local downloads directory under its published name
-`abacad-<version>-macos-arm64.dmg` (and `make stage` refreshes `manifest.json`);
+`abacad-<version>-macos-apple-silicon.dmg` (and `make stage` refreshes `manifest.json`);
 in production, copy that file into the deploy directory's `downloads/` (infra
 repo, `deployment/xyz-sg-1/abacad.ai/`) and run its `deploy.sh`.
 
@@ -89,18 +89,37 @@ green checkmarks confirm the grants (hit **Refresh** after toggling).
 The easy path — **`abacad connect`** (device-authorization grant, no copy-paste):
 
 ```
-/Applications/abacad.app/Contents/MacOS/abacad connect
+abacad connect
 #   or, against a self-hosted server:
-#   …/abacad connect --server https://my.host
+#   abacad connect --server https://my.host
+```
+
+That `abacad` is the CLI download (`abacad-cli-<version>-macos-apple-silicon.tar.gz`), a
+standalone signed binary you can install on a Mac you only reach over ssh. The
+same subcommand is also built into the app bundle, if you'd rather not install a
+second thing:
+
+```
+/Applications/abacad.app/Contents/MacOS/abacad connect
 ```
 
 It prints a URL and a short code; open the URL while signed in, approve, and the
 issued credential is stored in your login Keychain. Launch the menu-bar app (or, if
 it's already running, reopen the panel) and the dot turns green — it auto-connects
-on every launch after that. This is the CLI peer of the Linux/Windows `abacad
-connect`. (The `connect` binary is the same executable inside the app bundle;
-running it needs no Screen Recording / Accessibility grant — those apply only when
-the menu-bar app actually drives the Mac.)
+on every launch after that. Pairing before you install the app is fine: both halves
+read the same Keychain store (service `ai.abacad.agent`, no access group), so the
+app picks the credential up on first launch.
+
+### What the CLI does and doesn't do
+
+`abacad connect`, `abacad capabilities` and `abacad status` configure this Mac.
+They need no Screen Recording or Accessibility grant, because they never look at
+the screen or move the pointer — the **app** does that, and it has to be the app:
+macOS keys those two grants to a bundle identity (`ai.abacad.mac`), and a bare
+binary run from a terminal is judged under the *terminal's* identity instead. So
+unlike the Linux client, the macOS CLI is not a headless agent, and installing it
+alone leaves nothing on the Mac that will answer. `abacad status` says so when the
+app is missing.
 
 Or provision manually:
 

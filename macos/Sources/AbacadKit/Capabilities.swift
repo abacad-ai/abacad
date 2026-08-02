@@ -17,10 +17,10 @@ import Foundation
 /// Honest limit: this cannot constrain a capability that already grants code
 /// execution as this user. Turning file transfer off is meaningful; leaving it
 /// on and expecting the rest to hold is not.
-enum Capabilities {
+public enum Capabilities {
 
     /// The vocabulary, mirroring the server's protocol.Capabilities.
-    static let all = [
+    public static let all = [
         "screenshot", "tap", "long_press", "swipe", "input_text",
         "back", "home", "recents",
         "click", "right_click", "drag", "scroll", "press_keys", "composite",
@@ -31,7 +31,7 @@ enum Capabilities {
     /// "Everything, including capabilities added in later versions." An
     /// unconfigured Mac reports this rather than enumerating `all`, so it does
     /// not pin itself to the verb list of the version it shipped with.
-    static let wildcard = "*"
+    public static let wildcard = "*"
 
     /// Stored sentinel for "expose nothing".
     ///
@@ -49,7 +49,7 @@ enum Capabilities {
 
     /// Reads the persisted set. Call before connecting: the ceiling must be in
     /// force before the first command can arrive, and it is reported on connect.
-    static func load() {
+    public static func load() {
         let raw = Prefs.capabilities
         lock.lock()
         defer { lock.unlock() }
@@ -60,7 +60,7 @@ enum Capabilities {
     }
 
     /// Whether this device exposes `name`.
-    static func allows(_ name: String) -> Bool {
+    public static func allows(_ name: String) -> Bool {
         lock.lock()
         defer { lock.unlock() }
         return wildcardMode || enabled.contains(name)
@@ -70,7 +70,7 @@ enum Capabilities {
     /// latest frame is the whole truth and no delta can drift. The wildcard
     /// stays a wildcard rather than being expanded, so a newer server keeps
     /// granting capabilities this build has never heard of.
-    static func report() -> [String] {
+    public static func report() -> [String] {
         lock.lock()
         defer { lock.unlock() }
         if wildcardMode { return [wildcard] }
@@ -78,7 +78,7 @@ enum Capabilities {
     }
 
     /// The concrete set, expanding the wildcard, for rendering checkboxes.
-    static func enabledList() -> [String] {
+    public static func enabledList() -> [String] {
         lock.lock()
         defer { lock.unlock() }
         return all.filter { wildcardMode || enabled.contains($0) }
@@ -87,7 +87,7 @@ enum Capabilities {
     /// Turns one capability on or off, persists, and notifies listeners.
     /// Switching one off while in wildcard mode first materializes the wildcard
     /// into the concrete set, so "everything except X" is expressible.
-    static func toggle(_ name: String, on: Bool) {
+    public static func toggle(_ name: String, on: Bool) {
         lock.lock()
         if wildcardMode {
             wildcardMode = false
@@ -101,7 +101,7 @@ enum Capabilities {
     }
 
     /// Replaces the whole set.
-    static func set(_ names: [String]) {
+    public static func set(_ names: [String]) {
         lock.lock()
         applyLocked(names)
         let subs = listeners
@@ -111,7 +111,7 @@ enum Capabilities {
     }
 
     /// Registers a change callback (the agent re-reports; the UI repaints).
-    static func onChange(_ fn: @escaping () -> Void) {
+    public static func onChange(_ fn: @escaping () -> Void) {
         lock.lock()
         listeners.append(fn)
         lock.unlock()
@@ -145,7 +145,7 @@ enum Capabilities {
 
     /// Authorizes one inbound command. Returns nil when allowed, or the reason
     /// to refuse with.
-    static func refusal(method: String, params: [String: Any]) -> String? {
+    public static func refusal(method: String, params: [String: Any]) -> String? {
         // Stopping is never blocked. vnc and screen_recording multiplex
         // start/stop through one method, so refusing the stop would strand the
         // very session the operator just revoked — the screen would stay shared
@@ -186,7 +186,7 @@ enum Capabilities {
     /// anything else needs tunnel. That mirrors the real relationship — a tunnel
     /// can reach port 22 on its own, so treating them as independent would be a
     /// fiction.
-    static func tunnelRefusal(host: String, port: String) -> String? {
+    public static func tunnelRefusal(host: String, port: String) -> String? {
         let loopback = host == "localhost" || host == "127.0.0.1" || host == "::1"
         if port == "22" && loopback {
             return (allows("ssh") || allows("tunnel"))

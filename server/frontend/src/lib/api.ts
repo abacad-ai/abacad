@@ -129,8 +129,12 @@ export interface ActivitiesResult {
 }
 
 // One published client build, as listed in the downloads manifest. Named by the
-// repo-wide convention abacad-<version>-<platform>-<arch>.<suffix>.
+// repo-wide convention abacad-<kind>-<version>-<platform>-<arch>.<suffix>.
 export interface Build {
+  // The one with a window, or the one you run in a terminal. Optional because a
+  // manifest published before the split has no such field — see kindOf() in
+  // DownloadsPage, which reads a missing kind as "app".
+  kind?: "app" | "cli";
   platform: string; // "macos", "android", "linux", "windows"
   arch: string; // "amd64" | "arm64" | "universal"
   version: string;
@@ -141,8 +145,8 @@ export interface Build {
 }
 
 // The client downloads manifest (server's static /downloads/manifest.json, written
-// by `make stage`): the current build per platform+arch. There's no downloads API
-// endpoint — the manifest is served straight off the downloads dir.
+// by `make stage`): the current build per kind+platform+arch. There's no downloads
+// API endpoint — the manifest is served straight off the downloads dir.
 export interface Manifest {
   version: string;
   generated_at: number; // unix seconds

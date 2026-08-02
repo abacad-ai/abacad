@@ -53,7 +53,33 @@ jobs:
             exit 1
           fi
 
-  # Windows client — build only, on the self-hosted NUC. Since the WinUI 3
+  # Linux client — both builds of it. The cgo-free CLI is what install.sh serves;
+  # the `gui` tag adds the GTK4/libadwaita window, which needs the dev packages
+  # and cgo. The GUI shipped in 609e34e and then sat uncompiled for weeks because
+  # nothing here built it — its gotk4 imports weren't even in go.mod. Compiling
+  # both on every PR is what keeps that from happening twice.
+  linux:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: linux
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: linux/go.sum
+      - run: go vet ./...
+      - run: go test ./...
+      # AdwToolbarView needs libadwaita >= 1.4; ubuntu-latest is well past that.
+      - name: GTK4 + libadwaita dev packages
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libadwaita-1-dev libgirepository1.0-dev
+      - run: make gui
+      # The .deb is the published Linux app, so build it here too — dpkg-deb is
+      # preinstalled, and a broken control file should fail a PR, not a tag.
+      - run: make deb
+
+  # Windows tray app — build only, on the self-hosted NUC. Since the WinUI 3
   # (Windows App SDK) rewrite this cannot cross-build on Linux, so a cloud runner
   # can't cover it and breakage would otherwise surface only at tag time — which
   # is how v0.4.1 shipped with no Windows binary at all.
@@ -68,6 +94,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: make windows-release
+
+  # Windows CLI — the same sources minus WinUI, which is exactly what lets it
+  # build here. Cheap coverage for the shared agent/capture/input code on every
+  # PR, including when the NUC is offline.
+  windows-cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0"
+      - run: make windows-cli-release
 
   frontend:
     runs-on: ubuntu-latest

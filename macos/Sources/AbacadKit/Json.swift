@@ -5,9 +5,9 @@ import Foundation
 // envelope and per-method params handling uniform and lax (matching the Android
 // client, which silently drops malformed frames).
 
-enum Json {
+public enum Json {
     /// Parse a text frame into a top-level object. Returns nil on any error.
-    static func object(_ text: String) -> [String: Any]? {
+    public static func object(_ text: String) -> [String: Any]? {
         guard let data = text.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data),
               let dict = obj as? [String: Any] else { return nil }
@@ -15,7 +15,7 @@ enum Json {
     }
 
     /// Serialize an object to a compact JSON string. Returns "{}" if it can't.
-    static func string(_ obj: [String: Any]) -> String {
+    public static func string(_ obj: [String: Any]) -> String {
         guard let data = try? JSONSerialization.data(withJSONObject: obj),
               let s = String(data: data, encoding: .utf8) else { return "{}" }
         return s
@@ -23,7 +23,7 @@ enum Json {
 }
 
 // Convenience typed getters over a loose params dict.
-extension Dictionary where Key == String, Value == Any {
+public extension Dictionary where Key == String, Value == Any {
     func int(_ k: String, _ def: Int = 0) -> Int {
         if let n = self[k] as? Int { return n }
         if let d = self[k] as? Double { return Int(d) }
@@ -42,4 +42,4 @@ extension Dictionary where Key == String, Value == Any {
 }
 
 /// A method handler either succeeds with a result object or fails with a message.
-enum CmdError: Error { case message(String) }
+public enum CmdError: Error { case message(String) }

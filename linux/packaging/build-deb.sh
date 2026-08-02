@@ -10,7 +10,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."   # linux/
 
 BIN="${1:-build/abacad-gui}"
-ARCH="${ARCH:-amd64}"
+# Default to the build host's own architecture, not a hardcoded amd64: the GUI
+# links cgo against the host's GTK, so the binary is always native, and a fixed
+# default would label an arm64 build "amd64" — a package that installs happily
+# and then refuses to exec.
+ARCH="${ARCH:-$(dpkg --print-architecture)}"
 VERSION="$(cat ../VERSION 2>/dev/null | tr -d '[:space:]' || echo 0.0.0)"
 
 if [ ! -x "$BIN" ]; then
@@ -32,7 +36,7 @@ Version: ${VERSION}
 Section: net
 Priority: optional
 Architecture: ${ARCH}
-Depends: libgtk-4-1, libadwaita-1-0
+Depends: libgtk-4-1, libadwaita-1-0 (>= 1.4)
 Maintainer: abacad <noreply@abacad.ai>
 Homepage: https://abacad.ai
 Description: abacad device agent (desktop)
@@ -41,6 +45,23 @@ Description: abacad device agent (desktop)
  desktop app (abacad --gui) and a systemd user service that keeps the relay
  connection alive in the background.
 EOF
+
+# The window uses AdwToolbarView, which is libadwaita 1.4+. Without the floor
+# above, apt would happily install against an older libadwaita and the binary
+# would fail to resolve adw_toolbar_view_new at load time — a dependency error is
+# a much better failure than that.
+
+# Refresh the caches the freshly-installed .desktop file and icon land in;
+# without this the launcher can take a re-login to appear.
+cat > "$ROOT/DEBIAN/postinst" <<'EOF'
+#!/bin/sh
+set -e
+if [ "$1" = configure ]; then
+	command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q /usr/share/applications || true
+	command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -qtf /usr/share/icons/hicolor || true
+fi
+EOF
+chmod 0755 "$ROOT/DEBIAN/postinst"
 
 OUT="build/abacad_${VERSION}_${ARCH}.deb"
 dpkg-deb --build --root-owner-group "$ROOT" "$OUT"

@@ -94,13 +94,16 @@ Where each client puts the switches, and where it stores them:
 
 | Client | Set it in | Stored in |
 |---|---|---|
-| Linux | `abacad capabilities` (see below) | `~/.config/abacad/capabilities` |
-| macOS | menu-bar panel → "What this Mac exposes" | login Keychain |
+| Linux | `abacad capabilities` (see below), or the desktop app's panel | `~/.config/abacad/capabilities` |
+| macOS | menu-bar panel → "What this Mac exposes", or `abacad capabilities` | login Keychain |
 | Android | app screen → "What this device exposes" | app-private `SharedPreferences` |
-| Windows | tray menu → "What this PC exposes" | DPAPI-encrypted, per user |
+| Windows | tray menu → "What this PC exposes", or `abacad capabilities` | DPAPI-encrypted, per user |
 | Browser | badge → "Limits" | `localStorage` for that device's origin |
 
-On Linux — a headless box has no panel to click, so the CLI *is* the control surface:
+Every desktop platform has the CLI form, and it reads and writes the same store as
+that platform's panel — a machine you administer over ssh is not a machine you can
+only pair and never constrain. The flags and the group names are identical across
+Linux, macOS and Windows:
 
 ```console
 $ abacad capabilities                      # what is on and off

@@ -1,9 +1,23 @@
 # abacad Windows agent
 
-The desktop counterpart to the macOS and Android apps: a notification-area (tray)
-app that dials the abacad relay over a WebSocket and drives this PC on command —
-read the UI Automation tree, capture the screen, and inject mouse/keyboard input.
-It speaks the same wire contract as the phone plus the desktop-native verbs.
+The desktop counterpart to the macOS and Android apps: it dials the abacad relay
+over a WebSocket and drives this PC on command — read the UI Automation tree,
+capture the screen, and inject mouse/keyboard input. It speaks the same wire
+contract as the phone plus the desktop-native verbs.
+
+Two builds of one agent:
+
+| | Project | Ships as | For |
+|---|---|---|---|
+| **App** | `Abacad.csproj` (WinUI 3) | `abacad-app-<v>-windows-x64.exe` | a desktop session — tray icon, window, Pause button |
+| **CLI** | `cli/Abacad.Cli.csproj` | `abacad-cli-<v>-windows-x64.zip` | Server boxes and remote sessions with nowhere to put a tray icon |
+
+The CLI compiles the same sources minus four files (`Program`, `App.xaml`,
+`MainWindow.xaml`, `TrayIcon`, and the two GDI helpers that only draw the tray
+glyph), so there is one implementation of the agent, not two. It is a *full*
+client — `abacad` with no arguments runs the agent in the foreground — because
+Windows, unlike macOS, puts no bundle-identity condition on screen capture or
+input injection.
 
 ## What it implements
 
@@ -24,17 +38,19 @@ stays `png_base64` for compatibility.
 
 ## Build (needs the .NET 8 SDK)
 
-`dotnet` cross-builds this Windows-targeted project on any OS, but the app only
-runs on Windows 10/11.
+The **app** needs a Windows build host: the Windows App SDK (WinUI 3) targets and
+the XAML compiler resolve nowhere else. The **CLI** references none of that and
+sets `EnableWindowsTargeting`, so it cross-builds from Linux or macOS — which is
+why CI builds it on a cloud runner and only the app goes to the self-hosted box.
+Both binaries run on Windows 10/11 only.
 
 ```sh
-cd windows
-dotnet build -c Release
-# self-contained single exe (no .NET install needed on the target PC):
-dotnet publish -c Release -r win-x64 --self-contained \
-  -p:PublishSingleFile=true -o publish
-# → publish/Abacad.exe
+# from the repo root:
+make windows-release       # app → windows/publish/Abacad.exe   (Windows host only)
+make windows-cli-release   # cli → windows/publish-cli/abacad.exe (any host)
 ```
+
+Both are self-contained single files, so the target PC needs no .NET install.
 
 > UI Automation is pulled in via `<UseWPF>true</UseWPF>` (WPF's client assemblies);
 > the app draws no WPF UI. If your SDK can't resolve `System.Windows.Automation`,
@@ -86,7 +102,15 @@ header, never the URL query.
 - **Primary display only** — capture and coordinates target the primary monitor.
 - **Single pointer** — `composite` is single-pointer (paths, modifier-fused clicks,
   and timing work; multi-touch gestures do not).
-- **Unsigned download** — release publishes `abacad-<version>-windows-amd64.exe`
+- **Single-file publish was leaking native DLLs** — `PublishSingleFile` bundles
+  managed assemblies but leaves native ones (`wpfgfx_cor3`, `PresentationNative_cor3`,
+  `D3DCompiler_47_cor3`, `PenImc_cor3`, `vcruntime140_cor3`) beside the exe, and
+  `make stage-windows` ships only the exe — so those files never reached anyone.
+  Both projects now set `IncludeNativeLibrariesForSelfExtract`, verified on the CLI
+  (five loose DLLs → none). **The app's fix is unverified at runtime**: nothing here
+  can launch a Windows binary, and the tray app has never been runtime-tested on a
+  real Windows box. Worth doing before the next release is announced.
+- **Unsigned download** — release publishes `abacad-<version>-windows-x64.exe`
   (self-contained single exe) and the downloads page lists it automatically from
   the manifest, but it is **not** Authenticode-signed yet, so SmartScreen warns on
   download. A signed installer — the analogue of the macOS notarized `.dmg` — is

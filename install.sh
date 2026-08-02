@@ -1,11 +1,15 @@
 #!/bin/sh
-# abacad Linux client installer.
+# abacad Linux CLI installer.
 #
 #   curl -fsSL https://abacad.ai/install.sh | sh
 #
 # Downloads the right prebuilt `abacad` binary for this machine, drops it on your
 # PATH, and points you at `abacad connect`. Override the server (self-hosted) with
 #   ABACAD_SERVER=https://my.host  sh install.sh
+#
+# This installs the CLI — the headless daemon you run on a server or over ssh.
+# For a Linux desktop with a window, Pause button and app launcher, install the
+# .deb from /downloads instead; it carries the same binary plus the GTK front-end.
 set -eu
 
 SERVER="${ABACAD_SERVER:-https://abacad.ai}"
@@ -16,7 +20,7 @@ arch="$(uname -m)"
 
 if [ "$os" != "Linux" ]; then
 	echo "This installer is for Linux (detected: $os)." >&2
-	echo "For macOS or Windows, see $SERVER/downloads." >&2
+	echo "For the macOS or Windows app and CLI, see $SERVER/downloads." >&2
 	exit 1
 fi
 
@@ -30,12 +34,14 @@ case "$arch" in
 esac
 
 # Resolve the download from the published manifest rather than hardcoding a
-# filename: artifacts are versioned (abacad-<version>-linux-<arch>.tar.gz), so we
-# pull the current URL for this machine's arch out of /downloads/manifest.json.
+# filename: artifacts are versioned and kind-tagged
+# (abacad-cli-<version>-linux-<arch>.tar.gz), so we pull the current URL for this
+# machine's arch out of /downloads/manifest.json. The `cli` in the pattern is what
+# keeps this off the .deb, which is published for the same platform and arch.
 manifest="$SERVER/downloads/manifest.json"
-path="$(curl -fsSL "$manifest" | grep -o "/downloads/abacad-[0-9.]*-linux-$A\.tar\.gz" | head -n 1)"
+path="$(curl -fsSL "$manifest" | grep -o "/downloads/abacad-cli-[0-9.]*-linux-$A\.tar\.gz" | head -n 1)"
 if [ -z "$path" ]; then
-	echo "No linux-$A build is published at $SERVER (checked $manifest)." >&2
+	echo "No linux-$A CLI build is published at $SERVER (checked $manifest)." >&2
 	echo "See $SERVER/downloads for what's available." >&2
 	exit 1
 fi

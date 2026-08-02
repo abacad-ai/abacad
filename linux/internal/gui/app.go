@@ -35,7 +35,7 @@ const appID = "ai.abacad.client"
 // is closed.
 func Run(initialURL string, x *x11.Conn) error {
 	sup := agent.NewSupervisor(x)
-	app := adw.NewApplication(appID, gio.ApplicationFlagsFlagsNone)
+	app := adw.NewApplication(appID, gio.ApplicationFlagsNone)
 	app.ConnectActivate(func() { activate(app, sup, initialURL) })
 	if code := app.Run(nil); code != 0 {
 		return fmt.Errorf("gtk application exited with code %d", code)

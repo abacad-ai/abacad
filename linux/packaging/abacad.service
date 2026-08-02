@@ -6,8 +6,11 @@
 #
 #   systemctl --user enable --now abacad.service
 #
-# The headless daemon here (no --gui) is cgo-free; the GUI app is launched
-# separately from the applications menu.
+# This runs /usr/bin/abacad with no --gui, so it opens no window — but it is the
+# same GTK-linked binary the launcher starts, not the cgo-free CLI build. One
+# binary serves both roles; the .deb depends on libgtk-4-1/libadwaita-1-0 for that
+# reason even though this unit never draws anything. If you want the genuinely
+# cgo-free daemon (a server with no GTK installed), take the CLI tarball instead.
 [Unit]
 Description=abacad device agent (relay connection)
 After=network-online.target

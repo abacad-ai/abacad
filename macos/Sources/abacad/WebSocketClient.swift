@@ -1,3 +1,4 @@
+import AbacadKit
 import Foundation
 
 // Outbound WebSocket to the abacad relay's /device endpoint. The Mac dials out

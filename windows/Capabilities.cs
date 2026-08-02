@@ -108,6 +108,22 @@ public static class Capabilities
         foreach (var fn in subs) fn();
     }
 
+    /// Replaces the whole set. The tray menu only ever toggles one at a time, but
+    /// the CLI's --all / --none / --only set the ceiling in one move, and doing
+    /// that as a sequence of toggles would persist and broadcast a half-applied
+    /// set on the way through.
+    public static void Set(List<string> names)
+    {
+        List<Action> subs;
+        lock (Gate)
+        {
+            ApplyLocked(names);
+            SaveLocked();
+            subs = new List<Action>(Listeners);
+        }
+        foreach (var fn in subs) fn();
+    }
+
     /// Registers a change callback (the agent re-reports; the UI repaints).
     public static void OnChange(Action fn)
     {

@@ -14,11 +14,11 @@ import Foundation
 // The token survives the claim unchanged, so the unclaimed -> claimed transition
 // needs no re-key: the same credential that polls the heartbeat later dials
 // /device.
-enum Enrollment {
-    static let defaultRelay = "https://abacad.ai"
+public enum Enrollment {
+    public static let defaultRelay = "https://abacad.ai"
 
     /// Terminal outcomes the caller has to act on differently from a retry.
-    enum EnrollError: Error {
+    public enum EnrollError: Error {
         /// The relay doesn't recognize our token — the registration was reaped or
         /// the device was deleted. Wipe and register again.
         case unknownToken
@@ -29,29 +29,29 @@ enum Enrollment {
         case transport(String)
     }
 
-    struct Registration {
-        let deviceID: String
-        let deviceToken: String
-        let claimCode: String
-        let claimExpiresIn: Int
-        let heartbeatIn: Int
+    public struct Registration {
+        public let deviceID: String
+        public let deviceToken: String
+        public let claimCode: String
+        public let claimExpiresIn: Int
+        public let heartbeatIn: Int
     }
 
-    struct Status {
-        let claimed: Bool
-        let deviceID: String
-        let claimCode: String
-        let claimExpiresIn: Int
-        let heartbeatIn: Int
-        let name: String
+    public struct Status {
+        public let claimed: Bool
+        public let deviceID: String
+        public let claimCode: String
+        public let claimExpiresIn: Int
+        public let heartbeatIn: Int
+        public let name: String
         /// The account that claimed this device. Shown in the panel so a claim by
         /// someone who read the screen isn't silent to the person sitting here.
-        let claimedBy: String
+        public let claimedBy: String
     }
 
     // MARK: - Calls
 
-    static func register(relay: String, platform: String, name: String, version: String) async throws -> Registration {
+    public static func register(relay: String, platform: String, name: String, version: String) async throws -> Registration {
         let (status, json) = try await post(
             url: normalize(relay) + "/api/devices/register",
             body: ["platform": platform, "name": name, "version": version])
@@ -67,7 +67,7 @@ enum Enrollment {
                             claimExpiresIn: j.int("claim_expires_in"), heartbeatIn: j.int("heartbeat_in"))
     }
 
-    static func heartbeat(relay: String, token: String) async throws -> Status {
+    public static func heartbeat(relay: String, token: String) async throws -> Status {
         // Header only: these endpoints are new, so there's no legacy ?token= shape
         // to support and no reason to put the secret in a URL or a proxy log.
         let (status, json) = try await post(
@@ -88,7 +88,7 @@ enum Enrollment {
     /// The WebSocket URL to dial once claimed. http(s) maps to ws(s) so a
     /// loopback dev relay stays on plain ws while a real deployment gets wss —
     /// matching WebSocketClient's own refusal to speak ws:// off-loopback.
-    static func deviceURL(relay: String) -> String {
+    public static func deviceURL(relay: String) -> String {
         var base = normalize(relay)
         if base.hasPrefix("https://") { base = "wss://" + base.dropFirst("https://".count) }
         else if base.hasPrefix("http://") { base = "ws://" + base.dropFirst("http://".count) }
@@ -97,13 +97,13 @@ enum Enrollment {
 
     /// Clamp a server-advertised second count so a missing or hostile hint can't
     /// spin the client.
-    static func interval(_ seconds: Int) -> UInt64 {
+    public static func interval(_ seconds: Int) -> UInt64 {
         if seconds < 5 { return 20 }
         if seconds > 300 { return 300 }
         return UInt64(seconds)
     }
 
-    static func normalize(_ relay: String) -> String {
+    public static func normalize(_ relay: String) -> String {
         var s = relay.trimmingCharacters(in: .whitespaces)
         while s.hasSuffix("/") { s.removeLast() }
         return s.isEmpty ? defaultRelay : s
@@ -111,15 +111,19 @@ enum Enrollment {
 
     /// A human-recognizable default name, so the claim page shows something
     /// better than "New device". The claimer can override it.
-    static func defaultDeviceName() -> String {
+    public static func defaultDeviceName() -> String {
         let n = Host.current().localizedName ?? ""
         return n.isEmpty ? "Mac" : n
     }
 
     /// The version reported at registration. Same source WebSocketClient uses for
     /// the ?version= dial parameter — stamped from the root VERSION file.
-    static func appVersion() -> String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+    ///
+    /// Info.plist first, so the .app reports exactly what `make macos` stamped
+    /// into the bundle it is running from. The CLI has no bundle, so it falls
+    /// back to the compiled-in constant rather than calling itself "dev".
+    public static func appVersion() -> String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? AbacadVersion.current
     }
 
     private static func post(url: String, body: [String: Any]?, bearer: String? = nil)

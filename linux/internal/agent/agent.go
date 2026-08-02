@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"time"
 
 	"abacad-linux/internal/capability"
 	"abacad-linux/internal/status"
@@ -51,6 +52,12 @@ func New(serverURL string, x *x11.Conn) (*Agent, error) {
 			status.SetState(status.Disconnected, "disconnected")
 			a.tunnel.closeAll()
 		}
+	}
+	// The socket redials on its own, so "disconnected" is only true for an
+	// instant; say so rather than leaving the window reading Disconnected for the
+	// whole backoff.
+	ws.onRetry = func(d time.Duration) {
+		status.SetState(status.Reconnecting, "retrying in "+d.Round(time.Second).String())
 	}
 	return a, nil
 }

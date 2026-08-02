@@ -6,11 +6,11 @@ import Foundation
 // their browser, then stores the issued wss://…?token=… URL via Prefs (login
 // Keychain) so the menu-bar app auto-connects on next launch. The CLI peer of the
 // Linux and Windows `abacad connect`.
-enum ConnectFlow {
-    static let defaultServer = "https://abacad.ai"
+public enum ConnectFlow {
+    public static let defaultServer = "https://abacad.ai"
 
     /// Entry from the process launcher. Returns a process exit code.
-    static func run(_ args: [String]) -> Int32 {
+    public static func run(_ args: [String]) -> Int32 {
         // Stream progress even when stdout is piped/redirected: the URL + code
         // must appear before we block polling, but stdout is block-buffered off a
         // TTY, which would hide them until exit.

@@ -32,6 +32,15 @@
          absolute coordinates all agree in physical pixels. -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
 
+    <!-- PublishSingleFile bundles managed assemblies but leaves NATIVE libraries
+         loose beside the exe unless this is set. `make stage-windows` publishes
+         exactly one file, so every loose .dll is a file the user never receives.
+         Confirmed on the sibling CLI project, which publishes five of them
+         (D3DCompiler_47_cor3, PresentationNative_cor3, wpfgfx_cor3, PenImc_cor3,
+         vcruntime140_cor3) despite referencing strictly less than this project.
+         NOT runtime-verified on Windows — see the README's known-limits note. -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+
     <!-- NOTE: Windows App SDK apps build on Windows. This drops the previous
          EnableWindowsTargeting cross-compile (the Mac-mini/Linux CI path) — the
          Windows client now needs a Windows build host. -->

@@ -23,6 +23,10 @@ type wsClient struct {
 	onText   func(string)
 	onBinary func([]byte)
 	onState  func(bool)
+	// onRetry fires when the socket dropped but we're going to dial again, with
+	// the wait until that attempt. onState(false) says "not connected"; this says
+	// "and still trying" — the difference matters to anyone watching the window.
+	onRetry func(time.Duration)
 
 	mu     sync.Mutex
 	conn   *websocket.Conn
@@ -89,6 +93,9 @@ func (w *wsClient) run(ctx context.Context) {
 			log.Printf("relay disconnected: %v (retry in %s)", err, backoff)
 		}
 		w.setState(false)
+		if ctx.Err() == nil && w.onRetry != nil {
+			w.onRetry(backoff)
+		}
 		select {
 		case <-ctx.Done():
 			return

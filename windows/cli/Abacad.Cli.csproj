@@ -1,0 +1,73 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- abacad Windows CLI — the same device agent as the tray app, with no window.
+       For a machine you administer over RDP/ssh, or one that has no interactive
+       desktop session to put a tray icon in.
+
+       It compiles the same sources as ..\Abacad.csproj, minus the four files that
+       touch WinUI or the tray, so there is one implementation of the agent and no
+       second copy to keep in sync. That subtraction is also what lets this project
+       cross-build on Linux: the Windows App SDK targets resolve only on a Windows
+       host, and nothing here references them. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>Abacad</RootNamespace>
+    <!-- Lowercase: this is what lands on PATH and what the docs tell people to
+         type, matching `abacad` on Linux and macOS. -->
+    <AssemblyName>abacad</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <Platforms>x64;arm64</Platforms>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+
+    <!-- Lets a non-Windows host build a windows-targeting TFM. The tray app can't
+         use this (its Windows App SDK targets need a real Windows host); this
+         project can, so CI builds it on a cloud runner. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+
+    <!-- PublishSingleFile bundles managed assemblies but leaves NATIVE libraries
+         beside the exe unless this is set — a publish drops D3DCompiler_47_cor3,
+         PresentationNative_cor3, wpfgfx_cor3, PenImc_cor3 and vcruntime140_cor3
+         (they arrive with the WindowsDesktop runtime that the UI-Automation client
+         pulls in). We ship exactly one file, so anything left loose is a file the
+         user never receives. Bundle them into the self-extracting exe instead. -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+
+    <!-- PerMonitorV2, shared with the tray app: GDI capture, UIA BoundingRectangle
+         and SendInput's absolute coordinates must all agree in physical pixels,
+         and that is a property of the process, not of having a window. -->
+    <ApplicationManifest>../app.manifest</ApplicationManifest>
+
+    <Product>abacad</Product>
+    <AssemblyTitle>abacad</AssemblyTitle>
+    <!-- One monorepo version, read from the repo-root VERSION file at build time. -->
+    <Version Condition="Exists('$(MSBuildThisFileDirectory)..\..\VERSION')">$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)..\..\VERSION').Trim())</Version>
+    <Version Condition="!Exists('$(MSBuildThisFileDirectory)..\..\VERSION')">dev</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Every shared source, minus the WinUI application (Program/App/MainWindow,
+         which own the tray app's entry point and window) and the tray glyph chain
+         (TrayIcon needs H.NotifyIcon; RelayMark and Theme exist only to draw for
+         it). Program.cs in particular MUST be excluded — this project has its own. -->
+    <Compile Include="../*.cs"
+             Exclude="../Program.cs;../App.xaml.cs;../MainWindow.xaml.cs;../TrayIcon.cs;../RelayMark.cs;../Theme.cs">
+      <Link>shared\%(Filename)%(Extension)</Link>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- UI-Automation client: reads and drives other apps' trees (Uia, UiTree,
+         CommandDispatcher). Nothing to do with this process having a window. -->
+    <PackageReference Include="FlaUI.UIA3" Version="4.0.0" />
+    <!-- GDI+ for ScreenCapture. -->
+    <PackageReference Include="System.Drawing.Common" Version="8.0.8" />
+    <!-- DPAPI (ProtectedData) encrypts the stored server URL (device token) at rest. -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+  </ItemGroup>
+
+</Project>

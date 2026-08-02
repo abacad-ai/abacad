@@ -111,12 +111,14 @@ not cap WebSocket frame size below screenshot payloads and needs long/absent idl
 timeouts on `/device`. The server strips query strings from its logs (device tokens
 ride in the query); redact them at the proxy too.
 
-`GET /downloads/<file>` serves public release artifacts (e.g.
-`abacad-0.4.0-macos-arm64.dmg`) and the `manifest.json` that lists them, from a
-plain directory (`-downloads` / `ABACAD_DOWNLOADS`, `/data/downloads` in
-Docker) — publishing a build is just a file copy into the data volume, no
-restart. The downloads page and `install.sh` read `manifest.json` (written by
-`make stage`); the server itself never scans the directory.
+`GET /downloads/<file>` serves public release artifacts, named
+`abacad-<kind>-<version>-<platform>-<arch>.<suffix>` where kind is `app` or `cli`
+(e.g. `abacad-app-0.5.0-macos-apple-silicon.dmg`, `abacad-cli-0.5.0-linux-amd64.tar.gz`),
+and the `manifest.json` that lists them, from a plain directory (`-downloads` /
+`ABACAD_DOWNLOADS`, `/data/downloads` in Docker) — publishing a build is just a
+file copy into the data volume, no restart. The downloads page and `install.sh`
+read `manifest.json` (written by `make stage`); the server itself never scans the
+directory.
 
 ## Not yet (deliberately)
 

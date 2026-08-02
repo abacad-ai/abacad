@@ -24,6 +24,10 @@ interface PlatformCard {
   icon: typeof Laptop;
   requirement: string;
   note: string;
+  // Shown under the CLI download, for a one-line install path. A function, not a
+  // string, so it reads the current origin at render — a self-hosted instance must
+  // print its own host, not abacad.ai.
+  cliHint?: () => string;
 }
 
 // The clients we describe, in display order. A platform with no published build
@@ -54,8 +58,9 @@ const CATALOG: PlatformCard[] = [
     key: "linux",
     label: "Linux",
     icon: Terminal,
-    requirement: "x86_64",
-    note: "In development.",
+    requirement: "X11 · GTK4 for the app",
+    note: "The .deb installs the desktop app and a systemd user service. On a headless box, take the CLI instead.",
+    cliHint: () => `curl -fsSL ${window.location.origin}/install.sh | sh`,
   },
 ];
 
@@ -140,11 +145,13 @@ export function DownloadsPage() {
 
 function ClientCard({ card, builds, loading }: { card: PlatformCard; builds: Build[]; loading: boolean }) {
   const Icon = card.icon;
-  // A platform can ship more than one arch (Linux amd64 + arm64) — one button
-  // each, arch-labeled. Versions agree across a platform's builds in practice.
-  const sorted = [...builds].sort((a, b) => a.arch.localeCompare(b.arch));
-  const version = sorted[0]?.version;
-  const multi = sorted.length > 1;
+  // Most platforms publish two things for the same machine: the app (a window,
+  // a tray/menu-bar icon, a Pause button) and the CLI (the same agent, driven
+  // from a terminal). They're separate downloads, so they get separate buttons —
+  // and the group headings only appear when there is in fact a choice to make.
+  const apps = byArch(builds.filter((b) => kindOf(b) === "app"));
+  const clis = byArch(builds.filter((b) => kindOf(b) === "cli"));
+  const both = apps.length > 0 && clis.length > 0;
   return (
     <Card className="flex flex-col p-5">
       <span className="flex h-9 w-9 items-center justify-center rounded-md border border-brand/25 bg-brand-soft text-brand">
@@ -161,19 +168,15 @@ function ClientCard({ card, builds, loading }: { card: PlatformCard; builds: Bui
           <LoaderCircle size={16} className="animate-spin" />
           Checking for a build
         </span>
-      ) : sorted.length > 0 ? (
-        <div className="flex flex-col gap-2">
-          {sorted.map((b) => (
-            <a key={b.url} href={b.url} download className={cn(buttonVariants(), "w-full")}>
-              <Download size={16} />
-              Download{multi ? ` (${b.arch})` : ""}
-            </a>
-          ))}
-          <p className="text-center font-mono text-[11px] text-ink-subtle">
-            {fileKind(sorted[0].file)}
-            {multi ? "" : ` · ${formatSize(sorted[0].size)}`}
-            {version ? ` · v${version}` : ""}
-          </p>
+      ) : apps.length + clis.length > 0 ? (
+        <div className="flex flex-col gap-4">
+          <DownloadGroup label={both ? "App" : null} builds={apps} />
+          <DownloadGroup
+            label={both ? "Command line" : null}
+            builds={clis}
+            variant="outline"
+            hint={clis.length > 0 ? card.cliHint?.() : undefined}
+          />
         </div>
       ) : (
         // No published artifact: say so plainly rather than offering a dead button.
@@ -183,6 +186,65 @@ function ClientCard({ card, builds, loading }: { card: PlatformCard; builds: Bui
       )}
     </Card>
   );
+}
+
+// One arch per button, arch-labeled only when a platform ships more than one
+// (Linux CLI is amd64 + arm64). Versions agree across a group in practice, so the
+// footer reads the first build's.
+function DownloadGroup({
+  label,
+  builds,
+  variant,
+  hint,
+}: {
+  label: string | null;
+  builds: Build[];
+  variant?: "outline";
+  hint?: string;
+}) {
+  if (builds.length === 0) return null;
+  const multi = builds.length > 1;
+  return (
+    <div className="flex flex-col gap-2">
+      {label && (
+        <p className="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-ink-subtle">{label}</p>
+      )}
+      {builds.map((b) => (
+        <a
+          key={b.url}
+          href={b.url}
+          download
+          className={cn(buttonVariants(variant ? { variant } : undefined), "w-full")}
+        >
+          <Download size={16} />
+          Download{multi ? ` (${b.arch})` : ""}
+        </a>
+      ))}
+      <p className="text-center font-mono text-[11px] text-ink-subtle">
+        {fileKind(builds[0].file)}
+        {multi ? "" : ` · ${formatSize(builds[0].size)}`}
+        {builds[0].version ? ` · v${builds[0].version}` : ""}
+      </p>
+      {hint && (
+        <p className="rounded-md border border-border bg-surface/60 px-2.5 py-2 text-center font-mono text-[11px] leading-5 text-ink-muted">
+          {hint}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function byArch(builds: Build[]): Build[] {
+  return [...builds].sort((a, b) => a.arch.localeCompare(b.arch));
+}
+
+// Manifests published before the app/cli split have no `kind`. Read those as
+// apps: the page ships ahead of the artifacts (the frontend is embedded in the
+// server binary, the builds land on the downloads volume separately), so for the
+// window between deploying this and publishing the next release the manifest on
+// disk is still the old one — and dropping those builds would empty the page.
+function kindOf(b: Build): Build["kind"] {
+  return b.kind ?? "app";
 }
 
 // The browser client has nothing to download — a tab on any machine becomes the
@@ -221,7 +283,7 @@ function Step({ n, title, body }: { n: number; title: string; body: string }) {
   );
 }
 
-// "abacad-0.4.0-macos-arm64.dmg" -> "DMG". The extension is the most useful label
+// "abacad-0.4.0-macos-apple-silicon.dmg" -> "DMG". The extension is the most useful label
 // for an artifact whose name is otherwise the same on every platform.
 function fileKind(file: string): string {
   if (file.endsWith(".tar.gz")) return "TAR.GZ";

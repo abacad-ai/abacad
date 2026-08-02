@@ -1,20 +1,28 @@
 # abacad Linux client
 
-The Linux counterpart to the macOS and Android clients: a **headless daemon** that
-dials the abacad relay over a WebSocket and drives this machine on command —
-capture the screen and inject mouse/keyboard input. It speaks the same wire
-contract as the phone plus the desktop-native verbs.
+The Linux counterpart to the macOS and Android clients: it dials the abacad relay
+over a WebSocket and drives this machine on command — capture the screen and
+inject mouse/keyboard input. It speaks the same wire contract as the phone plus
+the desktop-native verbs.
 
-Unlike the macOS menu-bar app, this is a background process with no GUI: config
-comes from flags / env / a config file, so it runs equally on a desktop session
-or a headless box (systemd, container, CI).
+One tree, built two ways:
 
-> **Disclosure.** While this daemon is connected, the machine can be **viewed and
-> controlled remotely by an agent** (screen capture + input injection). With no GUI
-> there is no on-screen indicator — it logs `device online — this machine can now be
-> viewed and controlled remotely by an agent` on connect. Only run it on machines you
-> are authorized to operate, and make sure anyone who uses the machine knows it is
-> remotely controllable.
+| | Build | Ships as | For |
+|---|---|---|---|
+| **CLI** | `make linux` (cgo-free) | `abacad-cli-<v>-linux-<arch>.tar.gz`, via `install.sh` | servers, containers, CI, anything you reach over ssh |
+| **App** | `make linux-deb` (cgo + GTK4) | `abacad-app-<v>-linux-amd64.deb` | a desktop session — window, live status, Pause button, app launcher |
+
+The `.deb` carries the GTK build plus a systemd **user** service, so the same
+binary runs the window (`abacad --gui`) and the background connection. Config
+comes from flags / env / a config file either way.
+
+> **Disclosure.** While this client is connected, the machine can be **viewed and
+> controlled remotely by an agent** (screen capture + input injection). The app
+> shows that live in its window. The CLI has no on-screen indicator — it logs
+> `device online — this machine can now be viewed and controlled remotely by an
+> agent` on connect, and `abacad capabilities` is its control surface. Only run it
+> on machines you are authorized to operate, and make sure anyone who uses the
+> machine knows it is remotely controllable.
 
 ## What it implements
 
@@ -33,13 +41,23 @@ same space so a pixel maps straight to a click point.
 
 ## Build
 
-Builds anywhere with a Go toolchain (this is the one client that also builds on
-the Linux CI box):
+The CLI builds anywhere with a Go toolchain (this is the one client that also
+builds on the Linux CI box). The app additionally needs the GTK4 and libadwaita
+dev packages, and links cgo against them — so it builds on Linux only, for the
+host's own architecture:
 
 ```sh
 # from the repo root:
-make linux            # → linux/build/abacad
+make linux            # CLI          → linux/build/abacad
+make linux-gui        # app binary   → linux/build/abacad-gui
+make linux-deb        # app package  → linux/build/abacad_<version>_amd64.deb
+
+# on Debian/Ubuntu, once:
+sudo apt install libgtk-4-dev libadwaita-1-dev   # libadwaita >= 1.4
 ```
+
+The gotk4 bindings are pinned in `go.mod` like any other dependency; `make -C
+linux deps-gui` bumps them.
 
 ## Provision + connect
 

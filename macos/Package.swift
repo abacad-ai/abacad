@@ -7,16 +7,40 @@ import PackageDescription
 //
 // All dependencies are system frameworks (SwiftUI, AppKit, ScreenCaptureKit,
 // ApplicationServices, CoreGraphics, Carbon, Network) — no external packages.
-// `swift build` produces a bare binary; the Makefile wraps it into a signed
+// `swift build` produces bare binaries; the Makefile wraps `abacad` into a signed
 // .app bundle so TCC permissions (Accessibility, Screen Recording) attach to a
 // stable identity.
+//
+// Three targets, because the machine is driven by the app and configured by
+// either:
+//
+//   AbacadKit  — the UI-free half: pairing, enrollment, the capability ceiling,
+//                Keychain-backed prefs, JSON helpers. Foundation only.
+//   abacad     — the menu-bar app. Does the actual seeing and controlling; that
+//                work stays here because TCC keys Screen Recording and
+//                Accessibility to the .app bundle's identity, so a bare binary
+//                cannot hold those grants in any durable way.
+//   abacad-cli — the terminal front-end: `connect`, `capabilities`, `status`.
+//                Shares the Keychain store (service ai.abacad.agent, no access
+//                group) with the app, so configuring from either side is the
+//                same configuration.
 let package = Package(
     name: "abacad",
     platforms: [.macOS(.v14)], // SCScreenshotManager.captureImage needs macOS 14
     targets: [
+        .target(
+            name: "AbacadKit",
+            path: "Sources/AbacadKit"
+        ),
         .executableTarget(
             name: "abacad",
+            dependencies: ["AbacadKit"],
             path: "Sources/abacad"
-        )
+        ),
+        .executableTarget(
+            name: "abacad-cli",
+            dependencies: ["AbacadKit"],
+            path: "Sources/abacad-cli"
+        ),
     ]
 )

@@ -5,14 +5,14 @@ import Security
 // is stored in the login Keychain rather than UserDefaults — a plist that any
 // process running as the user, or a Time Machine backup, can read. A value left
 // in UserDefaults by an older build is migrated into the Keychain on first read.
-enum Prefs {
+public enum Prefs {
     private static let service = "ai.abacad.agent"
     private static let legacyDefaultsKey = "server_url"
 
     /// The full dial URL (wss://…?token=…). Written by `abacad connect` and by a
     /// human pasting into the panel. Self-enrollment leaves this empty and uses
     /// relayURL + deviceToken instead.
-    static var serverURL: String {
+    public static var serverURL: String {
         get {
             if let v = keychainGet("server_url") { return v }
             // Migrate a value written by an older UserDefaults-backed build.
@@ -29,12 +29,12 @@ enum Prefs {
 
     // Self-enrollment credentials. The token is a bearer secret, so it lives in
     // the same login Keychain as serverURL rather than UserDefaults.
-    static var relayURL: String {
+    public static var relayURL: String {
         get { keychainGet("relay_url") ?? "" }
         set { keychainSet("relay_url", newValue) }
     }
 
-    static var deviceID: String {
+    public static var deviceID: String {
         get { keychainGet("device_id") ?? "" }
         set { keychainSet("device_id", newValue) }
     }
@@ -44,19 +44,19 @@ enum Prefs {
     /// with the rest so there is one store to reason about. Empty means never
     /// configured, which is the wildcard; Capabilities writes an explicit marker
     /// for the empty set, because keychainGet cannot tell "" from a missing item.
-    static var capabilities: String {
+    public static var capabilities: String {
         get { keychainGet("capabilities") ?? "" }
         set { keychainSet("capabilities", newValue) }
     }
 
-    static var deviceToken: String {
+    public static var deviceToken: String {
         get { keychainGet("device_token") ?? "" }
         set { keychainSet("device_token", newValue) }
     }
 
     /// Drop the self-enrollment credential, keeping the relay so a re-register
     /// goes back to the same server. Used when the relay stops recognizing us.
-    static func clearEnrollment() {
+    public static func clearEnrollment() {
         deviceID = ""
         deviceToken = ""
     }
