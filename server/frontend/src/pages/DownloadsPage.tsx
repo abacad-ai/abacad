@@ -51,8 +51,8 @@ const CATALOG: PlatformCard[] = [
     key: "windows",
     label: "Windows",
     icon: Monitor,
-    requirement: "Windows 11",
-    note: "In development.",
+    requirement: "Windows 10 1809 or later",
+    note: "The installer sets up the tray app for your account only — no administrator prompt — and can start it when you sign in. On a server with no desktop, take the CLI instead.",
   },
   {
     key: "linux",

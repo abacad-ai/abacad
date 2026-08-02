@@ -93,7 +93,10 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-      - run: make windows-release
+      # windows-installer depends on windows-release, so this covers the app
+      # build too. Compiling the .iss here rather than only at tag time is the
+      # point: a broken installer script should fail a PR, not a release.
+      - run: make windows-installer
 
   # Windows CLI — the same sources minus WinUI, which is exactly what lets it
   # build here. Cheap coverage for the shared agent/capture/input code on every

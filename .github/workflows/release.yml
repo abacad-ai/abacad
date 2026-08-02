@@ -71,7 +71,7 @@ jobs:
           path: dist/
           if-no-files-found: error
 
-  # ── Windows tray app — self-contained single exe, built on Windows ───────────
+  # ── Windows tray app — per-user Inno installer, built on Windows ─────────────
   # Self-hosted NUC. Since the WinUI 3 (Windows App SDK) rewrite this can no
   # longer cross-build on Linux — the Windows App SDK targets resolve only on a
   # Windows host — so it runs on the box that has the .NET 8 SDK provisioned,
@@ -82,6 +82,11 @@ jobs:
   #
   # The csproj stamps its Version from the repo-root VERSION file at build time,
   # so there is nothing to inject here — the whole monorepo shares one number.
+  #
+  # windows-installer additionally needs Inno Setup 6.3+ with ISCC.exe on the
+  # MACHINE PATH and readable by NT AUTHORITY\NETWORK SERVICE — the same
+  # provisioning trap documented at the top of this file for make and dotnet.
+  # It depends on windows-release, so building it alone covers both.
   windows:
     runs-on: [self-hosted, Windows, X64]
     defaults:
@@ -89,9 +94,9 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-      - name: Build + stage self-contained exe
+      - name: Build + stage per-user installer
         run: |
-          make windows-release
+          make windows-installer
           make stage-windows DOWNLOADS=dist
       - uses: actions/upload-artifact@v4
         with:

@@ -32,6 +32,14 @@
          absolute coordinates all agree in physical pixels. -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
 
+    <!-- Embeds Abacad.ico as the exe's Win32 icon resource. Without this the exe
+         has no icon, so every shortcut the installer creates — Start Menu,
+         desktop, taskbar pin — renders as the generic Windows executable glyph.
+         Generated from assets/icon-rounded-1024.png by scripts/gen-win-ico.py and
+         committed, the same arrangement as macos/AppIcon.icns. Unrelated to the
+         tray glyph, which RelayMark.cs draws at runtime. -->
+    <ApplicationIcon>Abacad.ico</ApplicationIcon>
+
     <!-- PublishSingleFile bundles managed assemblies but leaves NATIVE libraries
          loose beside the exe unless this is set. `make stage-windows` publishes
          exactly one file, so every loose .dll is a file the user never receives.

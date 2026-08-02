@@ -133,6 +133,11 @@ PKG_LINUX_CLI_ARM64 := abacad-cli-$(VERSION)-linux-arm64.tar.gz
 APK_RELEASE := android/app/build/outputs/apk/release/app-release.apk
 WIN_EXE     := windows/publish/Abacad.exe
 WIN_CLI_EXE := windows/publish-cli/abacad.exe
+# WIN_EXE is the installer's INPUT, not a published artifact — what ships as
+# PKG_WINDOWS is WIN_SETUP, the same way Linux ships the .deb rather than the
+# bare binary. Inno fixes the leaf name via OutputBaseFilename in the .iss, and
+# stage-windows renames it to the repo convention on the way into $(DOWNLOADS).
+WIN_SETUP   := windows/installer/Output/abacad-setup.exe
 LINUX_DEB   := linux/build/abacad_$(VERSION)_$(DEB_ARCH).deb
 MAC_CLI_BIN := macos/build/abacad-cli/abacad
 
@@ -140,7 +145,7 @@ MAC_CLI_BIN := macos/build/abacad-cli/abacad
         dev server tokens bump-version version android android-release \
         linux linux-release linux-run linux-test linux-gui linux-deb linux-app \
         macos macos-icon macos-dmg macos-release macos-cli macos-cli-release macos-trust-reset macos-clean \
-        windows windows-debug windows-release windows-cli-release \
+        windows windows-debug windows-release windows-cli-release windows-installer \
         publish stage stage-macos stage-android stage-linux stage-windows manifest \
         _mac-pkg-dmg _mac-notarize-app _mac-notarize-dmg
 
@@ -188,7 +193,7 @@ debug release:
 # (say) the GTK app still ships the Linux CLI.
 DEBUG_PLATFORMS   := android linux macos windows-debug
 RELEASE_PLATFORMS := android-release linux-release linux-deb macos-release macos-cli-release \
-                     windows-release windows-cli-release
+                     windows-installer windows-cli-release
 
 build-debug:
 	@failed=""; \
@@ -371,11 +376,36 @@ windows-debug:
 	dotnet build windows/Abacad.csproj -c Debug
 
 # Self-contained single-file exe (bundles the .NET runtime, so it runs on a clean
-# Windows box), but UNSIGNED: there's no Authenticode/code-signing cert path in
-# the repo yet, so the .exe runs but SmartScreen warns on download. TODO: sign
-# here once a cert is available. Output: windows/publish/Abacad.exe
+# Windows box). This is the installer's payload, not a shipped artifact — see
+# windows-installer below. Output: windows/publish/Abacad.exe
 windows-release:
 	dotnet publish windows/Abacad.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o windows/publish
+
+# Wrap the published exe in a per-user Inno Setup installer — the artifact that
+# actually ships, the analogue of the macOS .dmg and the Linux .deb. Installs to
+# %LOCALAPPDATA%\Programs with no UAC prompt, creates a Start Menu entry, and
+# offers run-at-login; see windows/installer/abacad.iss for the reasoning.
+#
+# Needs Inno Setup 6.3+ with ISCC.exe on PATH (machine-scope, and readable by
+# NT AUTHORITY\NETWORK SERVICE on the self-hosted runner — same provisioning
+# trap that release.yml documents for make and dotnet).
+#
+# Still UNSIGNED: there is no Authenticode certificate in the repo yet, so
+# SmartScreen warns on download. The hook is the commented SignTool directive in
+# the .iss — sign the installer there, not the payload exe, so reputation accrues
+# to the certificate instead of to a per-release file hash.
+#
+# The doubled slash in //D is not a typo. These recipes run under Git Bash on the
+# runner, and MSYS rewrites a lone /DAppVersion=... into a Windows path
+# (C:/Program Files/Git/DAppVersion=...) before ISCC ever sees it. A leading //
+# is the documented escape and reaches the program as /D.
+# Output: windows/installer/Output/abacad-setup.exe
+windows-installer: windows-release
+	@v=$$(ISCC.exe --version 2>/dev/null | tr -d '\r' | grep -oE '[0-9]+\.[0-9]+' | head -1); \
+	 test -n "$$v" || { echo "error: ISCC.exe not on PATH — install Inno Setup 6.3+ (machine scope)" >&2; exit 1; }; \
+	 echo "$$v" | awk -F. '{ exit !($$1 > 6 || ($$1 == 6 && $$2 >= 3)) }' || \
+	   { echo "error: Inno Setup $$v is too old — abacad.iss needs 6.3+ for ArchitecturesAllowed=x64compatible" >&2; exit 1; }
+	ISCC.exe //DAppVersion=$(VERSION) windows/installer/abacad.iss
 
 # The console build of the same agent — no WinUI, no tray, so unlike the app it
 # cross-compiles from any host with the .NET 8 SDK (EnableWindowsTargeting in the
@@ -579,8 +609,8 @@ stage-linux:
 
 stage-windows:
 	@mkdir -p "$(DOWNLOADS)"
-	@if [ -f "$(WIN_EXE)" ]; then cp "$(WIN_EXE)" "$(DOWNLOADS)/$(PKG_WINDOWS)"; echo "  staged $(PKG_WINDOWS)"; \
-	 else echo "  (skip windows app: no $(WIN_EXE) — run 'make windows-release')"; fi
+	@if [ -f "$(WIN_SETUP)" ]; then cp "$(WIN_SETUP)" "$(DOWNLOADS)/$(PKG_WINDOWS)"; echo "  staged $(PKG_WINDOWS)"; \
+	 else echo "  (skip windows app: no $(WIN_SETUP) — run 'make windows-installer')"; fi
 	@# .zip rather than .tar.gz: Windows opens one without extra tooling. -j junks
 	@# the path so the archive holds a bare abacad.exe.
 	@if [ ! -f "$(WIN_CLI_EXE)" ]; then echo "  (skip windows cli: no $(WIN_CLI_EXE) — run 'make windows-cli-release')"; \
