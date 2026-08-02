@@ -41,6 +41,20 @@
          NOT runtime-verified on Windows — see the README's known-limits note. -->
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
 
+    <!-- There are TWO runtimes to bundle, and the publish flag covers only one.
+         SelfContained bundles the .NET runtime (it is why the exe is ~190 MB). The
+         Windows App Runtime is a *separate* framework MSIX, and an unpackaged
+         WinUI 3 app (WindowsPackageType None, above) defaults to resolving it
+         from the machine — so v0.5.1 shipped an exe whose bootstrapper opened
+         with "This application requires the Windows App Runtime Version 1.6
+         (MSIX package version >= 6000.266.2241.0)" on a box that didn't have it.
+         WindowsAppSDKSelfContained copies the WinAppSDK binaries into the publish
+         output instead, which is what makes the download actually standalone.
+         SelfContained is set here too so a plain `dotnet publish` agrees with the
+         Makefile's command line rather than half-configuring itself. -->
+    <SelfContained>true</SelfContained>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+
     <!-- NOTE: Windows App SDK apps build on Windows. This drops the previous
          EnableWindowsTargeting cross-compile (the Mac-mini/Linux CI path) — the
          Windows client now needs a Windows build host. -->

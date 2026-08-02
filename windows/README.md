@@ -50,7 +50,12 @@ make windows-release       # app → windows/publish/Abacad.exe   (Windows host 
 make windows-cli-release   # cli → windows/publish-cli/abacad.exe (any host)
 ```
 
-Both are self-contained single files, so the target PC needs no .NET install.
+Both are self-contained single files, so the target PC needs no .NET install — and
+the app additionally sets `WindowsAppSDKSelfContained`, so it needs no Windows App
+Runtime install either. Those are two separate runtimes: `--self-contained` bundles
+only the .NET one, and v0.5.1 shipped without the second, so the app refused to
+start with *"This application requires the Windows App Runtime Version 1.6"* on any
+PC that didn't already have the framework MSIX.
 
 > UI Automation is pulled in via `<UseWPF>true</UseWPF>` (WPF's client assemblies);
 > the app draws no WPF UI. If your SDK can't resolve `System.Windows.Automation`,
@@ -107,9 +112,18 @@ header, never the URL query.
   `D3DCompiler_47_cor3`, `PenImc_cor3`, `vcruntime140_cor3`) beside the exe, and
   `make stage-windows` ships only the exe — so those files never reached anyone.
   Both projects now set `IncludeNativeLibrariesForSelfExtract`, verified on the CLI
-  (five loose DLLs → none). **The app's fix is unverified at runtime**: nothing here
-  can launch a Windows binary, and the tray app has never been runtime-tested on a
-  real Windows box. Worth doing before the next release is announced.
+  (five loose DLLs → none). **The app's fix is still unverified at runtime**: no
+  host here can launch a Windows binary. v0.5.1 got as far as the Windows App SDK
+  bootstrapper on a real PC before failing for an unrelated reason (see below), so
+  single-file extraction is *not* disproven — but nothing past startup is tested.
+- **Windows App Runtime was not bundled (fixed, unverified)** — `--self-contained`
+  bundles the .NET runtime only. An unpackaged WinUI 3 app resolves the *Windows
+  App Runtime* from a framework MSIX on the machine, so v0.5.1 died at launch with
+  "This application requires the Windows App Runtime Version 1.6". The csproj now
+  sets `WindowsAppSDKSelfContained`. That combination — WinAppSDK self-contained
+  *plus* `PublishSingleFile` — is the one to actually launch on the NUC before the
+  next release is announced; it is the same untested assumption that produced this
+  bug in the first place.
 - **Unsigned download** — release publishes `abacad-<version>-windows-x64.exe`
   (self-contained single exe) and the downloads page lists it automatically from
   the manifest, but it is **not** Authenticode-signed yet, so SmartScreen warns on
