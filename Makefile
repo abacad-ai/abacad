@@ -90,7 +90,8 @@ endif
 # The `stage` target below copies each build to these names in $(DOWNLOADS) and
 # regenerates manifest.json; nothing carries a "latest" name anymore — the
 # manifest is what points at the current version. Arch is Go's GOARCH vocabulary
-# (amd64/arm64); the Android APK bundles every ABI, so it's "universal".
+# (amd64/arm64); the Android APK carries every ABI the app supports (arm64-v8a +
+# x86_64 — see android/app/build.gradle.kts), so it's "universal".
 PKG_MACOS       := abacad-$(VERSION)-macos-arm64.dmg
 PKG_ANDROID     := abacad-$(VERSION)-android-universal.apk
 PKG_WINDOWS     := abacad-$(VERSION)-windows-amd64.exe

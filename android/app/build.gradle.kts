@@ -50,11 +50,39 @@ android {
         versionCode = monorepoVersionCode
         versionName = monorepoVersion
 
-        // 64-bit only for now: the live-view target devices are arm64, and it
-        // keeps the LibVNCServer build (Spike B) to a single ABI while we prove
-        // the pipeline. Add armeabi-v7a here if a 32-bit device needs it.
+        // One APK carrying every ABI we support — which is what the published
+        // name has always claimed. It used to be arm64-v8a alone while shipping
+        // as "…-android-universal.apk", so it refused to install on anything
+        // else, emulators included; adding x86_64 makes the name true.
+        //
+        // ── Why one fat APK and NOT per-ABI splits ─────────────────────────
+        // Splits were implemented and measured before being dropped. Actual
+        // v0.4.2 release builds, R8 on:
+        //
+        //     arm64-v8a only     2,240,684 B   (2.14 MB)
+        //     x86_64 only        2,272,013 B   (2.17 MB)
+        //     universal (this)   2,501,465 B   (2.39 MB)
+        //
+        // So the best case for splitting — an arm64 phone — saves 260,781 B:
+        // 255 KB, about 10% of a 2.4 MB download. The native library is the
+        // only per-ABI content in the package, and it is just ~224 KB
+        // (arm64-v8a) / ~255 KB (x86_64); everything else is shared dex and
+        // resources, which every split would carry in full anyway.
+        //
+        // What that 255 KB would have cost: three release artifacts instead of
+        // one, three download buttons where the user has to know their own ABI,
+        // a per-ABI versionCode offset scheme (APKs sharing a versionCode are
+        // not updates to each other, so moving between them breaks without
+        // one), and a 3x longer native CI build. Not worth it.
+        //
+        // It is the arithmetic that makes splits wrong here, not the principle:
+        // revisit if the native side ever grows by an order of magnitude.
+        //
+        // armeabi-v7a stays out: minSdk is 30, and a 32-bit-only Android 11
+        // device is close to extinct. The CMake build is ABI-agnostic, so it is
+        // one word here if one ever shows up.
         ndk {
-            abiFilters += "arm64-v8a"
+            abiFilters += listOf("arm64-v8a", "x86_64")
         }
     }
 

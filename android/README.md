@@ -54,6 +54,26 @@ make android-release      # -> app/build/outputs/apk/release/app-release.apk
 make stage-android        # copied into the downloads dir as abacad-<version>-android-universal.apk
 ```
 
+One APK, carrying both supported ABIs (`arm64-v8a` and `x86_64`), which is what
+the published "universal" name claims. It hasn't always: the APK was arm64-only
+for a while and so refused to install on anything else, emulators included.
+
+**Per-ABI splits were built, measured, and rejected.** v0.4.2 release builds:
+
+| APK | size |
+|---|---:|
+| `arm64-v8a` only | 2,240,684 B (2.14 MB) |
+| `x86_64` only | 2,272,013 B (2.17 MB) |
+| universal (shipped) | 2,501,465 B (2.39 MB) |
+
+Splitting saves 260,781 B — 255 KB, ~10% — for the best case, an arm64 phone.
+The native library is the only per-ABI content and it's ~224 KB; the rest is
+shared dex and resources that every split carries in full anyway. That 255 KB
+would have cost three release artifacts, three download buttons the user has to
+choose between by knowing their own ABI, a per-ABI `versionCode` offset scheme,
+and a 3x longer native CI build. Revisit only if the native side grows by an
+order of magnitude.
+
 The size win came from R8 instead — the release build is minified and
 resource-shrunk, **18,754,025 B → 2,501,465 B (−87%)**. See
 `app/proguard-rules.pro` for the short list of names that must survive
