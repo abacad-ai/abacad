@@ -67,6 +67,12 @@ final class Agent: ObservableObject {
     @Published var enrolling = false
     @Published var enrollError: String?
 
+    // True until this Mac has a device token — i.e. nobody has ever set it up.
+    // The token doubles as the "has been set up" flag, so there is no separate
+    // persisted bit to keep in sync. Registering is what mints the token, so
+    // this is also exactly the state in which we must not have talked to a relay.
+    @Published var needsSetup: Bool = Prefs.deviceToken.isEmpty && Prefs.serverURL.isEmpty
+
     // Awareness state — the consent surface for the person at this Mac.
     @Published var paused = false            // soft-kill: reject commands locally
     @Published var watched = false           // a live-view (VNC) session is active
@@ -79,6 +85,17 @@ final class Agent: ObservableObject {
     private var dispatcher = CommandDispatcher()
     private let tunnel = Tunnel()
     private var controlGen = 0
+    /// The in-flight enrollment, retained so a newer request can cancel it, plus
+    /// a generation stamp.
+    ///
+    /// Both are needed. `Enrollment.heartbeat` is a plain async call with no
+    /// cancellation support, so cancelling a task suspended inside it does not
+    /// resume it — the old run finishes its request seconds later and would
+    /// otherwise publish that relay's claim code over the new run's, and let its
+    /// `defer` lower `enrolling` while the new run is still working. The
+    /// generation is what makes a superseded run's writes no-ops.
+    private var enrollTask: Task<Void, Never>?
+    private var enrollGen = 0
 
     // Power/network watchers. A sleeping Mac can't answer the relay's liveness
     // pings, so the socket dies during sleep no matter what we do — what matters
@@ -131,9 +148,21 @@ final class Agent: ObservableObject {
             // still wins, so existing installs are untouched.
             ws.connect(urlString: serverURL)
         } else {
-            // Nothing configured: self-enroll. Registers if we have no token,
-            // then polls until a human claims this Mac, then dials.
-            Task { await self.runEnrollment() }
+            // Nothing configured. Resume enrollment only — allowRegister: false
+            // means that with no stored token this returns without touching the
+            // network, and the panel offers "Set up this Mac" instead. Launching
+            // the app is not consent to be registered with a relay; pressing the
+            // button is. With a token already in hand the human has pressed it
+            // before, so this is the unchanged heartbeat -> claim -> dial path.
+            //
+            // Only when there is something to resume. Starting a run that would
+            // immediately hit the allowRegister gate would raise `enrolling` for
+            // one hop, flashing "Contacting …" on a Mac contacting nothing.
+            //
+            // init is not @MainActor, so hop rather than calling directly.
+            if !Prefs.deviceToken.isEmpty {
+                Task { @MainActor in self.startEnrollment(allowRegister: false) }
+            }
         }
     }
 
@@ -143,40 +172,67 @@ final class Agent: ObservableObject {
     /// passes: the second exists only for the case where a stored credential
     /// turned out to be dead, so we discard it and enroll afresh in-process
     /// rather than making someone quit and relaunch.
+    ///
+    /// `allowRegister` gates the one call that contacts a relay we have never
+    /// spoken to. It is false on the launch path and true only where a human
+    /// asked for setup: `beginSetup`, `forgetEnrollment`, `changeRelay`. The gate
+    /// lives here rather than at the call site because the loop re-registers on
+    /// its own after `.credentialDead`, and that second pass must inherit the
+    /// same permission as the first.
     @MainActor
-    private func runEnrollment() async {
-        enrolling = true
+    private func runEnrollment(allowRegister: Bool, gen: Int) async {
         enrollError = nil
-        defer { enrolling = false }
+        // Only the current run may lower the flag: a superseded one finishing its
+        // in-flight request would otherwise clear `enrolling` mid-way through the
+        // run that replaced it, flashing the setup button over a live enrollment.
+        defer { if gen == enrollGen { enrolling = false } }
 
         for _ in 0..<2 {
             let relay = Enrollment.normalize(relayURL)
             var token = Prefs.deviceToken
 
             if token.isEmpty {
+                guard allowRegister else { return }
                 do {
                     let reg = try await Enrollment.register(
                         relay: relay, platform: "macos",
                         name: Enrollment.defaultDeviceName(), version: Enrollment.appVersion())
+                    // Superseded while the request was in flight: the newer run
+                    // has already cleared Prefs, so writing ANY of these would
+                    // resurrect a credential for a relay we are no longer
+                    // enrolling with. Must precede every write — persisting the
+                    // old relay/id beside the new run's token leaves a config
+                    // that heartbeats the wrong pair and wipes itself on the next
+                    // launch. The relay keeps an unclaimed row; reaped in an hour.
+                    guard isCurrent(gen) else { return }
                     token = reg.deviceToken
                     Prefs.relayURL = relay
                     Prefs.deviceID = reg.deviceID
                     Prefs.deviceToken = reg.deviceToken
                     deviceID = reg.deviceID
                     claimCode = reg.claimCode
+                    needsSetup = false
                 } catch Enrollment.EnrollError.notSupported {
+                    // Errors are gated too: a superseded run reporting a failure
+                    // would stamp it over the live one, and because `defer` only
+                    // lets the current generation lower `enrolling`, the panel
+                    // would strand on error-with-no-button. Windows guards the
+                    // same three paths via Fail(ct:).
+                    guard isCurrent(gen) else { return }
                     enrollError = "This relay doesn't support automatic setup. Run `abacad connect`, or paste a connection URL below."
                     return
                 } catch {
+                    guard isCurrent(gen) else { return }
                     enrollError = "Couldn't reach \(relay). Check the relay address and your network."
                     return
                 }
             }
 
-            switch await waitForClaim(relay: relay, token: token) {
+            switch await waitForClaim(relay: relay, token: token, gen: gen) {
             case .claimed(let status):
                 claimedBy = status.claimedBy
                 claimCode = ""
+                needsSetup = false
                 event("• claimed by \(status.claimedBy.isEmpty ? "your account" : status.claimedBy)")
                 // WebSocketClient splits ?token= into an Authorization header at
                 // dial time, so the combined form is what the rest of the app
@@ -192,49 +248,111 @@ final class Agent: ObservableObject {
                 return
             case .credentialDead:
                 // Registration reaped, or the device was deleted. Start over.
+                // needsSetup goes back up so that if we got here on the launch
+                // path (allowRegister false) the next pass stops at the guard and
+                // the panel asks before re-registering, rather than silently
+                // minting a fresh identity on a relay behind the user's back.
                 Prefs.clearEnrollment()
                 deviceID = ""
                 claimCode = ""
-                event("• relay no longer recognizes this device — re-registering")
+                claimedBy = ""   // else the panel shows "not set up" and "Claimed by …" at once
+                needsSetup = true
+                event(allowRegister
+                    ? "• relay no longer recognizes this device — re-registering"
+                    : "• relay no longer recognizes this device — press Set up to register again")
                 continue
+            case .cancelled:
+                return
             case .failed(let message):
                 enrollError = message
                 return
             }
         }
-        enrollError = "The relay rejected freshly issued credentials twice."
+        if isCurrent(gen) {
+            enrollError = "The relay rejected freshly issued credentials twice."
+        }
     }
 
     private enum ClaimOutcome {
         case claimed(Enrollment.Status)
         case credentialDead
         case failed(String)
+        case cancelled
     }
 
     @MainActor
-    private func waitForClaim(relay: String, token: String) async -> ClaimOutcome {
+    private func waitForClaim(relay: String, token: String, gen: Int) async -> ClaimOutcome {
         var transientFailures = 0
-        while true {
+        // `try? await Task.sleep` swallows the cancellation error, so the loop
+        // has to test for it explicitly or a cancelled run spins at full speed.
+        while isCurrent(gen) {
             do {
                 let st = try await Enrollment.heartbeat(relay: relay, token: token)
+                // heartbeat is not cancellation-aware, so this is the first point
+                // a superseded run can notice. Return before touching any state.
+                guard isCurrent(gen) else { return .cancelled }
                 transientFailures = 0
                 if st.claimed { return .claimed(st) }
                 if !st.deviceID.isEmpty { deviceID = st.deviceID }
                 claimCode = st.claimCode // the relay rotates it; we just display it
                 try? await Task.sleep(nanoseconds: Enrollment.interval(st.heartbeatIn) * 1_000_000_000)
             } catch Enrollment.EnrollError.unknownToken {
+                // Same check: a superseded run must not report a dead credential,
+                // because the caller responds by wiping Prefs — which by now
+                // holds the replacing run's token.
+                guard isCurrent(gen) else { return .cancelled }
                 return .credentialDead
             } catch {
                 // A flaky network shouldn't abandon a setup screen someone is
                 // looking at; keep retrying, but give up rather than spin forever.
                 transientFailures += 1
                 if transientFailures >= 10 {
+                    // The loop condition tests the generation, but this early
+                    // return skips it — a superseded run must not report failure.
+                    guard isCurrent(gen) else { return .cancelled }
                     return .failed("Lost contact with \(relay) while waiting to be claimed.")
                 }
                 try? await Task.sleep(nanoseconds: 10 * 1_000_000_000)
             }
         }
+        return .cancelled
     }
+
+    /// The human asked to set this Mac up. This is the only path on a fresh
+    /// install that is allowed to contact a relay, and the first thing it does is
+    /// register — so it must not be reachable except from a button.
+    ///
+    /// The `enrolling` guard is load-bearing: `waitForClaim` is an unbounded loop
+    /// with no retained Task handle, so a second press would leave two of them
+    /// running, both writing `claimCode` from their own heartbeats.
+    @MainActor
+    func beginSetup() { startEnrollment(allowRegister: true) }
+
+    /// Single entry point for every enrollment request. Supersedes any run
+    /// already in flight rather than refusing the new one.
+    ///
+    /// Cancellation, not a guard: `changeRelay` and `forgetEnrollment` both wipe
+    /// the stored credential before re-enrolling, so a guard would drop the new
+    /// intent and leave the OLD loop heartbeating a token that no longer exists —
+    /// and, on claim, dialling the relay the user just switched away from. Worse,
+    /// a stale pass reaching `.credentialDead` calls `Prefs.clearEnrollment()`
+    /// and destroys the credential the newer pass just registered. Windows has
+    /// had `_enrollCts` for this reason; macOS was relying on nothing.
+    @MainActor
+    private func startEnrollment(allowRegister: Bool) {
+        enrollTask?.cancel()
+        enrollGen &+= 1
+        let gen = enrollGen
+        enrolling = true
+        enrollTask = Task { @MainActor in
+            await self.runEnrollment(allowRegister: allowRegister, gen: gen)
+        }
+    }
+
+    /// True while this run is still the current one. Every state write in the
+    /// enrollment path is conditioned on it.
+    @MainActor
+    private func isCurrent(_ gen: Int) -> Bool { gen == enrollGen && !Task.isCancelled }
 
     /// Disown this Mac locally and enroll again, so it can be claimed by someone
     /// else. The counterpart to the "claimed by" disclosure: if that name is a
@@ -249,7 +367,14 @@ final class Agent: ObservableObject {
         deviceID = ""
         claimCode = ""
         claimedBy = ""
-        Task { await self.runEnrollment() }
+        // Back to un-set-up until the re-register lands. If it fails, the panel
+        // shows the setup button again rather than stranding this Mac with an
+        // error and no way to retry.
+        needsSetup = true
+        // allowRegister: the human pressed "that wasn't me" — re-registering is
+        // the whole point of the button, so this is consent by the same standard
+        // as beginSetup.
+        startEnrollment(allowRegister: true)
     }
 
     /// Re-enroll against a different relay (from the panel). Drops the current
@@ -267,7 +392,11 @@ final class Agent: ObservableObject {
         deviceID = ""
         claimCode = ""
         claimedBy = ""
-        Task { await self.runEnrollment() }
+        needsSetup = true
+        // allowRegister: picking a relay and pressing Switch is a request to
+        // enroll there. Note this is the one path that may register against a
+        // relay the user typed rather than the compiled-in default.
+        startEnrollment(allowRegister: true)
     }
 
     deinit {
@@ -335,6 +464,9 @@ final class Agent: ObservableObject {
         let url = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
         Prefs.serverURL = url
         serverURL = url
+        // Pasting a connection URL is the other way to finish setup, so it
+        // retires the setup prompt just as registering does.
+        if !url.isEmpty { needsSetup = false }
         // A manual connect is a fresh intent to allow control: clear any pause.
         setPaused(false)
         // Rebuild the blob endpoint whenever the server URL changes, so file
@@ -651,7 +783,26 @@ struct AgentPanel: View {
 
     private var connectBody: some View {
         VStack(alignment: .leading, spacing: Theme.spaceXs) {
-            if agent.enrolling && agent.deviceID.isEmpty && agent.enrollError == nil {
+            // Nothing has ever been set up here, so nothing has been sent to a
+            // relay. Say which one this will contact before contacting it — the
+            // address is editable under "Relay & advanced" and a self-hoster
+            // needs to change it BEFORE registering, not after.
+            if agent.needsSetup && !agent.enrolling {
+                Text("This Mac hasn't been set up yet.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button("Set up this Mac") { agent.beginSetup() }
+                Text("Registers with \(Enrollment.normalize(agent.relayURL)) and shows a code to enter there. Nothing is sent until you press it.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                Divider()
+            } else if agent.enrollError != nil && !agent.enrolling {
+                // A device that already holds a token isn't needsSetup, so
+                // without this it would render the error and no way to act on
+                // it — the claim code shown alongside has rotated and is stale.
+                Button("Try again") { agent.beginSetup() }
+            } else if agent.enrolling && agent.claimCode.isEmpty && agent.enrollError == nil {
+                // deviceID is seeded from Prefs, so testing it here used to hide
+                // the spinner on every relaunch of a registered-but-unclaimed Mac.
+                // The claim code is the thing this is waiting for, so gate on that.
                 HStack(spacing: Theme.spaceXs) {
                     ProgressView().controlSize(.small)
                     Text("Contacting \(Enrollment.normalize(agent.relayURL))…").font(.caption)

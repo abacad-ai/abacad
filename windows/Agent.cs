@@ -134,30 +134,47 @@ sealed class Agent
     public bool Enrolling { get; private set; }
     public string? EnrollError { get; private set; }
 
+    /// True until this PC has a device token — i.e. nobody has ever set it up.
+    /// The token doubles as the "has been set up" flag, so there is no separate
+    /// persisted bit to keep in sync (and no sentinel needed for Prefs' ""-is-
+    /// missing behaviour). Registering mints the token, so this is also exactly
+    /// the state in which we must not have contacted a relay.
+    public bool NeedsSetup { get; private set; } =
+        Prefs.DeviceToken.Length == 0 && Prefs.ServerUrl.Length == 0;
+
     readonly HttpClient _enrollHttp = new() { Timeout = TimeSpan.FromSeconds(30) };
     CancellationTokenSource? _enrollCts;
 
-    /// Dial the stored server URL on launch. With nothing configured, self-enroll
-    /// instead: register with the relay, show this PC's id and claim code, and
-    /// connect once a human claims it.
+    /// Dial the stored server URL on launch. With a stored token but no URL,
+    /// resume enrollment: heartbeat, confirm the claim, dial. With neither, do
+    /// nothing at all — allowRegister: false keeps this off the network until a
+    /// human presses "Set up this PC". This matters more here than on the other
+    /// clients because the installer ticks autostart by default, so Start() runs
+    /// at every sign-in with nobody necessarily present.
     public void Start()
     {
         if (!string.IsNullOrEmpty(ServerUrl)) { _ws.Connect(ServerUrl); return; }
-        StartEnrollment();
+        StartEnrollment(allowRegister: false);
     }
 
-    public void StartEnrollment()
+    public void StartEnrollment(bool allowRegister)
     {
         _enrollCts?.Cancel();
         _enrollCts = new CancellationTokenSource();
-        _ = EnrollAsync(_enrollCts.Token);
+        _ = EnrollAsync(_enrollCts.Token, allowRegister);
     }
 
     /// Register -> wait to be claimed -> connect. Bounded to two passes: the
     /// second exists only for a stored credential that turned out to be dead, so
     /// we discard it and enroll afresh in-process rather than making someone
     /// reinstall.
-    async Task EnrollAsync(CancellationToken ct)
+    ///
+    /// <paramref name="allowRegister"/> gates the one call that contacts a relay
+    /// this PC has never spoken to. False on the launch path, true only where a
+    /// human asked: the setup button, ForgetEnrollment, ChangeRelay. The gate is
+    /// inside the loop because the second pass re-registers on its own and must
+    /// inherit the same permission as the first.
+    async Task EnrollAsync(CancellationToken ct, bool allowRegister)
     {
         Enrolling = true;
         EnrollError = null;
@@ -170,26 +187,40 @@ sealed class Agent
 
             if (token.Length == 0)
             {
+                if (!allowRegister)
+                {
+                    Enrolling = false;
+                    EnrollmentChanged?.Invoke();
+                    return;
+                }
                 try
                 {
                     var reg = await Enrollment.RegisterAsync(
                         _enrollHttp, relay, "windows", Enrollment.DefaultDeviceName(), AppVersion.Current);
+                    // Enrollment's calls don't take the token, so cancellation can
+                    // only be observed after the await returns. Dropping the
+                    // credential here does leave an unclaimed row on the relay
+                    // (reaped after an hour) — the alternative is writing it over
+                    // the credential the superseding run just persisted, which
+                    // orphans a device someone may already have claimed.
+                    if (ct.IsCancellationRequested) return;
                     token = reg.DeviceToken;
                     Prefs.RelayUrl = relay;
                     Prefs.DeviceId = reg.DeviceId;
                     Prefs.DeviceToken = reg.DeviceToken;
                     DeviceId = reg.DeviceId;
                     ClaimCode = reg.ClaimCode;
+                    NeedsSetup = false;
                     EnrollmentChanged?.Invoke();
                 }
                 catch (Enrollment.NotSupportedException)
                 {
-                    Fail("This relay doesn't support automatic setup. Run `abacad connect`, or paste a connection URL.");
+                    Fail(ct, "This relay doesn't support automatic setup. Run `abacad connect`, or paste a connection URL.");
                     return;
                 }
                 catch (Exception)
                 {
-                    Fail($"Couldn't reach {relay}. Check the relay address and your network.");
+                    Fail(ct, $"Couldn't reach {relay}. Check the relay address and your network.");
                     return;
                 }
             }
@@ -201,6 +232,7 @@ sealed class Agent
                 try
                 {
                     var st = await Enrollment.HeartbeatAsync(_enrollHttp, relay, token);
+                    if (ct.IsCancellationRequested) return;
                     transient = 0;
                     if (st.Claimed)
                     {
@@ -226,11 +258,21 @@ sealed class Agent
                 }
                 catch (Enrollment.UnknownTokenException)
                 {
+                    // Superseded: the run that replaced us has already rewritten
+                    // Prefs, so clearing here would destroy ITS credential.
+                    if (ct.IsCancellationRequested) return;
                     // Registration reaped, or the device was deleted. Start over.
+                    // NeedsSetup goes back up so that on the launch path the
+                    // second pass stops at the gate and the window asks, rather
+                    // than silently minting a fresh identity on a relay.
                     Prefs.ClearEnrollment();
                     DeviceId = "";
                     ClaimCode = "";
-                    Event("• relay no longer recognizes this device — re-registering");
+                    ClaimedBy = "";  // else the window shows "not set up" and "Claimed by …" at once
+                    NeedsSetup = true;
+                    Event(allowRegister
+                        ? "• relay no longer recognizes this device — re-registering"
+                        : "• relay no longer recognizes this device — press Set up to register again");
                     EnrollmentChanged?.Invoke();
                     dead = true;
                 }
@@ -241,7 +283,7 @@ sealed class Agent
                     // reading a code off; retry, but don't spin forever.
                     if (++transient >= 10)
                     {
-                        Fail($"Lost contact with {relay} while waiting to be claimed.");
+                        Fail(ct, $"Lost contact with {relay} while waiting to be claimed.");
                         return;
                     }
                     try { await Task.Delay(TimeSpan.FromSeconds(10), ct); }
@@ -250,13 +292,22 @@ sealed class Agent
             }
         }
         if (!ct.IsCancellationRequested)
-            Fail("The relay rejected freshly issued credentials twice.");
+            Fail(ct, "The relay rejected freshly issued credentials twice.");
     }
 
-    void Fail(string message)
+    /// Report a terminal enrollment failure — unless this run has been
+    /// superseded. Enrollment's HTTP calls don't take a CancellationToken, so a
+    /// cancelled run keeps going until its in-flight request returns (up to the
+    /// 30s client timeout). Without this check that late failure lands on top of
+    /// the run that replaced it: "Setup didn't finish" over a live claim code.
+    void Fail(CancellationToken ct, string message)
     {
+        if (ct.IsCancellationRequested) return;
         Enrolling = false;
         EnrollError = message;
+        // The displayed code has rotated by now; leaving it up invites someone to
+        // type a code the relay will reject.
+        ClaimCode = "";
         EnrollmentChanged?.Invoke();
     }
 
@@ -273,7 +324,12 @@ sealed class Agent
         DeviceId = "";
         ClaimCode = "";
         ClaimedBy = "";
-        StartEnrollment();
+        // Back to un-set-up until the re-register lands. If it fails, the window
+        // shows the setup button again rather than stranding this PC with an
+        // error and no way to retry.
+        NeedsSetup = true;
+        // allowRegister: pressing "that wasn't me" is a request to re-register.
+        StartEnrollment(allowRegister: true);
     }
 
     /// Re-enroll against a different relay. Device identity is per-relay, so
@@ -289,7 +345,11 @@ sealed class Agent
         DeviceId = "";
         ClaimCode = "";
         ClaimedBy = "";
-        StartEnrollment();
+        NeedsSetup = true;
+        // allowRegister: typing a relay and pressing Switch is a request to
+        // enroll there. The one path that may register against a relay the user
+        // supplied rather than the compiled-in default.
+        StartEnrollment(allowRegister: true);
     }
 
     public void Connect(string url)
@@ -297,6 +357,9 @@ sealed class Agent
         url = url.Trim();
         Prefs.ServerUrl = url;
         ServerUrl = url;
+        // Pasting a connection URL is the other way to finish setup, so it
+        // retires the setup prompt just as registering does.
+        if (url.Length > 0) NeedsSetup = false;
         // A manual connect is a fresh intent to allow control: clear any pause.
         SetPaused(false);
         // Rebuild the blob endpoint whenever the server URL changes, so file

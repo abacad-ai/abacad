@@ -35,6 +35,14 @@ public partial class App : Application
         _agent = new Agent();
         _tray = new TrayIcon(_agent, ShowWindow, Quit);
         _agent.Start();
+
+        // Start() no longer registers on its own, so on a fresh install the app
+        // would otherwise sit in the tray doing nothing visible and the setup
+        // button would be two clicks away behind "Settings…". Show the window so
+        // the first run is self-explanatory. Only while un-set-up: once a token
+        // exists this never fires again, and the installer's autostart entry
+        // stays as silent at sign-in as it is today.
+        if (_agent.NeedsSetup) ShowWindow();
     }
 
     // Constructing a Window is itself a XAML call, so the hop has to happen

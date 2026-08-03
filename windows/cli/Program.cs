@@ -92,7 +92,16 @@ static class Program
         if (string.IsNullOrWhiteSpace(Prefs.ServerUrl) && string.IsNullOrWhiteSpace(Prefs.DeviceToken))
             Console.WriteLine("Not paired yet — registering with the relay. Or pair directly with `abacad connect`.");
 
-        agent.Start();
+        // Typing `abacad` at a console IS the request to register: the claim code
+        // prints to the terminal the operator is already looking at (see the
+        // EnrollmentChanged handler above). That is why this passes allowRegister
+        // where the tray app's Start() does not — the tray autostarts at sign-in
+        // with nobody present, this does not. Same split as the Linux daemon,
+        // which registers from a shell while the GTK client waits for a button.
+        if (string.IsNullOrWhiteSpace(Prefs.ServerUrl))
+            agent.StartEnrollment(allowRegister: true);
+        else
+            agent.Start();
         stopped.Wait();
         return 0;
     }

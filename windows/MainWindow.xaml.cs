@@ -116,6 +116,13 @@ internal sealed partial class MainWindow : Window
 
     void OnForget(object sender, RoutedEventArgs e) { _agent.ForgetEnrollment(); Render(); }
 
+    // The only path on a fresh install that is allowed to contact a relay.
+    void OnSetup(object sender, RoutedEventArgs e)
+    {
+        _agent.StartEnrollment(allowRegister: true);
+        Render();
+    }
+
     void OnChangeRelay(object sender, RoutedEventArgs e)
     {
         var r = RelayBox.Text.Trim();
@@ -154,6 +161,25 @@ internal sealed partial class MainWindow : Window
         // Self-enrollment: show the two lines a human reads off this PC while a
         // claim code is live, and who claimed it once one has.
         var relay = Enrollment.Normalize(_agent.RelayUrl);
+
+        // First-run prompt. Every panel in SetupPanel defaults to Visible in the
+        // XAML, so this has to be set on both branches or it lingers.
+        // Shown when nothing has been set up, and also after a failure on a PC
+        // that already holds a token — otherwise that case renders an error with
+        // no way to act on it.
+        bool needsSetup = (_agent.NeedsSetup || _agent.EnrollError != null) && !_agent.Enrolling;
+        NeedsSetupPanel.Visibility = needsSetup ? Visibility.Visible : Visibility.Collapsed;
+        if (needsSetup)
+        {
+            bool retry = !_agent.NeedsSetup;
+            SetupPromptText.Text = retry ? "Setup didn't finish." : "This PC hasn't been set up yet.";
+            SetupButton.Content = retry ? "Try again" : "Set up this PC";
+            SetupHintText.Text = retry
+                ? ""
+                : $"Registers with {relay} and shows a code to enter there. Nothing is sent until you press it.";
+            SetupHintText.Visibility = retry ? Visibility.Collapsed : Visibility.Visible;
+        }
+
         bool showClaim = _agent.ClaimCode.Length > 0;
         ClaimPanel.Visibility = showClaim ? Visibility.Visible : Visibility.Collapsed;
         if (showClaim)

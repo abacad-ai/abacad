@@ -115,8 +115,27 @@ class MainActivity : ComponentActivity() {
     private var enrolling by mutableStateOf(false)
     private var enrollError by mutableStateOf<String?>(null)
 
-    /** Guards against two enrollment loops running after a rotation/resume. */
+    /**
+     * True until this phone has a device token — i.e. nobody has ever set it up.
+     * The token doubles as the "has been set up" flag, so there is no separate
+     * stored bit. Without this the setup card's catch-all branch would tell an
+     * enrolled-but-offline phone it had never been set up, and repeat the
+     * "nothing is sent until you tap it" promise to a phone already registered.
+     */
+    private var needsSetup by mutableStateOf(false)
+
+    /**
+     * The enrollment loop, and the epoch that decides whether it still counts.
+     *
+     * Thread.interrupt() does not abort a blocking read in the HTTP client, so a
+     * loop torn down in onPause can outlive the call by a whole request. Gating a
+     * restart on isAlive would then strand the screen (no loop running, a stale
+     * code on display); letting it restart unguarded would race the zombie over
+     * deviceId/claimCode and prefs. The epoch does neither: a superseded thread
+     * discards its own results and exits.
+     */
     @Volatile private var enrollThread: Thread? = null
+    @Volatile private var enrollEpoch = 0
 
     private val statusListener: () -> Unit = { runOnUiThread { statusTick++ } }
 
@@ -124,6 +143,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         url = prefs.getString(AbacadAccessibilityService.KEY_SERVER_URL, "").orEmpty()
         deviceId = prefs.getString(AbacadAccessibilityService.KEY_DEVICE_ID, "").orEmpty()
+        needsSetup = prefs.getString(AbacadAccessibilityService.KEY_DEVICE_TOKEN, "").orEmpty().isEmpty() &&
+            prefs.getString(AbacadAccessibilityService.KEY_SERVER_URL, "").orEmpty().isEmpty()
         relayUrl = Enrollment.normalizeRelay(
             prefs.getString(AbacadAccessibilityService.KEY_RELAY_URL, "").orEmpty())
 
@@ -191,9 +212,13 @@ class MainActivity : ComponentActivity() {
                                 claimCode = claimCode,
                                 relay = relayUrl,
                                 enrolling = enrolling,
+                                needsSetup = needsSetup,
                                 error = enrollError,
                                 palette = palette,
-                                onRetry = ::startEnrollment,
+                                // The one path allowed to register: a press here
+                                // is the consent the launch path deliberately
+                                // does not assume.
+                                onRetry = { startEnrollment(allowRegister = true) },
                             )
                             Spacer(Modifier.height(AbacadDim.spaceLg))
                             ConnectSection(
@@ -227,9 +252,13 @@ class MainActivity : ComponentActivity() {
         AbacadStatus.addListener(statusListener)
         statusTick++
         sysTick++
-        // Kick (or resume) enrollment whenever the setup screen is in front of
-        // someone. No-ops when a URL is configured or a loop is already running.
-        startEnrollment()
+        // Resume enrollment whenever the setup screen is in front of someone.
+        // allowRegister = false: with no stored token this returns without
+        // touching the network, and ClaimSection offers "Set up" instead. Opening
+        // the app is not consent to be registered with a relay — pressing the
+        // button is. Once a token exists the human pressed it already, so this is
+        // the unchanged resume of the heartbeat -> claim -> connect path.
+        startEnrollment(allowRegister = false)
     }
 
     // One onPause, not two. Kotlin rejects the overload, so the second
@@ -239,8 +268,11 @@ class MainActivity : ComponentActivity() {
         super.onPause()
         // Stop polling once nobody is looking at the code. The service holds the
         // connection after a claim; this loop only exists to drive the UI.
+        // Retire the loop by bumping the epoch as well as interrupting: the
+        // interrupt alone can't stop a blocking read, and the epoch is what makes
+        // the survivor discard its results instead of racing the next one.
+        enrollEpoch++
         enrollThread?.interrupt()
-        enrollThread = null
         enrolling = false
         AbacadStatus.removeListener(statusListener)
     }
@@ -249,6 +281,11 @@ class MainActivity : ComponentActivity() {
 
     private fun saveAndConnect(u: String) {
         val clean = u.trim()
+        // Pasting or scanning a connection URL is the other way to finish setup,
+        // so it retires the setup prompt just as registering does. Without this
+        // the card would tell a phone that was just configured that it hasn't
+        // been set up, and offer a button that no-ops.
+        if (clean.isNotEmpty()) needsSetup = false
         prefs.edit().putString(AbacadAccessibilityService.KEY_SERVER_URL, clean).apply()
         // Don't echo the URL — it carries the device token.
         sendBroadcast(Intent(AbacadAccessibilityService.ACTION_RECONNECT).setPackage(packageName))
@@ -263,12 +300,26 @@ class MainActivity : ComponentActivity() {
      * Runs on a plain background thread rather than a coroutine: the app has no
      * coroutines dependency, and this is one long-lived poll loop, not structured
      * concurrency. It exits on claim, on a terminal error, or when replaced.
+     *
+     * [allowRegister] gates the one call that contacts a relay this phone has
+     * never spoken to. False from onResume, true only from the "Set up" button.
+     * The gate is inside the loop rather than at the call site because the loop
+     * re-registers itself after an UnknownToken, and that second pass has to
+     * inherit the same permission as the first.
      */
-    private fun startEnrollment() {
+    private fun startEnrollment(allowRegister: Boolean) {
         // An explicitly configured URL wins — never override a QR/pasted setup.
         if (prefs.getString(AbacadAccessibilityService.KEY_SERVER_URL, "").orEmpty().isNotEmpty()) return
-        if (enrollThread?.isAlive == true) return
+        // Nothing stored and nobody asked: stay off the network entirely.
+        if (!allowRegister &&
+            prefs.getString(AbacadAccessibilityService.KEY_DEVICE_TOKEN, "").orEmpty().isEmpty()
+        ) {
+            enrolling = false
+            return
+        }
 
+        enrollThread?.interrupt()
+        val epoch = ++enrollEpoch
         enrolling = true
         enrollError = null
         val t = Thread {
@@ -276,13 +327,21 @@ class MainActivity : ComponentActivity() {
             // Two passes at most: the second exists only for a stored credential
             // that turned out to be dead, so we discard it and enroll afresh
             // rather than making someone clear app data.
-            while (attempt < 2 && !Thread.currentThread().isInterrupted) {
+            while (attempt < 2 && !Thread.currentThread().isInterrupted && epoch == enrollEpoch) {
                 attempt++
                 val relay = Enrollment.normalizeRelay(
                     prefs.getString(AbacadAccessibilityService.KEY_RELAY_URL, "").orEmpty())
                 var token = prefs.getString(AbacadAccessibilityService.KEY_DEVICE_TOKEN, "").orEmpty()
 
                 if (token.isEmpty()) {
+                    // Second pass after an UnknownToken: the credential was
+                    // reaped or deleted, so re-registering mints a new identity
+                    // on the relay. That needs the same consent the first one
+                    // did, so an unattended resume stops here and the UI asks.
+                    if (!allowRegister) {
+                        runOnUiThread { enrolling = false }
+                        return@Thread
+                    }
                     try {
                         val reg = Enrollment.register(relay, "android", defaultDeviceName(), BuildConfig.VERSION_NAME)
                         token = reg.deviceToken
@@ -291,10 +350,15 @@ class MainActivity : ComponentActivity() {
                             .putString(AbacadAccessibilityService.KEY_DEVICE_ID, reg.deviceId)
                             .putString(AbacadAccessibilityService.KEY_DEVICE_TOKEN, reg.deviceToken)
                             .apply()
+                        // Superseded mid-request: the newer run has already
+                        // rewritten prefs, so publishing here would resurrect a
+                        // credential for a relay we are no longer enrolling with.
+                        if (epoch != enrollEpoch) return@Thread
                         runOnUiThread {
                             deviceId = reg.deviceId
                             claimCode = reg.claimCode
                             relayUrl = relay
+                            needsSetup = false
                         }
                     } catch (e: Enrollment.Failure.NotSupported) {
                         runOnUiThread {
@@ -312,7 +376,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 var transient = 0
-                while (!Thread.currentThread().isInterrupted) {
+                while (!Thread.currentThread().isInterrupted && epoch == enrollEpoch) {
                     try {
                         val st = Enrollment.heartbeat(relay, token)
                         transient = 0
@@ -336,13 +400,16 @@ class MainActivity : ComponentActivity() {
                         }
                         Thread.sleep(Enrollment.clampIntervalSec(st.heartbeatIn) * 1000L)
                     } catch (e: Enrollment.Failure.UnknownToken) {
+                        // Superseded: clearing here would destroy the credential
+                        // the replacing run just persisted.
+                        if (epoch != enrollEpoch) return@Thread
                         // Registration reaped, or the device was deleted. Clear
                         // and go around once more to register from scratch.
                         prefs.edit()
                             .remove(AbacadAccessibilityService.KEY_DEVICE_ID)
                             .remove(AbacadAccessibilityService.KEY_DEVICE_TOKEN)
                             .apply()
-                        runOnUiThread { deviceId = ""; claimCode = "" }
+                        runOnUiThread { deviceId = ""; claimCode = ""; needsSetup = true }
                         break
                     } catch (e: InterruptedException) {
                         return@Thread
@@ -359,6 +426,19 @@ class MainActivity : ComponentActivity() {
                         }
                         try { Thread.sleep(10_000L) } catch (_: InterruptedException) { return@Thread }
                     }
+                }
+            }
+            // Both passes ended on a rejected credential. Without this the card
+            // sits on "Contacting …" forever: enrolling stays true so no button
+            // renders, and nothing explains why. The other three clients all
+            // report this same terminal condition.
+            //
+            // Not on interruption though — that is onPause tearing the loop down
+            // on the way to the background, which is not an error to report.
+            if (!Thread.currentThread().isInterrupted && epoch == enrollEpoch) {
+                runOnUiThread {
+                    enrolling = false
+                    enrollError = "The relay rejected freshly issued credentials twice."
                 }
             }
         }
@@ -702,6 +782,7 @@ class MainActivity : ComponentActivity() {
         claimCode: String,
         relay: String,
         enrolling: Boolean,
+        needsSetup: Boolean,
         error: String?,
         palette: AbacadColors,
         onRetry: () -> Unit,
@@ -755,14 +836,34 @@ class MainActivity : ComponentActivity() {
                             style = MaterialTheme.typography.labelSmall,
                         )
                     }
-                    else -> {
+                    // The first-run state. Reachable on every launch until
+                    // someone taps the button, because opening the app no longer
+                    // registers this phone on its own.
+                    needsSetup -> {
                         Text(
-                            "Not connected to a relay yet.",
+                            "This phone hasn't been set up yet.",
                             color = palette.inkMuted,
                             style = MaterialTheme.typography.bodySmall,
                         )
                         Spacer(Modifier.height(AbacadDim.spaceSm))
-                        OutlinedButton(onClick = onRetry) { Text("Set up") }
+                        OutlinedButton(onClick = onRetry) { Text("Set up this phone") }
+                        Spacer(Modifier.height(AbacadDim.spaceXs))
+                        Text(
+                            "Registers with ${Enrollment.normalizeRelay(relay)} and shows a code to enter there. Nothing is sent until you tap it.",
+                            color = palette.inkSubtle,
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                    // Set up already, just not currently connected — claimed and
+                    // offline, or the service disabled. Saying "not set up" here
+                    // would be false, and would re-offer a registration that
+                    // would mint a second device row.
+                    else -> {
+                        Text(
+                            "This phone is set up but not connected.",
+                            color = palette.inkMuted,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                     }
                 }
             }

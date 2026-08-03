@@ -29,6 +29,18 @@
                      shows its own ID and claim code, so nothing secret travels
                      toward it. The connection-URL route moves into "Advanced". -->
                 <StackPanel x:Name="SetupPanel" Spacing="6">
+                    <!-- First run: nothing has been sent to a relay yet, and
+                         nothing will be until this button is pressed. Names the
+                         relay first, because a self-hoster has to change it in
+                         "Relay & advanced" BEFORE registering, not after. -->
+                    <StackPanel x:Name="NeedsSetupPanel" Spacing="4">
+                        <TextBlock x:Name="SetupPromptText" FontSize="12" Foreground="{ThemeResource InkMutedBrush}" TextWrapping="Wrap" />
+                        <Button x:Name="SetupButton" Click="OnSetup" />
+                        <TextBlock
+                            x:Name="SetupHintText"
+                            FontSize="11" Foreground="{ThemeResource InkMutedBrush}" TextWrapping="Wrap" />
+                    </StackPanel>
+
                     <StackPanel x:Name="ClaimPanel" Spacing="4">
                         <TextBlock Text="Add this PC" FontSize="12" Foreground="{ThemeResource InkMutedBrush}" />
                         <TextBlock Text="Device ID" FontSize="11" Foreground="{ThemeResource InkMutedBrush}" />
