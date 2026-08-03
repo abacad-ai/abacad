@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+using Microsoft.UI;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -36,7 +38,8 @@ internal sealed partial class MainWindow : Window
 
         SystemBackdrop = new MicaBackdrop();
         Title = "abacad";
-        AppWindow.Resize(new SizeInt32(460, 600));
+        SizeInDips(460, 600);
+        ApplyWindowIcon();
 
         // Close hides instead of exiting — the app stays resident in the tray.
         AppWindow.Closing += (_, e) => { e.Cancel = true; AppWindow.Hide(); };
@@ -52,6 +55,47 @@ internal sealed partial class MainWindow : Window
         _tick.Start();
 
         Render();
+    }
+
+    [DllImport("user32.dll")]
+    static extern uint GetDpiForWindow(IntPtr hwnd);
+
+    // AppWindow.Resize takes PHYSICAL pixels, but every size in MainWindow.xaml is
+    // a DIP. Those coincide only at 100% scaling, so a hard-coded 460x600 gave a
+    // 153x200 DIP window on the 4K/300% display this was first run on — narrower
+    // than the 230-DIP header column alone, which is why the state line clipped
+    // mid-word. Scale by the window's own DPI so the request means what it says.
+    void SizeInDips(int width, int height)
+    {
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        double scale = GetDpiForWindow(hwnd) / 96.0;
+        if (scale <= 0) scale = 1; // GetDpiForWindow returns 0 on failure
+        AppWindow.Resize(new SizeInt32(
+            (int)Math.Round(width * scale), (int)Math.Round(height * scale)));
+    }
+
+    // Held deliberately: AppWindow keeps using the HICON, so letting the managed
+    // Icon finalise would destroy it out from under the title bar and Alt-Tab.
+    static System.Drawing.Icon? _appIcon;
+
+    // An unpackaged WinUI 3 window does not pick up the exe's icon resource the way
+    // a WinForms or WPF one does, which is why the title bar showed the generic
+    // executable glyph. ApplicationIcon (see the csproj) already embeds Abacad.ico
+    // into the exe, so read it back out of our own image — a single-file bundle has
+    // nowhere to keep a loose .ico for AppWindow.SetIcon(string) to point at.
+    void ApplyWindowIcon()
+    {
+        try
+        {
+            _appIcon ??= System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath!);
+            if (_appIcon != null)
+                AppWindow.SetIcon(Win32Interop.GetIconIdFromIcon(_appIcon.Handle));
+        }
+        catch
+        {
+            // A missing icon is cosmetic and must never stop the window opening —
+            // an exception here would be thrown on the same path that v0.5.2 died on.
+        }
     }
 
     public void BringToFront()
