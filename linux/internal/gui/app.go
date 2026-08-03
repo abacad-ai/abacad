@@ -13,6 +13,8 @@
 package gui
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"html"
 	"strings"
@@ -24,6 +26,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
 	"abacad-linux/internal/agent"
+	"abacad-linux/internal/enroll"
 	"abacad-linux/internal/status"
 	"abacad-linux/internal/x11"
 )
@@ -33,10 +36,10 @@ const appID = "ai.abacad.client"
 // Run launches the GUI, driving connections through a Supervisor over x (the
 // desktop X11 connection; may be nil on a headless box). Blocks until the window
 // is closed.
-func Run(initialURL string, x *x11.Conn) error {
+func Run(initialURL string, x *x11.Conn, setup Setup) error {
 	sup := agent.NewSupervisor(x)
 	app := adw.NewApplication(appID, gio.ApplicationFlagsNone)
-	app.ConnectActivate(func() { activate(app, sup, initialURL) })
+	app.ConnectActivate(func() { activate(app, sup, initialURL, setup) })
 	if code := app.Run(nil); code != 0 {
 		return fmt.Errorf("gtk application exited with code %d", code)
 	}
@@ -46,7 +49,7 @@ func Run(initialURL string, x *x11.Conn) error {
 // palette resolves our tokens for the current Adwaita appearance.
 func palette() Palette { return Of(adw.StyleManagerGetDefault().Dark()) }
 
-func activate(app *adw.Application, sup *agent.Supervisor, initialURL string) {
+func activate(app *adw.Application, sup *agent.Supervisor, initialURL string, setup Setup) {
 	win := adw.NewApplicationWindow(&app.Application)
 	win.SetTitle("abacad")
 	win.SetDefaultSize(440, 600)
@@ -76,6 +79,39 @@ func activate(app *adw.Application, sup *agent.Supervisor, initialURL string) {
 	recording := gtk.NewLabel("")
 	recording.SetXAlign(0)
 	recording.SetUseMarkup(true)
+
+	// --- setup: claim code, or the button that asks for one ---
+	//
+	// Nothing here contacts the relay until setupBtn is clicked. That is the
+	// whole point of the section: on a fresh install this window opens having
+	// sent nothing anywhere, and says which relay it is about to talk to before
+	// it talks to it — a self-hoster has to be able to change the address first.
+	setupHint := gtk.NewLabel("")
+	setupHint.SetXAlign(0)
+	setupHint.SetWrap(true)
+	setupHint.AddCSSClass("dim-label")
+
+	claimLabel := gtk.NewLabel("")
+	claimLabel.SetXAlign(0)
+	claimLabel.SetUseMarkup(true)
+	claimLabel.SetSelectable(true)
+	claimLabel.SetWrap(true)
+
+	// Left full-width like urlEntry rather than aligned: this file only compiles
+	// on a machine with the GTK headers, so every gotk4 call in it is one already
+	// exercised by a shipped build.
+	setupBtn := gtk.NewButtonWithLabel("Set up this device")
+	setupBtn.AddCSSClass("suggested-action")
+
+	// Enrollment display state. Only ever touched on the GTK main thread — the
+	// enrollment goroutine reaches it through glib.IdleAdd — so no mutex.
+	var (
+		enrolling  bool
+		claimID    string
+		claimCode  string
+		enrollErr  string
+		enrollDone bool // claimed and dialled; the setup section retires
+	)
 
 	// --- controls: URL + connect/disconnect/pause ---
 	urlEntry := gtk.NewEntry()
@@ -112,6 +148,9 @@ func activate(app *adw.Application, sup *agent.Supervisor, initialURL string) {
 	body.Append(watched)
 	body.Append(recording)
 	body.Append(gtk.NewLabel("")) // spacer
+	body.Append(setupHint)
+	body.Append(claimLabel)
+	body.Append(setupBtn)
 	body.Append(urlEntry)
 	body.Append(btnRow)
 	body.Append(sep)
@@ -150,20 +189,117 @@ func activate(app *adw.Application, sup *agent.Supervisor, initialURL string) {
 			pauseBtn.SetLabel("Pause")
 		}
 
+		// Setup section. Hidden once this device is connected or has finished
+		// enrolling; the URL entry stays as the manual/advanced route.
+		showSetup := !connected && initialURL == "" && !enrollDone
+		setupHint.SetVisible(showSetup)
+		claimLabel.SetVisible(showSetup && claimCode != "")
+		setupBtn.SetVisible(showSetup && !enrolling && setup.canAct())
+
+		switch {
+		case !showSetup:
+		case enrollErr != "":
+			setupHint.SetText(enrollErr)
+			setupBtn.SetLabel("Try again")
+		case claimCode != "":
+			claimLabel.SetMarkup(fmt.Sprintf(
+				"Device ID  <tt>%s</tt>\nClaim code  <tt><b>%s</b></tt>",
+				html.EscapeString(claimID), html.EscapeString(claimCode)))
+			setupHint.SetText(fmt.Sprintf(
+				"Open %s/claim and enter both. The code changes every few minutes; anyone who can read both lines can claim this device.",
+				setup.relay()))
+		case enrolling:
+			setupHint.SetText(fmt.Sprintf("Contacting %s…", setup.relay()))
+		case !setup.canEnroll():
+			// Nothing on screen to act on, and registering needs a display to
+			// show a claim code. Say so rather than offering a button that
+			// cannot succeed. Ordered last so it never contradicts a live code
+			// or an in-flight resume, both of which work without one.
+			setupHint.SetText("This machine has no display, so it can't show a claim code. Run `abacad connect` to add it, or paste a connection URL below.")
+		default:
+			setupHint.SetText(fmt.Sprintf(
+				"This device hasn't been set up yet. Registers with %s and shows a code to enter there — nothing is sent until you press the button.",
+				setup.relay()))
+			setupBtn.SetLabel("Set up this device")
+		}
+
 		actionsLabel.SetText(formatLines(s.Lines))
 	}
+
+	// runSetup drives enrollment on a background goroutine, marshalling every UI
+	// touch back to the GTK thread. allowRegister is false on the automatic
+	// resume at startup and true only from the button — the whole gate.
+	ctx, cancelSetup := context.WithCancel(context.Background())
+	runSetup := func(allowRegister bool) {
+		if enrolling || !setup.wired() {
+			return
+		}
+		enrolling = true
+		enrollErr = ""
+		render()
+
+		sess := *setup.Session // copy: we override the callbacks per run
+		sess.OnCode = func(deviceID, code string) {
+			glib.IdleAdd(func() {
+				claimID, claimCode = deviceID, code
+				render()
+			})
+		}
+		sess.OnStatus = func(msg string) {
+			glib.IdleAdd(func() { status.Event("• " + msg) })
+		}
+
+		go func() {
+			res, err := sess.Run(ctx, setup.Token, setup.DeviceID, allowRegister)
+			glib.IdleAdd(func() {
+				enrolling = false
+				switch {
+				case errors.Is(err, enroll.ErrSetupRequired):
+					// Expected on a fresh install: nothing was sent, and the
+					// button is now the only way forward.
+				case errors.Is(err, context.Canceled):
+					// Window closing.
+				case errors.Is(err, enroll.ErrNotSupported):
+					enrollErr = "This relay doesn't support automatic setup. Run `abacad connect`, or paste a connection URL below."
+				case err != nil:
+					enrollErr = err.Error()
+					// The displayed code has rotated by now; leaving it up
+					// invites someone to type one the relay will reject.
+					claimCode = ""
+				default:
+					// Claimed. Remember the credential so a retry within this
+					// session doesn't re-register, then dial.
+					setup.Token, setup.DeviceID = res.Token, res.DeviceID
+					claimCode, enrollDone = "", true
+					sup.Connect(setup.DialURL(res.DeviceURL, res.Token))
+				}
+				render()
+			})
+		}()
+	}
+
+	setupBtn.ConnectClicked(func() { runSetup(true) })
 
 	unsub := status.Subscribe(func() {
 		// Status writers run on the agent's goroutines; hop to the GTK thread.
 		glib.IdleAdd(render)
 	})
 	win.ConnectCloseRequest(func() bool {
+		cancelSetup()
 		unsub()
 		return false
 	})
 
 	render()
 	win.Present()
+
+	// Resume, don't register: with a credential already on disk this reconnects
+	// with no clicks, which is the behaviour a set-up device had before. With
+	// none it returns ErrSetupRequired without a single network call, and the
+	// window just shows the button.
+	if initialURL == "" && setup.canResume() {
+		runSetup(false)
+	}
 }
 
 // stateLine maps a snapshot to (dot color, title, subtitle).

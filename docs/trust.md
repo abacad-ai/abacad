@@ -31,7 +31,7 @@ destination, and this table as how far along the road we are.
 | Surfaced audit trail + kill switch | ○ planned (P1) |
 | Dashboard MFA; cookie `Secure` unconditional | ○ planned (P1) |
 | Runtime verification (installed app vs a live server) | ○ not done — compiles on all three platforms; not yet exercised end-to-end |
-| **Device-first self-enrollment** (register → claim) | ◐ server shipped, clients pending — inverts the bootstrap below; see [Two enrollment directions](#two-enrollment-directions) |
+| **Device-first self-enrollment** (register → claim) | ✅ shipped on the server and all four GUI clients (macOS, Windows, Android, Linux). Registration is gated on an explicit *Set up* press, so a fresh install contacts no relay until asked; see [Two enrollment directions](#two-enrollment-directions) |
 
 Net: today's build closes the most exploitable holes (LAN cleartext MITM, the
 tunnel SSRF pivot, token-in-URL leakage, login brute force). It does **not** yet
@@ -223,11 +223,28 @@ The bootstrap above is **dashboard-first**: the human is authenticated *before* 
 device exists, and the QR is what carries the server's pin across an in-person hop.
 A second direction now exists, and it inverts that.
 
-**Device-first (self-enrollment).** A freshly installed GUI client registers itself
-with its configured relay, receives an id and token, and displays that id plus a
-short-lived **claim code** on its own screen. A human with physical possession reads
-both off the device and binds it to their account at `/claim`. Nothing is pasted into
-the client; the relay URL is ordinary config.
+**Device-first (self-enrollment).** A GUI client registers itself with its configured
+relay, receives an id and token, and displays that id plus a short-lived **claim
+code** on its own screen. A human with physical possession reads both off the device
+and binds it to their account at `/claim`. Nothing is pasted into the client; the
+relay URL is ordinary config.
+
+**Registration is on request, not on launch.** A freshly installed client contacts
+nothing. It opens its window, names the relay it would use, and waits for *Set up
+this device*; only that press sends the first packet. This is not a defence against
+an attacker — registering is harmless to the person doing it — it is about who
+decides. Launching an app is not consent to be announced to a vendor's server under
+this machine's hostname, and a self-hoster has to be able to change the relay
+*before* the client talks to the default one, not after. The credential doubles as
+the "has been set up" flag, so this costs one press, once, ever: a client that holds
+a token reconnects on start with no interaction, exactly as it did before.
+
+The gate covers re-registration too. If a relay rejects a stored credential — reaped,
+deleted, expired — an unattended client stops and asks rather than minting a fresh
+identity, because "the old one expired" is not consent for a new one. Two paths are
+exempt, because the act of reaching them *is* the request: `abacad connect`, and
+running the daemon from a shell, where the claim code prints to the terminal in front
+of you.
 
 Which one applies:
 

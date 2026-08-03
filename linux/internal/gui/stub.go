@@ -12,8 +12,9 @@ import (
 )
 
 // Run reports that this binary was built without the GUI.
-func Run(initialURL string, x *x11.Conn) error {
+func Run(initialURL string, x *x11.Conn, setup Setup) error {
 	_ = initialURL
 	_ = x
+	_ = setup
 	return errors.New("this abacad build has no GUI — rebuild with `-tags gui` (needs GTK4 + libadwaita)")
 }

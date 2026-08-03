@@ -70,7 +70,15 @@ func main() {
 	// explicitly configured URL, register with the relay and wait to be claimed.
 	// An explicit --server-url/--token (or a legacy config) still wins, so an
 	// existing install and `abacad connect` both keep working untouched.
-	if serverURL == "" {
+	//
+	// The GUI is excluded: it runs this itself, after its window is on screen.
+	// Blocking here meant a first-run desktop user saw no window at all while the
+	// process registered and printed a claim box to a stderr nobody reads when
+	// the app was launched from a .desktop file — and a claimed-but-offline
+	// machine could not open the window at all, because the pre-window heartbeat
+	// retries forever. Deferring it also puts registration behind a button, which
+	// is the point: launching an app is not consent to be registered with a relay.
+	if serverURL == "" && !flagGUI {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		e, err := ensureEnrolled(ctx, cfg, flagRelay)
 		stop()
@@ -119,7 +127,26 @@ func main() {
 	// builds is this the real libadwaita window; otherwise gui.Run reports that the
 	// binary has no GUI.
 	if flagGUI {
-		if err := gui.Run(serverURL, x); err != nil {
+		// The GUI owns enrollment: it shows the claim code in-window and only
+		// registers when the user presses Set up. Hand it the shared state
+		// machine plus whatever credential is already on disk, so a device that
+		// has been set up before resumes silently and one that hasn't waits.
+		setup := gui.Setup{
+			Session:  newSession(enrollRelay(cfg, flagRelay)),
+			Token:    cfg["device_token"],
+			DeviceID: cfg["device_id"],
+			// Headless boxes have no screen to read a claim code off, which is
+			// the same reason ensureEnrolled skips them; there the answer is
+			// `abacad connect`. A --gui run on such a box is a misconfiguration,
+			// but the window should still open and say so rather than hang.
+			Supported: detectPlatform() != "linux-headless",
+			// Same assembly the daemon uses below, so a GUI-enrolled device
+			// reports its version to the dashboard like every other one.
+			DialURL: func(deviceURL, token string) string {
+				return appendParam(appendToken(deviceURL, token), "version", version.Version)
+			},
+		}
+		if err := gui.Run(serverURL, x, setup); err != nil {
 			log.Fatalf("gui: %v", err)
 		}
 		return
