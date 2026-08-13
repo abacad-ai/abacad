@@ -88,9 +88,13 @@ Then launch **abacad**. A relay-mark icon appears in the notification area (its 
 turns **green** when connected). Double-click it — or right-click → **Settings…** —
 to open the panel.
 
-Uninstalling leaves `%APPDATA%\abacad` in place, so a reinstall reconnects as the
-same device rather than needing a fresh claim code. To actually end a device's
-access, revoke it from the dashboard.
+Uninstalling removes `%APPDATA%\abacad`, which holds this PC's device credential —
+so a reinstall starts over at the setup screen and needs a fresh claim code. The
+credential is what the client reads as "someone set this PC up", and keeping it
+would let a reinstall skip the setup gate and go straight to controllable. An
+*upgrade* installs over the old version without uninstalling, so it keeps the
+credential and reconnects as the same device. Either way, the device row stays on
+the relay until you revoke it from the dashboard.
 
 Windows needs no per-capability permission grant (unlike macOS TCC): a normal
 process can already read the UIA tree, capture the screen, and inject input.

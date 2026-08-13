@@ -42,7 +42,33 @@ public partial class App : Application
         // the first run is self-explanatory. Only while un-set-up: once a token
         // exists this never fires again, and the installer's autostart entry
         // stays as silent at sign-in as it is today.
-        if (_agent.NeedsSetup) ShowWindow();
+        //
+        // Subscribed as well as called, because "needs setup" is not only a
+        // launch-time state: a PC that launched WITH a token (window stays
+        // hidden) and then has it rejected — deleted from the dashboard, or
+        // reaped — lands on the gate mid-session with NeedsSetup back up. Read
+        // once, that case leaves a tray icon that never connects and no way to
+        // learn why short of opening Settings on a hunch.
+        _agent.EnrollmentChanged += OnEnrollmentChanged;
+        OnEnrollmentChanged();
+    }
+
+    // Latches so the window is raised on the transition into "needs setup", not
+    // on every enrollment repaint while it sits there; cleared when setup
+    // succeeds so a later credential death raises it again.
+    bool _shownForSetup;
+
+    void OnEnrollmentChanged()
+    {
+        // EnrollmentChanged fires from the enrollment task. Hop first and test
+        // after, which both keeps the XAML call on the UI thread (see _ui) and
+        // confines the latch to that thread, so no two firings can race it.
+        if (!_ui.HasThreadAccess) { _ui.TryEnqueue(OnEnrollmentChanged); return; }
+
+        if (!_agent.NeedsSetup) { _shownForSetup = false; return; }
+        if (_shownForSetup) return;
+        _shownForSetup = true;
+        ShowWindow();
     }
 
     // Constructing a Window is itself a XAML call, so the hop has to happen

@@ -152,9 +152,29 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 
-; No [UninstallDelete] for %APPDATA%\abacad. It holds the DPAPI-encrypted
-; device_id/device_token (windows/Prefs.cs), so leaving it means a reinstall
-; reconnects as the same device instead of demanding a fresh claim code. The
-; CurrentUser DPAPI scope already makes it unreadable to any other account, so
-; there is nothing gained by shredding it on the way out. Revoke a device from
-; the dashboard — that is the control that actually ends access.
+[UninstallDelete]
+; %APPDATA%\abacad holds the DPAPI-encrypted device_id/device_token
+; (windows/Prefs.cs). Uninstall removes it, so uninstalling actually ends this
+; PC's enrollment rather than parking it.
+;
+; This used to be left in place, on the argument that a reinstall should
+; reconnect as the same device instead of demanding a fresh claim code, and that
+; DPAPI CurrentUser already keeps the file unreadable to anyone else. That
+; argument answers the wrong question. The risk was never another account
+; reading the token; it is that the token is what the client treats as "a human
+; set this PC up" (Agent.NeedsSetup), so a surviving one means a fresh install
+; skips the setup gate entirely — no window, no button, straight to connected
+; and remotely controllable. Uninstalling is the plainest "stop" a person can
+; give a program, and consent to be driven should not outlive it.
+;
+; Upgrades are unaffected: Inno installs over an existing install without
+; running the uninstaller, so [UninstallDelete] does not fire and an upgraded
+; PC keeps its identity. The cost is confined to a deliberate uninstall →
+; reinstall, which now needs a new claim code, and leaves a device row on the
+; relay to clear from the dashboard. That is the visible cost of the two;
+; silently resuming control was the invisible one.
+;
+; files-then-dir: Inno deletes in order, and dirifempty on a directory that
+; still holds the credential files would silently do nothing.
+Type: files; Name: "{userappdata}\abacad\*"
+Type: dirifempty; Name: "{userappdata}\abacad"
