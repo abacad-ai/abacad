@@ -6,7 +6,8 @@ import PackageDescription
 // input), the desktop analogue of the Android AccessibilityService client.
 //
 // All dependencies are system frameworks (SwiftUI, AppKit, ScreenCaptureKit,
-// ApplicationServices, CoreGraphics, Carbon, Network) — no external packages.
+// ApplicationServices, CoreGraphics, Carbon, Network, ServiceManagement) — no
+// external packages.
 // `swift build` produces bare binaries; the Makefile wraps `abacad` into a signed
 // .app bundle so TCC permissions (Accessibility, Screen Recording) attach to a
 // stable identity.

@@ -38,7 +38,7 @@ const CATALOG: PlatformCard[] = [
     label: "macOS",
     icon: Laptop,
     requirement: "macOS 14 Sonoma or later",
-    note: "Grant Accessibility and Screen Recording on first launch, then it runs from the menu bar.",
+    note: "Grant permissions once, then use the restart-readiness checklist for secure or unattended operation.",
   },
   {
     key: "android",

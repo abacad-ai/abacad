@@ -84,6 +84,36 @@ Both open the relevant System Settings pane; flip the toggle for **abacad**,
 then **quit and relaunch** the app so it re-reads its trust status. The panel's
 green checkmarks confirm the grants (hit **Refresh** after toggling).
 
+## Start after a restart
+
+Once this Mac has been explicitly set up, abacad registers itself as a macOS
+login item. Existing configured installs do the same once on their next launch.
+It starts and reconnects after the user signs in following a restart. You can
+change this later with **Start at login** in the menu-bar panel; turning it off
+is remembered and will not be overridden on a later launch. If macOS has blocked
+the item, the panel links to System Settings → General → Login Items.
+
+The panel's **Availability after restart** section explains and checks two
+supported postures:
+
+- **Secure mode** — keep FileVault on; a person must unlock and sign in after a
+  restart.
+- **Unattended server mode** — FileVault off, automatic login for this account,
+  no password after idle, system sleep prevented, and startup after power loss
+  enabled.
+
+The checks are read-only. They run `fdesetup`, `sysadminctl`, and `pmset` off the
+main thread, time out instead of prompting, and report **Unknown** rather than
+guessing when a macOS release returns an unfamiliar result. abacad never disables
+FileVault, configures automatic login, or asks for the macOS account password.
+
+This is intentionally a login item rather than a boot daemon. Screen Recording
+and Accessibility grants belong to the signed app in the logged-in graphical
+session, so abacad cannot control a Mac that is still waiting at the macOS login
+screen. A remotely administered Mac mini therefore also needs a user session
+after reboot, either by signing in locally or by deliberately configuring
+automatic login where the machine's security requirements allow it.
+
 ## Connect
 
 The easy path — **`abacad connect`** (device-authorization grant, no copy-paste):

@@ -55,6 +55,8 @@ final class Agent: ObservableObject {
     @Published var serverURL: String = Prefs.serverURL
     @Published var axGranted = Permissions.accessibilityGranted
     @Published var screenGranted = Permissions.screenRecordingGranted
+    @Published var launchAtLoginStatus = LaunchAtLogin.status
+    @Published var launchAtLoginError: String?
 
     // Self-enrollment state. While unclaimed the panel shows deviceID + claimCode
     // — the two things a human reads off this Mac and types at <relay>/claim.
@@ -143,6 +145,13 @@ final class Agent: ObservableObject {
         ws.onText = { [weak self] text in self?.handle(text: text) }
         ws.onBinary = { [weak self] data in self?.tunnel.handle(data) }
         observeSystemEvents()
+        if !serverURL.isEmpty || !Prefs.deviceToken.isEmpty {
+            // Existing configured installs and Macs paired by the CLI need the
+            // same run-at-login default as setup completed in this process.
+            // The helper records an explicit opt-out, so this migration runs at
+            // most once and never fights a later choice.
+            Task { @MainActor in self.enableLaunchAtLoginAfterSetup() }
+        }
         if !serverURL.isEmpty {
             // An explicitly configured URL (from `abacad connect`, or pasted)
             // still wins, so existing installs are untouched.
@@ -212,6 +221,7 @@ final class Agent: ObservableObject {
                     deviceID = reg.deviceID
                     claimCode = reg.claimCode
                     needsSetup = false
+                    enableLaunchAtLoginAfterSetup()
                 } catch Enrollment.EnrollError.notSupported {
                     // Errors are gated too: a superseded run reporting a failure
                     // would stamp it over the live one, and because `defer` only
@@ -460,13 +470,17 @@ final class Agent: ObservableObject {
         ]))
     }
 
+    @MainActor
     func connect() {
         let url = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
         Prefs.serverURL = url
         serverURL = url
         // Pasting a connection URL is the other way to finish setup, so it
         // retires the setup prompt just as registering does.
-        if !url.isEmpty { needsSetup = false }
+        if !url.isEmpty {
+            needsSetup = false
+            enableLaunchAtLoginAfterSetup()
+        }
         // A manual connect is a fresh intent to allow control: clear any pause.
         setPaused(false)
         // Rebuild the blob endpoint whenever the server URL changes, so file
@@ -483,6 +497,45 @@ final class Agent: ObservableObject {
     func refreshPermissions() {
         axGranted = Permissions.accessibilityGranted
         screenGranted = Permissions.screenRecordingGranted
+    }
+
+    var launchAtLoginEnabled: Bool {
+        LaunchAtLogin.isRequested(launchAtLoginStatus)
+    }
+
+    var launchAtLoginNeedsApproval: Bool {
+        launchAtLoginStatus == .requiresApproval
+    }
+
+    var launchAtLoginUnavailable: Bool {
+        launchAtLoginStatus == .notFound
+    }
+
+    @MainActor
+    func refreshLaunchAtLogin() {
+        launchAtLoginStatus = LaunchAtLogin.status
+    }
+
+    @MainActor
+    func setLaunchAtLogin(_ enabled: Bool) {
+        do {
+            try LaunchAtLogin.setEnabled(enabled)
+            launchAtLoginError = nil
+        } catch {
+            launchAtLoginError = error.localizedDescription
+        }
+        refreshLaunchAtLogin()
+    }
+
+    @MainActor
+    private func enableLaunchAtLoginAfterSetup() {
+        do {
+            try LaunchAtLogin.enableAfterSetupIfUnconfigured()
+            launchAtLoginError = nil
+        } catch {
+            launchAtLoginError = error.localizedDescription
+        }
+        refreshLaunchAtLogin()
     }
 
     // Toggle the soft-kill pause (from the panel). While paused every incoming
@@ -608,33 +661,46 @@ struct AgentPanel: View {
     private var ready: Bool { agent.connected && agent.axGranted && agent.screenGranted }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.spaceMd) {
-            stateHeader
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.spaceMd) {
+                stateHeader
 
-            if agent.watched || agent.recording { awarenessFlags }
+                if agent.watched || agent.recording { awarenessFlags }
 
-            if ready {
+                if ready {
+                    Divider()
+                    recentActions
+                    Divider()
+                    DisclosureGroup("Setup & connection") { setupBody }
+                        .font(.caption)
+                    Divider()
+                    DisclosureGroup("What this Mac exposes") { capabilitiesBody }
+                        .font(.caption)
+                } else {
+                    Divider()
+                    connectBody
+                    Divider()
+                    permissionsBody
+                }
+
                 Divider()
-                recentActions
+                RestartReadinessSection(agent: agent)
                 Divider()
-                DisclosureGroup("Setup & connection") { setupBody }
-                    .font(.caption)
-                Divider()
-                DisclosureGroup("What this Mac exposes") { capabilitiesBody }
-                    .font(.caption)
-            } else {
-                Divider()
-                connectBody
-                Divider()
-                permissionsBody
+                Button("Quit abacad") { NSApplication.shared.terminate(nil) }
             }
-
-            Divider()
-            Button("Quit abacad") { NSApplication.shared.terminate(nil) }
+            .padding(Theme.spaceLg)
         }
-        .padding(Theme.spaceLg)
         .frame(width: 340)
-        .onAppear { agent.refreshPermissions() }
+        .frame(maxHeight: panelMaxHeight)
+        .onAppear {
+            agent.refreshPermissions()
+            agent.refreshLaunchAtLogin()
+        }
+    }
+
+    private var panelMaxHeight: CGFloat {
+        let available = NSScreen.main?.visibleFrame.height ?? 800
+        return max(320, min(720, available - 80))
     }
 
     // MARK: state header

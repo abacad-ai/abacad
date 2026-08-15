@@ -49,6 +49,7 @@ export default defineConfig({
           label: "Guides",
           items: [
             { label: "SSH access", slug: "guides/ssh" },
+            { label: "Running a Mac unattended", slug: "guides/running-a-mac-unattended" },
             { label: "Running a phone hands-off", slug: "guides/running-hands-off" },
             { label: "Run your own relay", slug: "guides/self-hosting" },
           ],
