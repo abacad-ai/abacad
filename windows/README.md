@@ -86,7 +86,8 @@ unreachable. Uninstall from Settings → Apps.
 
 Then launch **abacad**. A relay-mark icon appears in the notification area (its hub
 turns **green** when connected). Double-click it — or right-click → **Settings…** —
-to open the panel.
+to open the panel. The installed version is shown at the bottom of that panel and
+under right-click → **About abacad**.
 
 Uninstalling removes `%APPDATA%\abacad`, which holds this PC's device credential —
 so a reinstall starts over at the setup screen and needs a fresh claim code. The

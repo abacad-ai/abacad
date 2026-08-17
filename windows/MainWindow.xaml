@@ -5,7 +5,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="abacad">
 
-    <Grid Background="{ThemeResource CanvasBrush}">
+    <Grid x:Name="Root" Background="{ThemeResource CanvasBrush}">
         <ScrollViewer>
             <StackPanel Padding="20" Spacing="12">
 
@@ -87,6 +87,14 @@
                 <TextBlock
                     FontSize="12" Foreground="{ThemeResource InkMutedBrush}" TextWrapping="Wrap"
                     Text="Once connected an agent can view and control this PC; Pause rejects commands without dropping the link, Disconnect drops it. Driving windows owned by an elevated (administrator) app requires running abacad as administrator too." />
+
+                <TextBlock
+                    x:Name="VersionText"
+                    HorizontalAlignment="Center"
+                    Margin="0,4,0,0"
+                    FontSize="11"
+                    Foreground="{ThemeResource InkMutedBrush}"
+                    IsTextSelectionEnabled="True" />
             </StackPanel>
         </ScrollViewer>
     </Grid>

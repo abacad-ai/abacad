@@ -33,7 +33,7 @@ public partial class App : Application
     {
         _ui = DispatcherQueue.GetForCurrentThread();
         _agent = new Agent();
-        _tray = new TrayIcon(_agent, ShowWindow, Quit);
+        _tray = new TrayIcon(_agent, ShowWindow, ShowAbout, Quit);
         _agent.Start();
 
         // Start() no longer registers on its own, so on a fresh install the app
@@ -80,6 +80,14 @@ public partial class App : Application
         _window ??= new MainWindow(_agent);
         _window.Activate();
         _window.BringToFront();
+    }
+
+    void ShowAbout()
+    {
+        if (!_ui.HasThreadAccess) { _ui.TryEnqueue(ShowAbout); return; }
+
+        _window ??= new MainWindow(_agent);
+        _window.ShowAbout();
     }
 
     // Same hop, and for the same reason: Close() and Exit() are both XAML calls.

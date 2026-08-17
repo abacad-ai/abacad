@@ -7,11 +7,12 @@ namespace Abacad;
 // uses H.NotifyIcon.Core — a XAML-free Shell_NotifyIcon wrapper that takes an
 // HICON directly, letting us reuse RelayMark's GDI-drawn glyph. Reflects the
 // awareness state (connected / controlling / paused) in the tooltip + status
-// item, and offers Pause/Resume, Settings, Disconnect, Quit.
+// item, and offers Pause/Resume, Settings, Disconnect, About, Quit.
 sealed class TrayIcon : IDisposable
 {
     readonly Agent _agent;
     readonly Action _showWindow;
+    readonly Action _showAbout;
     readonly Action _quit;
 
     readonly Icon _iconOn;
@@ -20,10 +21,11 @@ sealed class TrayIcon : IDisposable
     readonly PopupMenuItem _statusItem;
     readonly PopupMenuItem _pauseItem;
 
-    public TrayIcon(Agent agent, Action showWindow, Action quit)
+    public TrayIcon(Agent agent, Action showWindow, Action showAbout, Action quit)
     {
         _agent = agent;
         _showWindow = showWindow;
+        _showAbout = showAbout;
         _quit = quit;
 
         _iconOn = RelayMark.Tray(connected: true);
@@ -55,6 +57,7 @@ sealed class TrayIcon : IDisposable
                     new PopupMenuItem("Settings…", (_, _) => _showWindow()),
                     new PopupMenuItem("Disconnect", (_, _) => _agent.Disconnect()),
                     new PopupMenuSeparator(),
+                    new PopupMenuItem("About abacad", (_, _) => _showAbout()),
                     new PopupMenuItem("Quit abacad", (_, _) => _quit()),
                 },
             },

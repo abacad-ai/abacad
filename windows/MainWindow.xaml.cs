@@ -21,6 +21,8 @@ internal sealed partial class MainWindow : Window
 {
     readonly Agent _agent;
     readonly DispatcherQueueTimer _tick;
+    bool _aboutOpen;
+    bool _aboutPending;
 
     // Status colors from design/tokens.json (dark set); the neutral chrome comes
     // from Theme.xaml ThemeResources + Mica.
@@ -46,6 +48,7 @@ internal sealed partial class MainWindow : Window
 
         UrlBox.Text = _agent.ServerUrl;
         RelayBox.Text = _agent.RelayUrl;
+        VersionText.Text = $"Version {AppVersion.Current}";
 
         _agent.StatusChanged += OnStatus;
         _agent.EnrollmentChanged += OnStatus;
@@ -102,6 +105,84 @@ internal sealed partial class MainWindow : Window
     {
         AppWindow.Show();
         Activate();
+    }
+
+    public void ShowAbout()
+    {
+        BringToFront();
+        if (_aboutOpen || _aboutPending) return;
+
+        if (Root.XamlRoot == null)
+        {
+            _aboutPending = true;
+            Root.Loaded += OnRootLoadedForAbout;
+            return;
+        }
+
+        _ = ShowAboutAsync();
+    }
+
+    void OnRootLoadedForAbout(object sender, RoutedEventArgs e)
+    {
+        Root.Loaded -= OnRootLoadedForAbout;
+        _aboutPending = false;
+        _ = ShowAboutAsync();
+    }
+
+    async Task ShowAboutAsync()
+    {
+        if (_aboutOpen || Root.XamlRoot == null) return;
+        _aboutOpen = true;
+
+        var links = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+        };
+        links.Children.Add(new HyperlinkButton
+        {
+            Content = "Website",
+            NavigateUri = new Uri("https://abacad.ai"),
+            Padding = new Thickness(0),
+        });
+        links.Children.Add(new HyperlinkButton
+        {
+            Content = "Release notes",
+            NavigateUri = new Uri(
+                $"https://github.com/abacad-ai/abacad/releases/tag/v{AppVersion.Current}"),
+            Padding = new Thickness(0),
+        });
+
+        var content = new StackPanel
+        {
+            MinWidth = 280,
+            Spacing = 8,
+        };
+        content.Children.Add(new TextBlock
+        {
+            Text = $"Version {AppVersion.Current}",
+            FontSize = 14,
+            IsTextSelectionEnabled = true,
+        });
+        content.Children.Add(links);
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Root.XamlRoot,
+            Title = "About abacad",
+            Content = content,
+            CloseButtonText = "Close",
+            DefaultButton = ContentDialogButton.Close,
+        };
+
+        try
+        {
+            await dialog.ShowAsync();
+        }
+        finally
+        {
+            _aboutOpen = false;
+        }
     }
 
     void OnStatus() => DispatcherQueue.TryEnqueue(Render);
