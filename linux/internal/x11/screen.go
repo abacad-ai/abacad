@@ -25,17 +25,39 @@ const jpegQuality = 80
 // as JPEG. The root-window pixel space matches the coordinate space input verbs
 // act in, so a captured pixel maps straight to a click point.
 func (c *Conn) Capture() (Shot, error) {
+	// Ask the server how big the root is right now rather than trusting the
+	// connect-time snapshot — see refreshGeometry for why it goes stale.
+	c.refreshGeometry()
 	if c.width <= 0 || c.height <= 0 {
 		return Shot{}, fmt.Errorf("screen has zero geometry (%dx%d)", c.width, c.height)
 	}
+	shot, err := c.captureSize(c.width, c.height)
+	if err != nil {
+		// A resize landing between the geometry read and the capture loses the
+		// race. Re-read and try once more; a second failure is real.
+		c.refreshGeometry()
+		if c.width <= 0 || c.height <= 0 {
+			return Shot{}, err
+		}
+		shot, err = c.captureSize(c.width, c.height)
+	}
+	return shot, err
+}
+
+// captureSize grabs a w×h rectangle from the root origin and encodes it. The
+// dimensions are passed in so the request, the decode, and the reported size all
+// describe one frame even if the screen resizes mid-capture.
+func (c *Conn) captureSize(w, h int) (Shot, error) {
 	reply, err := xproto.GetImage(
 		c.c, xproto.ImageFormatZPixmap, xproto.Drawable(c.root),
-		0, 0, uint16(c.width), uint16(c.height), 0xffffffff,
+		0, 0, uint16(w), uint16(h), 0xffffffff,
 	).Reply()
 	if err != nil {
-		return Shot{}, fmt.Errorf("GetImage: %w", err)
+		// Name the geometry we asked for: a BadMatch here almost always means the
+		// rectangle no longer fits the root, and the numbers are the evidence.
+		return Shot{}, fmt.Errorf("GetImage %dx%d: %w", w, h, err)
 	}
-	img, err := decodeZPixmap(reply.Data, c.width, c.height)
+	img, err := decodeZPixmap(reply.Data, w, h)
 	if err != nil {
 		return Shot{}, err
 	}
@@ -43,7 +65,7 @@ func (c *Conn) Capture() (Shot, error) {
 	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: jpegQuality}); err != nil {
 		return Shot{}, fmt.Errorf("jpeg encode: %w", err)
 	}
-	return Shot{W: c.width, H: c.height, Base64: base64.StdEncoding.EncodeToString(buf.Bytes())}, nil
+	return Shot{W: w, H: h, Base64: base64.StdEncoding.EncodeToString(buf.Bytes())}, nil
 }
 
 // decodeZPixmap turns raw ZPixmap bytes into an RGBA image. Depth-24 TrueColor

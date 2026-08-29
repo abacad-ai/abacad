@@ -78,8 +78,31 @@ func (c *Conn) Close() {
 	}
 }
 
-// Size returns the primary screen dimensions in pixels.
-func (c *Conn) Size() (int, int) { return c.width, c.height }
+// Size returns the primary screen dimensions in pixels, re-read from the server
+// so a screen resized since Open reports its current size.
+func (c *Conn) Size() (int, int) {
+	c.refreshGeometry()
+	return c.width, c.height
+}
+
+// refreshGeometry re-reads the root window's size. The dimensions handed out in
+// the connection setup are a snapshot taken at connect time, and this connection
+// outlives resolution changes: RandR resizes, monitor hotplug, and VM consoles
+// (Proxmox/SPICE/VMware guests resize the X screen to match the viewer window)
+// all reshape the root under a live connection. GetImage requires the requested
+// rectangle to fit inside the drawable, so a stale, too-large size fails every
+// capture with BadMatch until the process restarts. One round-trip per capture is
+// cheap next to encoding a multi-megabyte frame.
+//
+// A failed read leaves the last known good size in place; the caller reports the
+// capture failure rather than this one.
+func (c *Conn) refreshGeometry() {
+	geom, err := xproto.GetGeometry(c.c, xproto.Drawable(c.root)).Reply()
+	if err != nil || geom.Width == 0 || geom.Height == 0 {
+		return
+	}
+	c.width, c.height = int(geom.Width), int(geom.Height)
+}
 
 // PointerPos returns the current pointer position in root-window pixels. Used to
 // confirm that injected motion actually reached the server.
