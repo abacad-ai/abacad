@@ -142,12 +142,56 @@ func (s *Store) Activities(accountID string, f ActivityFilter) ([]Activity, erro
 	return out, rows.Err()
 }
 
+// pruneBatch is how many rows one prune statement deletes. It bounds how long a
+// single sweep can hold the process's only database connection; see
+// PruneActivities for why that matters more than the batch size itself.
+//
+// A var, not a const, only so tests can lower it and exercise the multi-batch
+// path without inserting five thousand rows. Nothing in the server writes it.
+var pruneBatch int64 = 5000
+
 // PruneActivities deletes rows older than beforeTs (unix millis) and reports how
 // many were removed.
+//
+// The delete is issued in batches rather than as one statement because
+// store.Open pins the pool to a single connection (SetMaxOpenConns(1)): whatever
+// holds that connection blocks every other query in the process, in a queue that
+// has no timeout. A single unbounded DELETE over a table whose whole purpose is
+// to accumulate — every sign-in, every relayed command, 90 days by default —
+// therefore stalls unrelated requests for as long as it runs, which is how a
+// background sweep turns into a latency spike on endpoints that never touch this
+// table.
+//
+// Each batch is a separate Exec, so the connection is returned to the pool
+// between batches and database/sql hands it to the waiters queued ahead of us
+// before this loop gets it back. That is what makes the stall bounded: not the
+// total prune time, which is unchanged or slightly worse, but the longest
+// single stretch any other request can be stuck behind it.
+//
+// The subquery form is deliberate — SQLite only accepts LIMIT directly on DELETE
+// when built with SQLITE_ENABLE_UPDATE_DELETE_LIMIT, which is not guaranteed for
+// the driver we use. 0023 indexes ts, so selecting each batch is a range seek
+// rather than the full scan this loop would otherwise repeat.
 func (s *Store) PruneActivities(beforeTs int64) (int64, error) {
-	res, err := s.db.Exec(`DELETE FROM activities WHERE ts<?`, beforeTs)
-	if err != nil {
-		return 0, err
+	var total int64
+	for {
+		res, err := s.db.Exec(
+			`DELETE FROM activities WHERE id IN (
+			   SELECT id FROM activities WHERE ts<? LIMIT ?)`, beforeTs, pruneBatch)
+		if err != nil {
+			// Report what was already deleted alongside the error: the rows are
+			// gone whether or not the sweep finished, and the caller logs the count.
+			return total, err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return total, err
+		}
+		total += n
+		// A short batch means the last matching row is gone. Stopping on n == 0
+		// alone would be correct but would always cost one extra empty round trip.
+		if n < pruneBatch {
+			return total, nil
+		}
 	}
-	return res.RowsAffected()
 }

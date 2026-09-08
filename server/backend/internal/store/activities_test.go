@@ -66,6 +66,54 @@ func TestActivities(t *testing.T) {
 	}
 }
 
+// Pruning is batched (see PruneActivities), so it has a loop the single-batch
+// case in TestActivities never enters. This drives several full batches plus a
+// short final one and checks the parts that a miscounted or non-terminating loop
+// would get wrong: the total, what survives, and that rows at exactly the cutoff
+// are kept (the predicate is ts<cutoff, not <=).
+func TestPruneActivitiesBatched(t *testing.T) {
+	s := openTemp(t)
+
+	orig := pruneBatch
+	pruneBatch = 10
+	t.Cleanup(func() { pruneBatch = orig })
+
+	// 35 rows to delete (ts 1..35) spans three full batches and a short one;
+	// 1 row exactly at the cutoff and 4 past it must all survive.
+	const cutoff = 36
+	for ts := int64(1); ts <= 40; ts++ {
+		if err := s.InsertActivity(Activity{AccountID: "acc1", Ts: ts, Kind: "command"}); err != nil {
+			t.Fatalf("insert ts=%d: %v", ts, err)
+		}
+	}
+
+	n, err := s.PruneActivities(cutoff)
+	if err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	if n != 35 {
+		t.Fatalf("want 35 pruned, got %d", n)
+	}
+
+	left, err := s.Activities("acc1", ActivityFilter{})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(left) != 5 {
+		t.Fatalf("want 5 rows left, got %d", len(left))
+	}
+	for _, a := range left {
+		if a.Ts < cutoff {
+			t.Fatalf("row older than cutoff survived: ts=%d", a.Ts)
+		}
+	}
+
+	// Re-pruning the same cutoff must delete nothing and still terminate.
+	if n, err := s.PruneActivities(cutoff); err != nil || n != 0 {
+		t.Fatalf("second prune: n=%d err=%v", n, err)
+	}
+}
+
 // Provenance round-trips through insert, select and both new filters. The columns
 // arrive via ADD COLUMN migrations, so this also proves the migration applied.
 func TestActivityProvenance(t *testing.T) {

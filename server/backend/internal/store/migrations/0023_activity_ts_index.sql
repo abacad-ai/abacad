@@ -1,0 +1,22 @@
+-- Supports retention pruning: DELETE FROM activities WHERE ts<? (PruneActivities).
+--
+-- Without this index that DELETE is a full scan of the highest-volume table in
+-- the system — 0003's comment is accurate that it holds every sign-in, every
+-- device lifecycle event and every relayed command — and the scan happens on
+-- every sweep regardless of how few rows actually match. The existing indexes
+-- are no help: both idx_activities_account_id_id and idx_activities_account_actor
+-- lead with account_id, and prune is deliberately account-agnostic.
+--
+-- That scan is not just slow in isolation. store.Open pins the pool to a single
+-- connection (SetMaxOpenConns(1)), so for as long as the sweep runs it holds the
+-- only connection in the process and every other query — including the single
+-- indexed lookup behind auth — waits behind it in a queue that has no timeout.
+-- One unindexed background DELETE therefore shows up as a latency spike on
+-- endpoints that never touch this table.
+--
+-- The write-side cost is one more b-tree insert per row, paid on the recorder's
+-- own goroutine, which is already off every caller's hot path by design.
+--
+-- Genuinely idempotent (IF NOT EXISTS), so like 0020 this does not depend on the
+-- runner's duplicate-column skip.
+CREATE INDEX IF NOT EXISTS idx_activities_ts ON activities(ts);
