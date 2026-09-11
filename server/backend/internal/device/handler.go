@@ -17,6 +17,7 @@ import (
 	"abacad/internal/auth"
 	"abacad/internal/events"
 	"abacad/internal/relay"
+	"abacad/internal/replay"
 	"abacad/internal/store"
 )
 
@@ -61,6 +62,9 @@ type Handler struct {
 	OnCapabilities CapabilitiesReported
 	Events         *events.Log        // per-device live ring; may be nil
 	Activity       *activity.Recorder // persistent account trail; may be nil
+	// Replay records frames for session playback, on devices whose owner has
+	// turned it on. May be nil; a nil *Recorder is itself a no-op.
+	Replay *replay.Recorder
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -147,6 +151,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// on the device's goroutine, where r is the device's upgrade request.
 			ActorKind: rec.Actor.Kind, ActorID: rec.Actor.ID, ActorLabel: rec.Actor.Label,
 			IP: rec.Actor.IP, UserAgent: rec.Actor.UserAgent,
+		})
+	})
+	// Session replay. The relay only calls this for devices whose owner turned
+	// recording on, so installing it unconditionally costs nothing on the rest —
+	// and it must be installed here, before Register, for the same reason the
+	// capability observer is: the device is reachable the moment it registers.
+	dc.SetFrameObserver(func(rec relay.FrameRecord) {
+		h.Replay.Record(replay.Command{
+			AccountID: accountID, DeviceID: rec.DeviceID,
+			Method: rec.Method, Source: rec.Source, Outcome: rec.Outcome,
+			DurationMs: rec.Duration.Milliseconds(), ActorLabel: rec.Actor.Label,
+			Params: rec.Params, Result: rec.Result,
 		})
 	})
 	if h.Events != nil {

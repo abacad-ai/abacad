@@ -343,6 +343,22 @@ the authorization; the kill switch is the off. What remains is only:
   - *per device* — which **capabilities** the device exposes at all, to anyone.
 - **Audit** — an append-only record of every command: source, method, outcome,
   duration, and every tunnel target. Automatic, no configuration, nothing to judge.
+- **Replay** — the same record with pictures: the frames the agent saw, in order,
+  each action marked on the frame it acted on. Unlike audit this is **off by
+  default, per device, and takes an attestation to turn on** — keeping every frame
+  is screen content at rest, which is a bigger promise to break than a log line.
+  Turning it on and off are both recorded on the trail, so a recording that stops
+  cannot stop quietly.
+
+  It is also the **one place this system's observability originates a command**:
+  because an action returns no pixels, the recorder takes its own screenshot after
+  one, so the replay shows what the action did and not only the screen it acted
+  on. That crosses the line the rest of this doc draws — observing without
+  touching — so it is bounded accordingly: only after a successful action, never
+  on a sleeping device, never without the `screenshot` capability, never when the
+  agent's own next look got there first, one in flight per device, and always on
+  the trail under `source: replay` rather than disguised as the agent's. It has
+  its own off switch, separate from recording. See [replay.md](replay.md).
 - **Kill switch** — a human emergency stop that disconnects (and optionally revokes
   the device key), propagating over the live channel immediately. It decides
   nothing; a person hits it.

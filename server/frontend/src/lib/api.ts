@@ -13,6 +13,7 @@ export interface DeviceView {
   ssh_host?: string; // ssh <ssh_host> reaches this device via the jump host
   screenshot_at?: number; // unix seconds of the last stored screenshot; absent if none
   humanize: boolean; // smooth pointer motion on this device; default off, opt-in with attestation
+  replay: boolean; // session replay recording; default off, opt-in with attestation
   expires_at?: string; // enrollment expiry (ISO); absent = permanent (never expires)
   capabilities: string[]; // the ACCOUNT grant (what the dashboard switches set); always concrete
   client_capabilities: string[]; // the ceiling the DEVICE declared for itself
@@ -96,6 +97,58 @@ export interface DeviceEvent {
 export interface DeviceEvents {
   online: boolean;
   events: DeviceEvent[];
+}
+
+// --- Session replay ---------------------------------------------------------
+// The recorded picture track for a device: what its screen looked like while an
+// agent drove it. Off per device until its owner turns it on.
+
+// Where a pointer command landed, for drawing over the frame it acted on. Only
+// coordinates are ever recorded — never typed text or evaluated code.
+export interface ReplayMarker {
+  kind: string; // the verb: "tap", "click", "swipe", ...
+  x: number;
+  y: number;
+  x2?: number; // present for swipe/drag: the end point
+  y2?: number;
+}
+
+// One recorded command. frame_url is absent when the command returned no image
+// (only screenshot and composite do), and the player draws its marker over the
+// last frame it saw instead.
+export interface ReplayStep {
+  id: number;
+  ts: number; // unix millis
+  method: string;
+  source?: string;
+  outcome?: string;
+  duration_ms?: number;
+  actor_label?: string;
+  frame_url?: string;
+  w?: number; // the frame's pixel size, for placing markers
+  h?: number;
+  marker?: ReplayMarker;
+}
+
+// One contiguous run of recorded activity, split from its neighbours by a gap.
+// There is no session id: an agent never announces that it started or finished
+// a task, so the boundary is inferred and the timestamps ARE the identity.
+export interface ReplaySession {
+  start_ts: number;
+  end_ts: number;
+  steps: number;
+  frames: number;
+  actor_label?: string;
+}
+
+export interface ReplaySessions {
+  sessions: ReplaySession[];
+  recording: boolean; // whether this device is recording right now
+}
+
+export interface ReplayStepsResult {
+  steps: ReplayStep[];
+  recording: boolean;
 }
 
 // One row of the account-wide activity trail (mirrors the Go store.Activity).
@@ -256,6 +309,15 @@ export const api = {
     req<{ device_token: string; wss_url: string }>(`/api/devices/${id}/rotate-token`, { method: "POST" }),
   deviceScreenshotUrl: (id: string) => `/api/devices/${id}/screenshot`,
   deviceEvents: (id: string) => req<DeviceEvents>(`/api/devices/${id}/events`),
+
+  // Session replay. Enabling recording requires attested=true (the operator
+  // acknowledges the device's screen will be kept on the server); disabling does
+  // not. Sessions are addressed by their time bounds — there is no session id.
+  setDeviceReplay: (id: string, replay: boolean, attested?: boolean) =>
+    req<void>(`/api/devices/${id}`, { method: "PATCH", body: JSON.stringify({ replay, attested }) }),
+  replaySessions: (id: string) => req<ReplaySessions>(`/api/devices/${id}/replay/sessions`),
+  replaySteps: (id: string, from: number, to: number) =>
+    req<ReplayStepsResult>(`/api/devices/${id}/replay?from=${from}&to=${to}`),
 
   // Live view (VNC). Start mints a one-time viewer ticket and tells the device to
   // start its VNC server + reverse-connect; the browser opens noVNC against

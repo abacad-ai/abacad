@@ -55,6 +55,31 @@ type Actor struct {
 // the caller's goroutine, so it must be cheap and non-blocking. nil disables it.
 type CommandObserver func(CommandRecord)
 
+// FrameRecord is one command's full payload, offered to a FrameObserver for
+// session replay. It is deliberately separate from CommandRecord, which mirrors
+// what gets logged and is metadata only: replay needs the bytes the device sent
+// back, and widening the log record to carry a multi-megabyte JPEG would make
+// every consumer of the activity trail pay for a feature that is off by default.
+//
+// Params is the command's parameters as sent (post-authorization, for
+// composite), carried so a pointer verb's coordinates can be drawn over the
+// frame it acted on. A recorder must take ONLY numeric coordinates from it —
+// typed text and evaluated code arrive here too and must never be persisted.
+//
+// Result is the device's reply, nil on any failure. Only screenshot and
+// composite carry pixels; every other verb is recorded as a frameless step.
+type FrameRecord struct {
+	CommandRecord
+	Params map[string]any
+	Result json.RawMessage
+}
+
+// FrameObserver is notified after each command on a connection with replay
+// enabled. Like CommandObserver it runs inline on the caller's goroutine, so it
+// must hand the payload off asynchronously rather than decode or store it there.
+// nil disables it.
+type FrameObserver func(FrameRecord)
+
 // CapabilitiesObserver is notified when a device declares which capabilities it
 // exposes — on connect and on every local change. caps is the device's FULL set;
 // a nil/empty slice means the device sent an empty list (expose nothing), which
@@ -163,6 +188,10 @@ type DeviceConn struct {
 
 	onCmd CommandObserver // may be nil; notified on every Send completion
 
+	// onFrame receives each command's full payload for session replay. Only
+	// consulted when replay is on, so a device without it costs nothing.
+	onFrame FrameObserver
+
 	// onCaps is notified when the device declares its own capability ceiling.
 	// May be nil. Set before Register so a report arriving in the first frames
 	// after connect is not dropped.
@@ -178,6 +207,12 @@ type DeviceConn struct {
 	// Resolve. Read when building pointer commands so the client knows whether to
 	// synthesize human-like motion. Defaults OFF; opt-in per device.
 	humanize atomic.Bool
+
+	// replay mirrors the device record's replay setting, refreshed on each
+	// Resolve alongside humanize. It gates onFrame entirely, so a device that
+	// isn't being recorded pays nothing on the command path — no channel send, no
+	// retained payload. Defaults OFF; opt-in per device with attestation.
+	replay atomic.Bool
 
 	// activity holds the device's last-reported power state (protocol.Activity).
 	// Defaults to active; updated by presence frames in ReadPump. It's a display
@@ -222,6 +257,7 @@ func NewDeviceConn(deviceID string, ws *websocket.Conn) *DeviceConn {
 	}
 	c.activity.Store(protocol.ActivityActive) // assume awake until told otherwise
 	c.humanize.Store(false)                   // off unless the device record opts in
+	c.replay.Store(false)                     // ditto: recording is never on by default
 	c.pingInterval = pingInterval
 	c.pongTimeout = pongTimeout
 	c.pongMissBudget = pongMissBudget
@@ -231,6 +267,10 @@ func NewDeviceConn(deviceID string, ws *websocket.Conn) *DeviceConn {
 // SetCommandObserver installs (or clears) the per-command observer. Call before
 // ReadPump starts.
 func (c *DeviceConn) SetCommandObserver(obs CommandObserver) { c.onCmd = obs }
+
+// SetFrameObserver installs (or clears) the session-replay observer. Call before
+// ReadPump starts. Installing one does not start recording — SetReplay does.
+func (c *DeviceConn) SetFrameObserver(obs FrameObserver) { c.onFrame = obs }
 
 // SetCapabilitiesObserver installs (or clears) the handler for the device's own
 // capability reports. Call before Register: the device sends its set immediately
@@ -243,6 +283,15 @@ func (c *DeviceConn) SetHumanize(v bool) { c.humanize.Store(v) }
 
 // Humanize reports the device's current humanize setting.
 func (c *DeviceConn) Humanize() bool { return c.humanize.Load() }
+
+// SetReplay records whether this device's commands are being recorded for
+// session replay, mirroring the store record. Refreshed on every Resolve, so
+// turning recording off in the dashboard takes effect on the agent's next call
+// rather than at the device's next reconnect.
+func (c *DeviceConn) SetReplay(v bool) { c.replay.Store(v) }
+
+// Replay reports whether this device is currently being recorded.
+func (c *DeviceConn) Replay() bool { return c.replay.Load() }
 
 // Activity returns the device's last-reported power state. A fresh connection is
 // active until a presence frame says otherwise.
@@ -378,11 +427,18 @@ func (c *DeviceConn) Send(ctx context.Context, method protocol.Method, params ma
 			log.Printf("[cmd] device=%s src=%s%s method=%s dur=%dms result=%s",
 				c.DeviceID, src, suffix, method, dur.Milliseconds(), outcome)
 		}
+		rec := CommandRecord{
+			DeviceID: c.DeviceID, Method: string(method), Source: src,
+			Duration: dur, Outcome: outcome, Detail: detail, Actor: actor,
+		}
 		if c.onCmd != nil {
-			c.onCmd(CommandRecord{
-				DeviceID: c.DeviceID, Method: string(method), Source: src,
-				Duration: dur, Outcome: outcome, Detail: detail, Actor: actor,
-			})
+			c.onCmd(rec)
+		}
+		// Session replay, when the owner has turned it on for this device. The
+		// order matters: the trail is recorded first and unconditionally, so a
+		// recorder that is wedged or full can never cost the account its audit row.
+		if c.onFrame != nil && c.replay.Load() {
+			c.onFrame(FrameRecord{CommandRecord: rec, Params: params, Result: result})
 		}
 	}()
 

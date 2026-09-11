@@ -36,6 +36,10 @@ const SOURCES = [
   { value: "dashboard", label: "Dashboard" },
   { value: "ssh", label: "SSH" },
   { value: "tunnel", label: "Tunnel" },
+  // Screenshots the server took itself, after an action, for session replay.
+  // Filterable so they can be excluded as easily as inspected — on a recording
+  // device they are a large share of the command rows.
+  { value: "replay", label: "Replay" },
 ] as const;
 
 // A row is either one activity or a run of consecutive identical commands

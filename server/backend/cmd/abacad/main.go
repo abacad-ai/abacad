@@ -36,6 +36,7 @@ import (
 	"abacad/internal/mcp"
 	"abacad/internal/protocol"
 	"abacad/internal/relay"
+	"abacad/internal/replay"
 	"abacad/internal/resolver"
 	"abacad/internal/screenshot"
 	"abacad/internal/sshjump"
@@ -101,6 +102,11 @@ func main() {
 	}
 	shots.StartGC(time.Duration(cfg.ScreenshotRetentionHours) * time.Hour)
 
+	replayFrames, err := replay.OpenFrames(cfg.ReplayDir)
+	if err != nil {
+		log.Fatalf("replay dir %q: %v", cfg.ReplayDir, err)
+	}
+
 	if cfg.Seed {
 		seed(st)
 	}
@@ -143,6 +149,17 @@ func main() {
 		}
 	}
 	trail := activity.New(st, time.Duration(cfg.ActivityRetentionDays)*24*time.Hour, trailOpts...)
+	// Session replay. Started unconditionally — it records nothing until a device's
+	// owner turns recording on, and starting it lazily would mean the sweeps that
+	// enforce retention on already-recorded frames don't run either.
+	replayOpts := []replay.Option{}
+	if cfg.ReplayCaptureActions {
+		replayOpts = append(replayOpts, replay.WithCapturer(
+			&replayCapturer{hub: hub, store: st},
+			time.Duration(cfg.ReplaySettleMs)*time.Millisecond))
+	}
+	replayRec := replay.New(st, replayFrames,
+		time.Duration(cfg.ReplayRetentionHours)*time.Hour, cfg.ReplayMaxStepsPerDevice, replayOpts...)
 	// Device-enrollment expiry is always on (fixed product behavior, see
 	// api.enrollmentTTL); the sweeper kicks expired devices and reaps dormant rows.
 	devicegc.Start(st, hub, time.Duration(cfg.DeviceDormantDeleteDays)*24*time.Hour)
@@ -175,6 +192,7 @@ func main() {
 		OnCapabilities: recordClientCapabilities(st),
 		Events:         evlog,
 		Activity:       trail,
+		Replay:         replayRec,
 	}
 
 	// Browser devices dial the same /device WebSocket but from their own subdomain
@@ -200,6 +218,7 @@ func main() {
 		OnCapabilities: recordClientCapabilities(st),
 		Events:         evlog,
 		Activity:       trail,
+		Replay:         replayRec,
 	}
 
 	// blobSvc is the account-scoped data-plane store behind the /blobs HTTP
@@ -277,6 +296,7 @@ func main() {
 
 	apiHandler := (&api.API{
 		Store: st, Hub: hub, Events: evlog, Activity: trail, Shots: shots, BaseDomain: cfg.BaseDomain,
+		Replay: replayRec, ReplayFrames: replayFrames,
 		VNC:            vncMgr,
 		GoogleClientID: cfg.GoogleClientID, GoogleClientSecret: cfg.GoogleClientSecret, GoogleRedirectURL: cfg.GoogleRedirectURL,
 	}).Handler()
@@ -503,6 +523,7 @@ func main() {
 				return "<origin>/api/auth/google/callback"
 			}())
 		}
+		log.Printf("session replay     : %s (off per device until enabled; %s)", cfg.ReplayDir, replayBounds(cfg))
 		log.Printf("downloads          : GET %s/downloads/<file>   (from %s)", cfg.Addr, cfg.DownloadsDir)
 		log.Printf("health             : GET %s/health", cfg.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -644,6 +665,86 @@ func blobSigningKey(cfg config.Config) []byte {
 	}
 	log.Printf("blob signing key : generated a random one (set ABACAD_BLOB_SIGNING_KEY to persist signed /blobs URLs)")
 	return k
+}
+
+// replayCapturer takes the post-action frame for session replay. It lives here,
+// not in the replay package, because this is the only layer that can see both
+// the hub and the store — and every one of the rails below needs one or the
+// other.
+//
+// The rails matter more than the capture. This is the single place in abacad
+// where an observability feature originates a command to a device, so it refuses
+// far more often than it fires:
+//
+//   - OFFLINE — nothing to ask.
+//   - ASLEEP — a command auto-wakes a device, and a phone in a drawer must not be
+//     woken by its own supervision. The dashboard grid encodes the same refusal
+//     as pauseWhenAsleep; this is that decision made server-side, where the
+//     recorder cannot see the power state itself.
+//   - SCREENSHOT NOT EXPOSED — checked here rather than left to the gate inside
+//     Send. The gate would deny it correctly, but a denial is an audit row, and
+//     filling an owner's trail with denials they never caused is worse than not
+//     capturing.
+//
+// A refusal is an ordinary outcome, not an error worth logging per action, so all
+// three come back as the same quiet error.
+type replayCapturer struct {
+	hub   *relay.Hub
+	store *store.Store
+}
+
+var errReplayCaptureSkipped = errors.New("replay: capture skipped")
+
+func (rc *replayCapturer) Capture(deviceID string) (protocol.ScreenshotResult, error) {
+	dc, ok := rc.hub.Get(deviceID)
+	if !ok || dc.Activity() == protocol.ActivityAsleep {
+		return protocol.ScreenshotResult{}, errReplayCaptureSkipped
+	}
+	caps, err := rc.store.EffectiveDeviceCapabilities(deviceID)
+	if err != nil || !caps.Allows(protocol.Capability(protocol.MethodScreenshot)) {
+		return protocol.ScreenshotResult{}, errReplayCaptureSkipped
+	}
+	// Tagged "replay" so the trail shows this for what it is: a screenshot the
+	// server took, not one the agent asked for. No actor — no credential is
+	// behind it, and naming the account owner would assert the opposite.
+	ctx, cancel := context.WithTimeout(context.Background(), replayCaptureTimeout)
+	defer cancel()
+	raw, err := dc.Send(relay.WithSource(ctx, replay.SourceReplay),
+		protocol.MethodScreenshot, map[string]any{"include_ui_tree": false}, replayCaptureTimeout)
+	if err != nil {
+		return protocol.ScreenshotResult{}, err
+	}
+	var res protocol.ScreenshotResult
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return protocol.ScreenshotResult{}, err
+	}
+	return res, nil
+}
+
+// replayCaptureTimeout is deliberately short — shorter than the dashboard's
+// default and far shorter than an agent's. A follow-up frame is only worth
+// anything while it still shows the result of the action that triggered it; a
+// capture that takes ten seconds to arrive is a picture of something else.
+const replayCaptureTimeout = 5 * time.Second
+
+// replayBounds renders the two limits on recorded frames for the startup banner.
+// Both are spelled out because "keep forever" and "unlimited" are the settings an
+// operator most needs to notice they are running with — this is screen content
+// at rest, and the banner is where it should be visible.
+func replayBounds(cfg config.Config) string {
+	window := "kept forever"
+	if cfg.ReplayRetentionHours > 0 {
+		window = fmt.Sprintf("kept %dh", cfg.ReplayRetentionHours)
+	}
+	cap := "unlimited steps/device"
+	if cfg.ReplayMaxStepsPerDevice > 0 {
+		cap = fmt.Sprintf("max %d steps/device", cfg.ReplayMaxStepsPerDevice)
+	}
+	after := "no post-action capture"
+	if cfg.ReplayCaptureActions && cfg.ReplaySettleMs > 0 {
+		after = fmt.Sprintf("frame %dms after each action", cfg.ReplaySettleMs)
+	}
+	return window + ", " + cap + ", " + after
 }
 
 // sshKeyLabel names an SSH key for the activity trail, falling back to its

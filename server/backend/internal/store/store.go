@@ -55,6 +55,7 @@ type Device struct {
 	LastSeen  int64
 	Version   string // last version the client reported on connect; "" if never
 	Humanize  bool   // smooth pointer motion on this device; default OFF, opt-in with attestation
+	Replay    bool   // keep a frame-by-frame record of agent commands; default OFF, opt-in with attestation
 	ExpiresAt int64  // enrollment expiry, unix seconds; 0 = permanent (never expires)
 	// Capabilities is which interfaces this device exposes. Defaults to the
 	// wildcard — enrollment is the authorization, so this narrows an already
@@ -331,17 +332,17 @@ func (s *Store) DeleteSession(sessionID string) error {
 // from the configured enrollment TTL.
 func (s *Store) CreateDevice(accountID, name, platform string, expiresAt int64) (Device, string, error) {
 	token := auth.NewSecret(deviceTokenPrefix)
-	d := Device{ID: auth.NewDeviceID(), AccountID: accountID, Name: name, Platform: platform, CreatedAt: now(), Humanize: false, ExpiresAt: expiresAt,
+	d := Device{ID: auth.NewDeviceID(), AccountID: accountID, Name: name, Platform: platform, CreatedAt: now(), Humanize: false, Replay: false, ExpiresAt: expiresAt,
 		Capabilities: protocol.AllCapabilities()}
-	// humanize and capabilities are written EXPLICITLY rather than left to the
-	// column DEFAULT. For humanize the DEFAULT is still 1 (migration 0009); 0010
-	// flipped the product default to off but only via a one-time UPDATE, so
+	// humanize, replay and capabilities are written EXPLICITLY rather than left to
+	// the column DEFAULT. For humanize the DEFAULT is still 1 (migration 0009);
+	// 0010 flipped the product default to off but only via a one-time UPDATE, so
 	// omitting it would silently enrol every new device with humanize ON,
-	// bypassing the attestation gate in api.updateDevice. Capabilities has the
-	// right DEFAULT today, but relying on a DEFAULT is exactly how that drift
-	// happened, and a security-relevant column should not depend on one.
-	_, err := s.db.Exec(`INSERT INTO devices(id,account_id,name,token_hash,platform,created_at,last_seen,humanize,expires_at,capabilities)
-		VALUES(?,?,?,?,?,?,0,0,?,?)`, d.ID, d.AccountID, d.Name, auth.HashToken(token), d.Platform, d.CreatedAt, d.ExpiresAt, d.Capabilities.String())
+	// bypassing the attestation gate in api.updateDevice. Capabilities and replay
+	// have the right DEFAULT today, but relying on a DEFAULT is exactly how that
+	// drift happened, and a security-relevant column should not depend on one.
+	_, err := s.db.Exec(`INSERT INTO devices(id,account_id,name,token_hash,platform,created_at,last_seen,humanize,replay,expires_at,capabilities)
+		VALUES(?,?,?,?,?,?,0,0,0,?,?)`, d.ID, d.AccountID, d.Name, auth.HashToken(token), d.Platform, d.CreatedAt, d.ExpiresAt, d.Capabilities.String())
 	if err != nil {
 		return Device{}, "", err
 	}
@@ -353,7 +354,7 @@ func (s *Store) CreateDevice(accountID, name, platform string, expiresAt int64) 
 // expired device cannot (re)connect — the gate for auto-expiry.
 func (s *Store) DeviceByTokenHash(tokenHash string) (Device, error) {
 	return s.scanDevice(s.db.QueryRow(
-		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at,capabilities,client_capabilities FROM devices
+		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,replay,expires_at,capabilities,client_capabilities FROM devices
 		  WHERE token_hash=? AND (expires_at=0 OR expires_at>?)`, tokenHash, now()))
 }
 
@@ -363,7 +364,7 @@ func (s *Store) DeviceByTokenHash(tokenHash string) (Device, error) {
 // that rely on it (only the Host router) must intend exactly that.
 func (s *Store) DeviceByID(deviceID string) (Device, error) {
 	return s.scanDevice(s.db.QueryRow(
-		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at,capabilities,client_capabilities FROM devices
+		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,replay,expires_at,capabilities,client_capabilities FROM devices
 		  WHERE id=? AND (expires_at=0 OR expires_at>?)`, deviceID, now()))
 }
 
@@ -372,7 +373,7 @@ func (s *Store) DeviceByID(deviceID string) (Device, error) {
 // or delete it from the dashboard.
 func (s *Store) DeviceOwnedBy(deviceID, accountID string) (Device, error) {
 	return s.scanDevice(s.db.QueryRow(
-		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at,capabilities,client_capabilities FROM devices WHERE id=? AND account_id=?`,
+		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,replay,expires_at,capabilities,client_capabilities FROM devices WHERE id=? AND account_id=?`,
 		deviceID, accountID))
 }
 
@@ -380,7 +381,7 @@ func (s *Store) DeviceOwnedBy(deviceID, accountID string) (Device, error) {
 // DeviceOwnedBy it does not filter on expiry — dormant devices remain listed.
 func (s *Store) DevicesByAccount(accountID string) ([]Device, error) {
 	rows, err := s.db.Query(
-		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,expires_at,capabilities,client_capabilities FROM devices
+		`SELECT id,account_id,name,platform,created_at,last_seen,version,humanize,replay,expires_at,capabilities,client_capabilities FROM devices
 		  WHERE account_id=? ORDER BY last_seen DESC, created_at DESC`, accountID)
 	if err != nil {
 		return nil, err
@@ -390,7 +391,7 @@ func (s *Store) DevicesByAccount(accountID string) ([]Device, error) {
 	for rows.Next() {
 		var d Device
 		var caps, clientCaps string
-		if err := rows.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen, &d.Version, &d.Humanize, &d.ExpiresAt, &caps, &clientCaps); err != nil {
+		if err := rows.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen, &d.Version, &d.Humanize, &d.Replay, &d.ExpiresAt, &caps, &clientCaps); err != nil {
 			return nil, err
 		}
 		d.Capabilities = protocol.ParseCapabilities(caps)
@@ -407,6 +408,14 @@ func (s *Store) RenameDevice(deviceID, accountID, name string) error {
 // SetDeviceHumanize toggles human-like pointer motion for a device.
 func (s *Store) SetDeviceHumanize(deviceID, accountID string, v bool) error {
 	return s.affect(s.db.Exec(`UPDATE devices SET humanize=? WHERE id=? AND account_id=?`, v, deviceID, accountID))
+}
+
+// SetDeviceReplay toggles session replay recording for a device. Turning it off
+// stops recording but does not delete what was already recorded — that is the
+// retention window's job, and erasing the trail as a side effect of flipping a
+// switch is the opposite of what an audit surface should do.
+func (s *Store) SetDeviceReplay(deviceID, accountID string, v bool) error {
+	return s.affect(s.db.Exec(`UPDATE devices SET replay=? WHERE id=? AND account_id=?`, v, deviceID, accountID))
 }
 
 // DeviceCapabilities reads just the capability set for a device — the narrow
@@ -540,7 +549,7 @@ func (s *Store) SetDeviceVersion(deviceID, version string) {
 func (s *Store) scanDevice(row *sql.Row) (Device, error) {
 	var d Device
 	var caps, clientCaps string
-	err := row.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen, &d.Version, &d.Humanize, &d.ExpiresAt, &caps, &clientCaps)
+	err := row.Scan(&d.ID, &d.AccountID, &d.Name, &d.Platform, &d.CreatedAt, &d.LastSeen, &d.Version, &d.Humanize, &d.Replay, &d.ExpiresAt, &caps, &clientCaps)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Device{}, ErrNotFound
 	}
@@ -827,13 +836,13 @@ func (s *Store) ClaimRegistration(deviceID, claimCode, accountID, name string, e
 	d := Device{
 		ID: r.ID, AccountID: accountID, Name: name, Platform: r.Platform,
 		CreatedAt: now(), LastSeen: r.LastSeen, Version: r.Version,
-		Humanize: false, ExpiresAt: expiresAt,
+		Humanize: false, Replay: false, ExpiresAt: expiresAt,
 		Capabilities: protocol.AllCapabilities(),
 	}
-	// humanize and capabilities written explicitly — see the note in CreateDevice.
+	// humanize, replay and capabilities written explicitly — see the note in CreateDevice.
 	if _, err := tx.Exec(
-		`INSERT INTO devices(id,account_id,name,token_hash,platform,created_at,last_seen,version,humanize,expires_at,capabilities)
-		 VALUES(?,?,?,?,?,?,?,?,0,?,?)`,
+		`INSERT INTO devices(id,account_id,name,token_hash,platform,created_at,last_seen,version,humanize,replay,expires_at,capabilities)
+		 VALUES(?,?,?,?,?,?,?,?,0,0,?,?)`,
 		d.ID, d.AccountID, d.Name, tokenHash, d.Platform, d.CreatedAt, d.LastSeen, d.Version, d.ExpiresAt,
 		d.Capabilities.String()); err != nil {
 		return Device{}, err

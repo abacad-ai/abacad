@@ -9,6 +9,7 @@ import {
   Infinity as InfinityIcon,
   KeyRound,
   LoaderCircle,
+  History,
   MousePointer2,
   Plug,
   RefreshCw,
@@ -23,6 +24,7 @@ import { clientDownload, resolvePlatform, type PlatformInfo } from "@/lib/device
 import { useManifest } from "@/lib/useManifest";
 import { DeviceFrame, DeviceScreen } from "@/components/DeviceScreen";
 import { LiveView } from "@/components/LiveView";
+import { ReplayPlayer } from "@/components/ReplayPlayer";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CopyField } from "@/components/CopyField";
@@ -210,6 +212,7 @@ export function DeviceDetailPage() {
           </dl>
           <EnrollmentSection device={device} />
           <HumanizeToggle device={device} />
+          <ReplayToggle device={device} onChange={load} />
           <DeleteDevice device={device} />
         </Column>
 
@@ -217,6 +220,15 @@ export function DeviceDetailPage() {
           <AccessGuide device={device} needsKey={needsKey} />
           <CapabilitiesSection device={device} />
         </Column>
+
+        {/* Replay sits above Activities on purpose: the picture track and the
+            text log describe the same commands, and the pictures are the ones
+            you can read at a glance. */}
+        <div className="md:col-span-2">
+          <Column title="Replay">
+            <ReplayPlayer device={device} factor={factor} />
+          </Column>
+        </div>
 
         <div className="md:col-span-2">
           <Column title="Activities">
@@ -721,6 +733,94 @@ function HumanizeToggle({ device }: { device: DeviceView }) {
               className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
             >
               I attest — enable
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirming(false)}
+              className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-ink-muted"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {failed && <p className="mt-2 text-xs leading-5 text-danger">{failed}</p>}
+    </div>
+  );
+}
+
+// ReplayToggle turns session recording on or off for this device.
+//
+// It is deliberately shaped like HumanizeToggle but says something different in
+// its attestation: humanize asks "are you allowed to automate this device", this
+// asks "do you understand its screen will be kept here". Recording an agent's
+// frames is the most data-at-rest anything in abacad produces, and enabling it
+// should feel like a decision, not a preference.
+//
+// onChange refetches the device so the Replay card below re-reads its state
+// immediately rather than waiting out the page's poll.
+function ReplayToggle({ device, onChange }: { device: DeviceView; onChange: () => void }) {
+  const [on, setOn] = useState(device.replay);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  useEffect(() => {
+    setOn(device.replay);
+    setConfirming(false);
+    setFailed(null);
+  }, [device.id, device.replay]);
+
+  const apply = async (next: boolean, attested?: boolean) => {
+    setOn(next);
+    setConfirming(false);
+    setBusy(true);
+    setFailed(null);
+    try {
+      await api.setDeviceReplay(device.id, next, attested);
+      onChange();
+    } catch (err) {
+      setOn(!next); // revert on failure
+      setFailed((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-5 border-t border-border pt-4">
+      <label className="flex cursor-pointer items-start gap-3">
+        <input
+          type="checkbox"
+          checked={on}
+          disabled={busy}
+          onChange={() => (on ? void apply(false) : setConfirming(true))}
+          className="mt-1 h-4 w-4 shrink-0 accent-brand"
+        />
+        <span className="text-sm leading-6">
+          <span className="flex items-center gap-1.5 font-medium text-ink">
+            <History size={14} /> Session replay
+          </span>
+          <span className="text-ink-muted">
+            Off by default. When enabled, every command an agent runs here is recorded — with the screen
+            it saw — so you can watch the session back under Replay. Requires attestation.
+          </span>
+        </span>
+      </label>
+      {confirming && (
+        <div className="mt-3 rounded-md border border-border bg-surface-2 p-3 text-sm leading-6">
+          <p className="text-ink-muted">
+            I understand that screenshots of this device will be stored on the server until they age out
+            of the retention window, and that anyone who can sign in to this account can watch them.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void apply(true, true)}
+              className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+            >
+              I understand — start recording
             </button>
             <button
               type="button"

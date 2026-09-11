@@ -21,6 +21,7 @@ import (
 	"abacad/internal/events"
 	"abacad/internal/protocol"
 	"abacad/internal/relay"
+	"abacad/internal/replay"
 	"abacad/internal/screenshot"
 	"abacad/internal/sshjump"
 	"abacad/internal/store"
@@ -39,6 +40,13 @@ type API struct {
 	Shots      *screenshot.Store  // per-device last-screenshot cache
 	BaseDomain string             // domain devices are addressed under, for the ssh_host hint
 	VNC        *vnc.Manager       // live VNC session manager (screen_recording live channel)
+
+	// Session replay. Replay owns the recorded steps (and their deletion when a
+	// device goes away); ReplayFrames serves the frame bytes. Both may be nil,
+	// which reads as "recording is not configured" — the endpoints then answer
+	// empty rather than erroring, so a dashboard built against them still loads.
+	Replay       *replay.Recorder
+	ReplayFrames *replay.Frames
 
 	// Google OAuth. Empty client id/secret disables the "Sign in with Google"
 	// routes and hides the button; RedirectURL is derived from the request when
@@ -114,6 +122,9 @@ func (a *API) Handler() http.Handler {
 	mux.Handle("POST /api/devices/{id}/rotate-token", a.auth(a.rotateDeviceToken))
 	mux.Handle("GET /api/devices/{id}/screenshot", a.auth(a.deviceScreenshot))
 	mux.Handle("GET /api/devices/{id}/events", a.auth(a.deviceEvents))
+	mux.Handle("GET /api/devices/{id}/replay/sessions", a.auth(a.replaySessions))
+	mux.Handle("GET /api/devices/{id}/replay/frames/{frame}", a.auth(a.replayFrame))
+	mux.Handle("GET /api/devices/{id}/replay", a.auth(a.replaySteps))
 	mux.Handle("POST /api/devices/{id}/vnc/start", a.auth(a.vncStart))
 	mux.Handle("POST /api/devices/{id}/vnc/stop", a.auth(a.vncStop))
 	mux.Handle("GET /api/devices/{id}/vnc/status", a.auth(a.vncStatus))
@@ -258,6 +269,7 @@ type deviceView struct {
 	SSHHost      string `json:"ssh_host,omitempty"`      // ssh <ssh_host> reaches this device via the jump
 	ScreenshotAt int64  `json:"screenshot_at,omitempty"` // unix seconds of the last stored screenshot; 0/absent if none
 	Humanize     bool   `json:"humanize"`                // smooth pointer motion; default off, opt-in with attestation
+	Replay       bool   `json:"replay"`                  // session replay recording; default off, opt-in with attestation
 	ExpiresAt    string `json:"expires_at,omitempty"`    // enrollment expiry (RFC3339); absent = permanent
 	// Capabilities is the ACCOUNT-side grant — what the dashboard switches set.
 	// Always a concrete list; the "*" wildcard is expanded here so no client has
@@ -351,9 +363,15 @@ func (a *API) updateDevice(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name     *string `json:"name"`
 		Humanize *bool   `json:"humanize"`
-		// Attested must be true to ENABLE humanize or to make enrollment permanent:
-		// the operator attests they own or are authorized to automate this device
-		// and that the automation does not violate the target platform's terms.
+		// Replay turns session-replay recording on or off for this device.
+		// Enabling requires Attested, for a different reason than humanize does:
+		// not "am I allowed to automate this", but "I understand this device's
+		// screen will be kept on the server".
+		Replay *bool `json:"replay"`
+		// Attested must be true to ENABLE humanize or replay, or to make enrollment
+		// permanent: the operator attests they own or are authorized to automate
+		// this device and that the automation does not violate the target
+		// platform's terms.
 		Attested *bool `json:"attested"`
 		// Extend resets enrollment expiry to now + TTL (keep-alive another window).
 		Extend *bool `json:"extend"`
@@ -400,6 +418,39 @@ func (a *API) updateDevice(w http.ResponseWriter, r *http.Request) {
 		}
 		if *body.Humanize {
 			a.record(r, accID, store.Activity{Kind: activity.KindConsent, DeviceID: id, Method: "humanize.enable"})
+		}
+	}
+
+	if body.Replay != nil {
+		// Enabling starts keeping screen captures at rest, so it takes an explicit
+		// attestation. Disabling never does.
+		if *body.Replay && (body.Attested == nil || !*body.Attested) {
+			writeErr(w, http.StatusUnprocessableEntity, "enabling session replay requires attestation of authorization")
+			return
+		}
+		if err := a.Store.SetDeviceReplay(id, accID, *body.Replay); err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				writeErr(w, http.StatusNotFound, "device not found")
+			} else {
+				writeErr(w, http.StatusInternalServerError, "could not update device")
+			}
+			return
+		}
+		// Both directions are recorded, unlike humanize. When recording started and
+		// when it stopped are the two facts that make the recording itself
+		// accountable — an audit surface that can be switched off silently is worth
+		// less than one that can't be switched off at all.
+		method := "replay.disable"
+		if *body.Replay {
+			method = "replay.enable"
+		}
+		a.record(r, accID, store.Activity{Kind: activity.KindConsent, DeviceID: id, Method: method})
+		// Take effect on the live connection now rather than at the agent's next
+		// Resolve, so "stop recording" means stopped.
+		if a.Hub != nil {
+			if dc, ok := a.Hub.Get(id); ok {
+				dc.SetReplay(*body.Replay)
+			}
 		}
 	}
 
@@ -535,6 +586,9 @@ func (a *API) deleteDevice(w http.ResponseWriter, r *http.Request) {
 	if a.Shots != nil {
 		a.Shots.Delete(r.PathValue("id"))
 	}
+	// Recorded frames are pictures of this device's screen. Deleting the device
+	// must not leave them sitting on disk waiting for a retention window.
+	a.Replay.Forget(r.PathValue("id"))
 	a.record(r, account(r).ID, store.Activity{Kind: activity.KindDeviceDelete, DeviceID: r.PathValue("id"), Detail: name})
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -988,6 +1042,7 @@ func (a *API) viewDevice(d store.Device) deviceView {
 		Platform:     d.Platform,
 		Version:      d.Version,
 		Humanize:     d.Humanize,
+		Replay:       d.Replay,
 		Capabilities: capabilityNames(d.Capabilities),
 		CreatedAt:    time.Unix(d.CreatedAt, 0).UTC().Format(time.RFC3339),
 		// A device that has never reported carries the wildcard, which is exactly

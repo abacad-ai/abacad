@@ -12,6 +12,7 @@ type Config struct {
 	DBPath        string // SQLite file path
 	BlobDir       string // directory for data-plane blob bytes (/blobs store)
 	ScreenshotDir string // directory for per-device last-screenshot bytes
+	ReplayDir     string // directory for session-replay frame bytes
 	DownloadsDir  string // directory of public release artifacts served at /downloads/
 	MaxBlobBytes  int64  // reject a single blob upload larger than this
 	DevCORS       bool   // permissive CORS for local dev (Vite / smoke.mjs hitting Go directly)
@@ -26,6 +27,20 @@ type Config struct {
 	ActivityRetentionDays    int // prune activity-trail rows older than this (0 = keep forever)
 	BlobRetentionDays        int // delete data-plane blobs (files, recordings) older than this (0 = keep forever)
 	ScreenshotRetentionHours int // delete cached per-device screenshots older than this (0 = keep forever)
+
+	// Session replay (off per device until its owner turns it on). Two bounds,
+	// because the window alone doesn't bound disk: a single busy agent can record
+	// thousands of frames well inside it, so the per-device step cap is the
+	// backstop that keeps one device from filling the volume.
+	ReplayRetentionHours    int // delete recorded steps and frames older than this (0 = keep forever)
+	ReplayMaxStepsPerDevice int // keep at most this many recorded steps per device (0 = unlimited)
+
+	// After an action (tap/click/swipe/…) the recorder takes its own screenshot,
+	// so the replay shows what the action DID and not only the screen it acted on.
+	// This is the one place an observability feature sends a command to a device,
+	// so it has an off switch that does not require turning recording off.
+	ReplayCaptureActions bool
+	ReplaySettleMs       int // wait this long for the UI to settle before that capture
 
 	// Device enrollment expiry is a fixed product behavior (see api.enrollmentTTL),
 	// not an operator knob. This is only the data-retention window for the dead
@@ -69,6 +84,7 @@ func Load() Config {
 	flag.StringVar(&c.DBPath, "db", envOr("ABACAD_DB", "abacad.db"), "SQLite database path")
 	flag.StringVar(&c.BlobDir, "blobs", envOr("ABACAD_BLOBS", "blobs"), "directory for /blobs data-plane storage")
 	flag.StringVar(&c.ScreenshotDir, "screenshots", envOr("ABACAD_SCREENSHOTS", "screenshots"), "directory for per-device last-screenshot storage")
+	flag.StringVar(&c.ReplayDir, "replay", envOr("ABACAD_REPLAY", "replay"), "directory for session-replay frame storage")
 	flag.StringVar(&c.DownloadsDir, "downloads", envOr("ABACAD_DOWNLOADS", "downloads"), "directory of public release artifacts served at /downloads/")
 	flag.Int64Var(&c.MaxBlobBytes, "max-blob-bytes", envOrInt64("ABACAD_MAX_BLOB_BYTES", 1<<30), "reject a single /blobs upload larger than this (bytes)")
 	flag.BoolVar(&c.DevCORS, "dev-cors", os.Getenv("ABACAD_DEV_CORS") == "1", "enable permissive CORS for local dev")
@@ -77,6 +93,10 @@ func Load() Config {
 	flag.IntVar(&c.ActivityRetentionDays, "activity-retention-days", int(envOrInt64("ABACAD_ACTIVITY_RETENTION_DAYS", 90)), "prune activity-trail rows older than this many days (0 keeps them forever)")
 	flag.IntVar(&c.BlobRetentionDays, "blob-retention-days", int(envOrInt64("ABACAD_BLOB_RETENTION_DAYS", 7)), "delete data-plane blobs (transferred files, screen recordings) older than this many days (0 keeps them forever)")
 	flag.IntVar(&c.ScreenshotRetentionHours, "screenshot-retention-hours", int(envOrInt64("ABACAD_SCREENSHOT_RETENTION_HOURS", 24)), "delete cached per-device screenshots older than this many hours (0 keeps them forever)")
+	flag.IntVar(&c.ReplayRetentionHours, "replay-retention-hours", int(envOrInt64("ABACAD_REPLAY_RETENTION_HOURS", 48)), "delete recorded session-replay steps and frames older than this many hours (0 keeps them forever)")
+	flag.IntVar(&c.ReplayMaxStepsPerDevice, "replay-max-steps-per-device", int(envOrInt64("ABACAD_REPLAY_MAX_STEPS_PER_DEVICE", 4000)), "keep at most this many recorded steps per device, dropping the oldest (0 = unlimited)")
+	flag.BoolVar(&c.ReplayCaptureActions, "replay-capture-actions", envOrBool("ABACAD_REPLAY_CAPTURE_ACTIONS", true), "on a recording device, take a screenshot after each action so the replay shows what it did")
+	flag.IntVar(&c.ReplaySettleMs, "replay-settle-ms", int(envOrInt64("ABACAD_REPLAY_SETTLE_MS", 800)), "how long to let the UI settle before the post-action screenshot (0 disables it)")
 	flag.IntVar(&c.DeviceDormantDeleteDays, "device-dormant-delete-days", int(envOrInt64("ABACAD_DEVICE_DORMANT_DELETE_DAYS", 7)), "hard-delete devices this many days after they expire (0 = keep dormant forever)")
 	flag.StringVar(&c.SSHAddr, "ssh-addr", envOr("ABACAD_SSH_ADDR", ""), "SSH jump host listen address(es), comma-separated e.g. :22,:443 (empty disables it)")
 	flag.StringVar(&c.SSHHostKey, "ssh-host-key", envOr("ABACAD_SSH_HOST_KEY", "ssh_host_ed25519_key"), "path to the SSH jump host key (created if absent)")
@@ -101,6 +121,20 @@ func envOrInt64(key string, def int64) int64 {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
 			return n
+		}
+	}
+	return def
+}
+
+// envOrBool reads a boolean knob. Unlike the ABACAD_DEV_CORS=1 checks elsewhere,
+// this has to distinguish "unset" from "set to off" — the default is on, so
+// `=0` must be able to turn it off. An unparseable value keeps the default
+// rather than guessing, since guessing "off" would silently disable a feature
+// over a typo.
+func envOrBool(key string, def bool) bool {
+	if v := os.Getenv(key); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			return b
 		}
 	}
 	return def
