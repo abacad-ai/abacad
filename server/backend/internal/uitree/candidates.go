@@ -147,20 +147,29 @@ func Extract(tree *protocol.UITree, screenW, screenH, max int) ([]Target, Stats)
 	}
 	candidates := make([]candidate, 0, len(clickable))
 	borrowed := make([]bool, len(unclaimed))
-	for _, n := range clickable {
-		label := strings.TrimSpace(n.Text)
-		if label == "" {
-			label = innerLabel(n.Bounds, texts)
+
+	// Own words first, then words from inside. Whatever is still nameless after
+	// those two is what the sideways borrow exists for.
+	named := make([]string, len(clickable))
+	for i, n := range clickable {
+		named[i] = strings.TrimSpace(n.Text)
+		if named[i] == "" {
+			named[i] = innerLabel(n.Bounds, texts)
 		}
-		if label == "" {
-			if i := rowLabelIndex(n.Bounds, unclaimed); i >= 0 {
-				label, borrowed[i] = strings.TrimSpace(unclaimed[i].Text), true
-			}
+	}
+	for i, n := range clickable {
+		if named[i] != "" || !onlyNamelessOnRow(clickable, named, i) {
+			continue
 		}
-		if label != "" {
+		if j := rowLabelIndex(n.Bounds, unclaimed, borrowed); j >= 0 {
+			named[i], borrowed[j] = strings.TrimSpace(unclaimed[j].Text), true
+		}
+	}
+	for i, n := range clickable {
+		if named[i] != "" {
 			st.Labelled++
 		}
-		candidates = append(candidates, candidate{label: label, role: n.Cls, bounds: n.Bounds})
+		candidates = append(candidates, candidate{label: named[i], role: n.Cls, bounds: n.Bounds})
 	}
 
 	// Pass 2b. Content that names itself but carries no clickable flag.
@@ -265,16 +274,17 @@ func innerLabel(b [4]int, texts []protocol.UITreeNode) string {
 }
 
 // rowLabelIndex points at the text naming a control that holds none of its own:
-// the nearest unclaimed text on the same line, or -1 when there is none. It
-// returns the index rather than the string so the caller can mark that text as
-// spoken for, and keep pass 2b from offering it a second time on its own. This is the settings-row shape: the switch is
+// the nearest same-line text nobody has taken yet, or -1 when there is none.
+// The index is returned rather than the string so the caller can mark that text
+// spoken for — which keeps a second control from taking the same words, and
+// keeps pass 2b from offering them again as a target of their own. This is the settings-row shape: the switch is
 // the clickable thing and its words sit at the far end of the row, outside its
 // bounds entirely. Nearest-on-the-line is what a person reads, and restricting
 // the pool to unclaimed text keeps it from poaching another control's label.
-func rowLabelIndex(b [4]int, unclaimed []protocol.UITreeNode) int {
+func rowLabelIndex(b [4]int, unclaimed []protocol.UITreeNode, borrowed []bool) int {
 	best, bestGap := -1, 0
 	for i, t := range unclaimed {
-		if !sameRow(b, t.Bounds) {
+		if borrowed[i] || !sameRow(b, t.Bounds) {
 			continue
 		}
 		g := horizontalGap(b, t.Bounds)
@@ -308,6 +318,27 @@ func encloses(b [4]int, visible []protocol.UITreeNode) bool {
 		}
 	}
 	return false
+}
+
+// onlyNamelessOnRow reports whether clickable[i] is the one control on its line
+// still waiting for a name.
+//
+// Words on a row name a single control, so when several nameless controls share
+// that row nothing says which one they belong to. A Finder title bar is the
+// case that matters: three anonymous traffic-light buttons sit on the same line
+// as the window title, and letting each take the nearest words produced four
+// targets called "archived" — one of which closes the window. Handing the text
+// to the closest one is no better, because the losers then reach further out
+// and come back with something worse. Leaving them all anonymous is the rule
+// this package already states: two targets sharing a name is worse than one
+// having none.
+func onlyNamelessOnRow(clickable []protocol.UITreeNode, named []string, i int) bool {
+	for k := range clickable {
+		if k != i && named[k] == "" && sameRow(clickable[i].Bounds, clickable[k].Bounds) {
+			return false
+		}
+	}
+	return true
 }
 
 // sameRow reports whether two boxes sit on the same visual line, defined as

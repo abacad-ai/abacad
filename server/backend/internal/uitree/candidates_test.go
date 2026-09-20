@@ -323,3 +323,59 @@ func TestExtractDoesNotPromoteCaptions(t *testing.T) {
 		t.Errorf("Stats.Content = %d, want 0 — captions are not targets", st.Content)
 	}
 }
+
+// TestExtractLeavesACrowdedRowAnonymous pins the limit on the sideways borrow.
+// A Finder title bar puts three anonymous traffic-light buttons on the same
+// line as the window title; letting each take the nearest words named all of
+// them after the window — measured as 9 targets called "archived" on one real
+// screen, one of which closes it. Handing the text to the closest button only
+// moves the problem, because the other two then reach further out and come back
+// with something worse.
+func TestExtractLeavesACrowdedRowAnonymous(t *testing.T) {
+	got, st := Extract(treeOf(
+		node("AXButton", "", true, [4]int{305, 372, 327, 394}), // close
+		node("AXButton", "", true, [4]int{328, 372, 350, 394}), // minimize
+		node("AXButton", "", true, [4]int{351, 372, 373, 394}), // zoom
+		node("AXStaticText", "archived", false, [4]int{800, 374, 910, 392}),
+	), 1920, 1080, MaxTargets)
+
+	if len(got) != 3 {
+		t.Fatalf("want the three buttons, got %v", labels(got))
+	}
+	for _, g := range got {
+		if g.Label != "" {
+			t.Errorf("button at (%d,%d) is named %q — nothing on that row says which one the title means",
+				g.X, g.Y, g.Label)
+		}
+	}
+	if st.Labelled != 0 {
+		t.Errorf("Stats.Labelled = %d, want 0", st.Labelled)
+	}
+	// The title stayed unclaimed, but it is a caption, so it is not a target of
+	// its own either.
+	if st.Content != 0 {
+		t.Errorf("Stats.Content = %d, want 0", st.Content)
+	}
+}
+
+// TestExtractStillBorrowsForALoneControl guards the line above from going too
+// far: one nameless control on a row is exactly the settings-row shape the
+// sideways borrow was built for, and it must still work.
+func TestExtractStillBorrowsForALoneControl(t *testing.T) {
+	got, _ := Extract(treeOf(
+		node("Text", "See the screen", false, [4]int{60, 400, 700, 460}),
+		node("Switch", "", true, [4]int{1200, 400, 1340, 460}),
+		node("Text", "Other row", false, [4]int{60, 900, 700, 960}),
+		node("Switch", "", true, [4]int{1200, 900, 1340, 960}),
+	), 1440, 3040, MaxTargets)
+
+	if len(got) != 2 {
+		t.Fatalf("want one target per row, got %v", labels(got))
+	}
+	want := []string{"See the screen", "Other row"}
+	for i, g := range got {
+		if g.Label != want[i] {
+			t.Errorf("row %d label = %q, want %q", i, g.Label, want[i])
+		}
+	}
+}
