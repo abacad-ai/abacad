@@ -9,6 +9,7 @@ import (
 
 	"abacad/internal/protocol"
 	"abacad/internal/relay"
+	"abacad/internal/uitree"
 )
 
 // commandTimeout bounds how long an MCP tool waits for a device reply. It is
@@ -120,15 +121,21 @@ var actionTools = []actionTool{
 	{
 		name:        "screenshot",
 		method:      protocol.MethodScreenshot,
-		description: "Look at the connected device's screen. Returns a JPEG of the current screen and, by default, the accessibility UI tree: the foreground package plus a list of nodes, each with class, text, resource id, a clickable flag, and screen bounds [left, top, right, bottom]. Use the tree to decide what to interact with — tap the center of a node's bounds. Set include_ui_tree=false for canvas/game screens where the tree is empty or noise (you still get the image). The device is woken automatically if its screen was off.",
-		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"include_ui_tree":{"type":"boolean","description":"also return the accessibility UI tree (default true)"}},"additionalProperties":false}`,
+		description: "Look at the connected device's screen. Returns a JPEG of the current screen plus, depending on ui, a description of what is on it.\n\nPrefer ui=\"targets\": it returns only the things you can actually act on, each with a label and a ready-to-use center point — tap or click (x, y) directly, no arithmetic on bounds. On real screens this is a large reduction, because most of a tree is closed menus, off-screen list rows and layout containers that cannot be clicked: a macOS window reporting 343 nodes yields 10 targets, a busy Android screen reporting 174 yields 24.\n\nUse ui=\"tree\" for the full raw accessibility tree (the foreground package plus every node with class, text, resource id, a clickable flag, and bounds [left, top, right, bottom]) when you need an attribute targets omit. Use ui=\"none\" on canvas/game screens where the tree is empty or noise — you still get the image. The device is woken automatically if its screen was off.",
+		schema:      `{"type":"object","properties":{` + deviceIDSchema + `,"ui":{"type":"string","enum":["targets","tree","none"],"description":"what to return alongside the image: \"targets\" = just the actionable things, each with a label and a center point (recommended); \"tree\" = the full raw accessibility tree; \"none\" = image only. Defaults to \"tree\"."},"include_ui_tree":{"type":"boolean","description":"legacy switch superseded by ui: false means ui=\"none\". Ignored when ui is given."}},"additionalProperties":false}`,
 		call: func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult {
 			var a struct {
-				IncludeUITree *bool `json:"include_ui_tree"`
+				IncludeUITree *bool   `json:"include_ui_tree"`
+				UI            *string `json:"ui"`
 			}
 			_ = json.Unmarshal(args, &a)
-			includeTree := a.IncludeUITree == nil || *a.IncludeUITree
-			raw, err := dc.Send(ctx, protocol.MethodScreenshot, map[string]any{"include_ui_tree": includeTree}, commandTimeout)
+
+			mode, err := resolveUIMode(a.UI, a.IncludeUITree)
+			if err != nil {
+				return errorResult(err.Error())
+			}
+
+			raw, err := dc.Send(ctx, protocol.MethodScreenshot, map[string]any{"include_ui_tree": mode != "none"}, commandTimeout)
 			if err != nil {
 				return errorResult(err.Error())
 			}
@@ -140,7 +147,21 @@ var actionTools = []actionTool{
 				imageContent(r.PNGBase64, "image/jpeg"),
 				textContent(fmt.Sprintf("screen %dx%d", r.W, r.H)),
 			}}
-			if r.Tree != nil {
+			switch {
+			case mode == "none":
+			case r.Tree == nil:
+				// Asked for UI data and the device sent none. Say so rather than
+				// reporting an empty screen, which reads as "nothing to click".
+				out.Content = append(out.Content, textContent("no UI tree available from this device"))
+			case mode == "targets":
+				targets, st := uitree.Extract(r.Tree, r.W, r.H, uitree.MaxTargets)
+				summary := fmt.Sprintf("%d targets (from %d nodes)", st.Targets, st.Nodes)
+				if st.Truncated > 0 {
+					summary += fmt.Sprintf("; %d beyond the cap not shown", st.Truncated)
+				}
+				targetsJSON, _ := json.Marshal(targets)
+				out.Content = append(out.Content, textContent(summary), textContent(string(targetsJSON)))
+			default:
 				treeJSON, _ := json.MarshalIndent(r.Tree, "", "  ")
 				out.Content = append(out.Content, textContent(string(treeJSON)))
 			}
@@ -519,6 +540,28 @@ var actionTools = []actionTool{
 			return textResult(msg)
 		},
 	},
+}
+
+// resolveUIMode decides what UI data a screenshot carries, reconciling the ui
+// parameter with the include_ui_tree flag it supersedes.
+//
+// The default is "tree" rather than the cheaper "targets" on purpose: an agent
+// written against the older shape must keep seeing what it saw before, and a
+// silent switch would change every existing caller's input under it. An explicit
+// ui always wins over the legacy flag — a caller that names a mode means it.
+func resolveUIMode(ui *string, includeUITree *bool) (string, error) {
+	mode := "tree"
+	if includeUITree != nil && !*includeUITree {
+		mode = "none"
+	}
+	if ui != nil {
+		mode = *ui
+	}
+	switch mode {
+	case "targets", "tree", "none":
+		return mode, nil
+	}
+	return "", fmt.Errorf("ui must be %q, %q, or %q (got %q)", "targets", "tree", "none", mode)
 }
 
 // formatRecording renders a screen_recording reply for the agent, surfacing the

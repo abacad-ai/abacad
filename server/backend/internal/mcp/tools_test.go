@@ -84,3 +84,46 @@ func TestFileTransferIsGrantable(t *testing.T) {
 		t.Error("screenshot listed under a file-transfer-only scope")
 	}
 }
+
+// TestResolveUIMode pins the compatibility contract between the ui parameter and
+// the include_ui_tree flag it replaces. The risk being guarded is silent
+// breakage: screenshot is the most-called tool, and changing what an existing
+// caller receives by default would change every agent's input without warning.
+func TestResolveUIMode(t *testing.T) {
+	ptr := func(s string) *string { return &s }
+	flag := func(b bool) *bool { return &b }
+
+	for _, tc := range []struct {
+		name    string
+		ui      *string
+		legacy  *bool
+		want    string
+		wantErr bool
+	}{
+		{name: "no arguments keeps the historical full tree", want: "tree"},
+		{name: "legacy false still means image only", legacy: flag(false), want: "none"},
+		{name: "legacy true still means full tree", legacy: flag(true), want: "tree"},
+		{name: "explicit targets", ui: ptr("targets"), want: "targets"},
+		{name: "explicit tree", ui: ptr("tree"), want: "tree"},
+		{name: "explicit none", ui: ptr("none"), want: "none"},
+		{name: "ui outranks the legacy flag", ui: ptr("targets"), legacy: flag(false), want: "targets"},
+		{name: "unknown mode is rejected, not silently defaulted", ui: ptr("nodes"), wantErr: true},
+		{name: "empty mode is rejected", ui: ptr(""), wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolveUIMode(tc.ui, tc.legacy)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("got %q, want an error", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
