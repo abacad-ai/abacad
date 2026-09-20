@@ -268,3 +268,58 @@ func TestExtractCenterPoint(t *testing.T) {
 		t.Errorf("center = (%d, %d), want (1520, 958)", got[0].X, got[0].Y)
 	}
 }
+
+// TestExtractPromotesContentTheClickableFlagMisses pins the rule that rescues a
+// macOS desktop. AX reports an icon as an AXImage supporting no AXPress, so the
+// clickable flag is false for every one of them while a click at the icon's
+// center opens it perfectly well. Measured on a real desktop: 343 nodes yielded
+// 10 targets — 8 menu-bar items, a stray radio button and Tags… — with all six
+// icons dropped, so an agent asked to open one of them could only escalate.
+func TestExtractPromotesContentTheClickableFlagMisses(t *testing.T) {
+	got, st := Extract(treeOf(
+		node("AXScrollArea", "desktop", false, [4]int{0, 0, 1920, 1080}), // wraps everything
+		node("AXGroup", "desktop", false, [4]int{0, 0, 1920, 1080}),      // and so does this
+		node("AXMenuBarItem", "Go", true, [4]int{240, 0, 283, 30}),
+		node("AXImage", "abacad", false, [4]int{1822, 374, 1886, 438}),
+		node("AXImage", "clash-routing.yaml", false, [4]int{1822, 710, 1886, 774}),
+	), 1920, 1080, MaxTargets)
+
+	want := []string{"Go", "abacad", "clash-routing.yaml"}
+	if gotLabels := labels(got); len(gotLabels) != len(want) {
+		t.Fatalf("got %v, want %v — the icons belong, the two desktop containers do not", gotLabels, want)
+	}
+	byLabel := map[string]Target{}
+	for _, g := range got {
+		byLabel[g.Label] = g
+	}
+	icon, ok := byLabel["abacad"]
+	if !ok {
+		t.Fatalf("the abacad icon is missing from %v", labels(got))
+	}
+	if icon.X != 1854 || icon.Y != 406 {
+		t.Errorf("icon center = (%d, %d), want (1854, 406)", icon.X, icon.Y)
+	}
+	if st.Content != 2 {
+		t.Errorf("Stats.Content = %d, want 2 (the two icons)", st.Content)
+	}
+}
+
+// TestExtractDoesNotPromoteCaptions keeps the content pass from undoing the
+// labelling one. A caption names some other control, so offering it as a target
+// of its own puts the same row on screen twice — once as words that do nothing
+// when clicked, once as the control that acts.
+func TestExtractDoesNotPromoteCaptions(t *testing.T) {
+	got, st := Extract(treeOf(
+		node("AXStaticText", "General", false, [4]int{60, 100, 400, 150}),
+		node("android.widget.TextView", "Storage", false, [4]int{60, 200, 400, 250}),
+		node("Text", "Display", false, [4]int{60, 300, 400, 350}),
+		node("AXButton", "OK", true, [4]int{600, 500, 700, 540}),
+	), 1440, 3040, MaxTargets)
+
+	if len(got) != 1 || got[0].Label != "OK" {
+		t.Fatalf("want only the button, got %v", labels(got))
+	}
+	if st.Content != 0 {
+		t.Errorf("Stats.Content = %d, want 0 — captions are not targets", st.Content)
+	}
+}

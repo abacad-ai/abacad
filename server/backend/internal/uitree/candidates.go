@@ -19,13 +19,17 @@
 //
 //  1. Visibility — drop zero-area and off-screen nodes. This is the single
 //     highest-value rule; on macOS it removes ~90% of the tree by itself.
-//  2. Labelling — a clickable node with no text of its own adopts nearby text,
+//  2. Selection and labelling — take every clickable node, plus content that
+//     names itself but is not flagged clickable (macOS reports a desktop icon
+//     as an AXImage with no AXPress, so the flag alone loses every icon on the
+//     desktop). A clickable node with no text of its own adopts nearby text,
 //     first from inside its own bounds and then from alongside it. Android needs
 //     both: the click handler usually sits on a LinearLayout container while the
 //     words live in a child TextView (measured 79 LinearLayout vs 81 TextView on
 //     one screen), and on a settings row the control is a switch at one end with
 //     its label a sibling at the other — containment alone left 4 of 5 controls
-//     anonymous on a real Compose screen.
+//     anonymous on a real Compose screen. Text already borrowed as a label is
+//     not offered again on its own, and neither are captions or containers.
 //  3. Deduplication — collapse targets sharing a label and a click point, which
 //     the tree emits whenever one visual element appears under several roles.
 //
@@ -75,6 +79,7 @@ type Stats struct {
 	Visible   int // survived the visibility pass
 	Clickable int // visible and flagged clickable
 	Labelled  int // of those, the ones that ended up with a usable label
+	Content   int // visible, not flagged clickable, promoted as addressable content
 	Targets   int // returned, after dedup and cap
 	Truncated int // dropped by the cap; non-zero means the caller is seeing a subset
 }
@@ -141,18 +146,45 @@ func Extract(tree *protocol.UITree, screenW, screenH, max int) ([]Target, Stats)
 		bounds      [4]int
 	}
 	candidates := make([]candidate, 0, len(clickable))
+	borrowed := make([]bool, len(unclaimed))
 	for _, n := range clickable {
 		label := strings.TrimSpace(n.Text)
 		if label == "" {
 			label = innerLabel(n.Bounds, texts)
 		}
 		if label == "" {
-			label = rowLabel(n.Bounds, unclaimed)
+			if i := rowLabelIndex(n.Bounds, unclaimed); i >= 0 {
+				label, borrowed[i] = strings.TrimSpace(unclaimed[i].Text), true
+			}
 		}
 		if label != "" {
 			st.Labelled++
 		}
 		candidates = append(candidates, candidate{label: label, role: n.Cls, bounds: n.Bounds})
+	}
+
+	// Pass 2b. Content that names itself but carries no clickable flag.
+	//
+	// The flag is not a reliable account of what can be acted on. macOS reports
+	// a desktop icon as an AXImage supporting no AXPress, so the six icons on a
+	// plain desktop are all dropped and the ten surviving targets are eight
+	// menu-bar items, a stray radio button and Tags… — none of them the thing a
+	// caller asked for. A click at the icon's center works regardless; the
+	// accessibility flag is simply wrong about it.
+	//
+	// Three conditions together separate content from the captions and
+	// containers that must stay out. It must not have been borrowed as some
+	// control's label, or a settings row would yield both its words and its
+	// switch. It must not be a caption role, or every heading on screen becomes
+	// a target. And it must not enclose a smaller element, which is what rules
+	// out the desktop's own AXScrollArea and AXGroup — both carry the text
+	// "desktop" and both wrap everything else.
+	for i, n := range unclaimed {
+		if borrowed[i] || isCaption(n.Cls) || encloses(n.Bounds, visible) {
+			continue
+		}
+		st.Content++
+		candidates = append(candidates, candidate{label: strings.TrimSpace(n.Text), role: n.Cls, bounds: n.Bounds})
 	}
 
 	// Pass 3. Keying on the click point rather than the bounds also folds nested
@@ -232,24 +264,50 @@ func innerLabel(b [4]int, texts []protocol.UITreeNode) string {
 	return best
 }
 
-// rowLabel names a control that holds no text at all, by taking the nearest
-// unclaimed text on the same line. This is the settings-row shape: the switch is
+// rowLabelIndex points at the text naming a control that holds none of its own:
+// the nearest unclaimed text on the same line, or -1 when there is none. It
+// returns the index rather than the string so the caller can mark that text as
+// spoken for, and keep pass 2b from offering it a second time on its own. This is the settings-row shape: the switch is
 // the clickable thing and its words sit at the far end of the row, outside its
 // bounds entirely. Nearest-on-the-line is what a person reads, and restricting
 // the pool to unclaimed text keeps it from poaching another control's label.
-func rowLabel(b [4]int, unclaimed []protocol.UITreeNode) string {
-	best := ""
-	bestGap := 0
-	for _, t := range unclaimed {
+func rowLabelIndex(b [4]int, unclaimed []protocol.UITreeNode) int {
+	best, bestGap := -1, 0
+	for i, t := range unclaimed {
 		if !sameRow(b, t.Bounds) {
 			continue
 		}
 		g := horizontalGap(b, t.Bounds)
-		if best == "" || g < bestGap {
-			best, bestGap = strings.TrimSpace(t.Text), g
+		if best < 0 || g < bestGap {
+			best, bestGap = i, g
 		}
 	}
 	return best
+}
+
+// isCaption reports whether a role names a pure text element. A caption
+// describes something else rather than being a thing in its own right, and it
+// is the pool a neighbouring control borrows its words from — so promoting
+// captions as well would put a label and the control it names on screen as two
+// separate targets.
+func isCaption(role string) bool {
+	r := strings.ToLower(role)
+	return r == "text" ||
+		strings.HasSuffix(r, "statictext") ||
+		strings.HasSuffix(r, "textview") ||
+		strings.HasSuffix(r, "label")
+}
+
+// encloses reports whether b wraps a smaller visible element. Something that
+// holds other elements is a region rather than a target: its words name the
+// area, and a click at its center lands on whatever happens to sit there.
+func encloses(b [4]int, visible []protocol.UITreeNode) bool {
+	for _, n := range visible {
+		if area(n.Bounds) < area(b) && contains(b, n.Bounds) {
+			return true
+		}
+	}
+	return false
 }
 
 // sameRow reports whether two boxes sit on the same visual line, defined as
