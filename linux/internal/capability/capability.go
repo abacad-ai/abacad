@@ -53,6 +53,10 @@ const (
 	PushFile        = "push_file"
 	PullFile        = "pull_file"
 	ScreenRecording = "screen_recording"
+	Observe         = "observe"
+	Act             = "act"
+	Reconcile       = "reconcile"
+	ActLeftClick    = "act:left_click"
 	Tunnel          = "tunnel"
 	SSH             = "ssh"
 	VNC             = "vnc"
@@ -63,6 +67,7 @@ var All = []string{
 	Screenshot, Tap, LongPress, Swipe, InputText, Back, Home, Recents,
 	Click, RightClick, Drag, Scroll, PressKeys, Composite,
 	Execute, PushFile, PullFile, ScreenRecording,
+	Observe, Act, Reconcile, ActLeftClick,
 	Tunnel, SSH, VNC,
 }
 

@@ -103,11 +103,12 @@ type actionTool struct {
 	// "push_file", which then failed to match the tool name at call time, so file
 	// transfer was reachable only via all_methods. TestToolMethodsMatchProtocol
 	// asserts this mapping stays a bijection with protocol.Methods.
-	method      protocol.Method
-	description string
-	schema      string // JSON Schema object
-	call        func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult
-	fileCall    func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage, accountID string, blobs BlobStore) toolResult
+	method       protocol.Method
+	description  string
+	schema       string // JSON Schema object
+	call         func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage) toolResult
+	fileCall     func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage, accountID string, blobs BlobStore) toolResult
+	computerCall func(ctx context.Context, dc *relay.DeviceConn, args json.RawMessage, accountID string, grants ComputerGrantIssuer) toolResult
 }
 
 // actionTools are the device operations exposed to an agent: the original mobile
@@ -117,7 +118,7 @@ type actionTool struct {
 // Every tool's schema leads with a required device_id selector (the first
 // property, by convention); there is no default device, so the caller must name
 // one on every call.
-var actionTools = []actionTool{
+var actionTools = append([]actionTool{
 	{
 		name:        "screenshot",
 		method:      protocol.MethodScreenshot,
@@ -540,7 +541,7 @@ var actionTools = []actionTool{
 			return textResult(msg)
 		},
 	},
-}
+}, computerContractTools()...)
 
 // resolveUIMode decides what UI data a screenshot carries, reconciling the ui
 // parameter with the include_ui_tree flag it supersedes.

@@ -1,5 +1,7 @@
 # Transport: control plane vs data plane
 
+For the fixed `abacad.computer` contract, see [computer.md](computer.md). Its `observe` and `act` operations always place screenshot bytes on `/blobs`; control frames carry only JSON metadata and blob references.
+
 How bytes move between the server and a device. One rule decides which of the two
 channels anything travels on, and it's decided by **type**, never by measuring size at
 runtime.
@@ -148,10 +150,7 @@ endpoints.**
   session / MCP / device-token identities, `-max-blob-bytes` cap (default 1 GiB), Range on
   download. Round-trip verified (upload via MCP token, download via device token, bytes +
   sha-256 match). Lifecycle/GC and content-dedup are deferred.
-- **Screenshots today still send inline JPEG over the WS** (a one-line stopgap that stops
-  the `close(1001)` flapping immediately: `CompressFormat.JPEG, 85` instead of lossless
-  PNG). This is *not* the destination — the type rule moves the image onto the data plane
-  (`image_id` reference via `/blobs`) as above, which is what permanently ends the
-  queue-overrun class. That migration is the next step, now that `/blobs` exists.
+- The fixed `abacad.computer` `observe` operation uses `/blobs` for screenshot bytes and
+  returns only the blob reference and exact frame/state metadata on the control plane.
 - `readLimit` on the device socket stays **small (16 MiB)** on purpose: it's a per-message
   memory bound, and under this design nothing legitimate on the WS is ever large.

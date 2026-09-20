@@ -27,6 +27,7 @@ import (
 	"abacad/internal/api"
 	"abacad/internal/auth"
 	"abacad/internal/blob"
+	"abacad/internal/computer"
 	"abacad/internal/config"
 	"abacad/internal/connect"
 	"abacad/internal/device"
@@ -228,11 +229,13 @@ func main() {
 	blobSvc := &blob.Service{Store: st, Dir: cfg.BlobDir, MaxBytes: cfg.MaxBlobBytes}
 	blobSvc.StartGC(time.Duration(cfg.BlobRetentionDays) * 24 * time.Hour)
 	blobSigner := blob.NewSigner(blobSigningKey(cfg), publicBaseURL(cfg))
+	computerGrants := computer.NewGrants()
 
 	// /mcp: authenticate the agent by its bearer API key -> account + scope ->
 	// scoped resolver. The scope also gates which methods the key may call.
 	mcpHandler := &mcp.Handler{
 		Blobs: mcpBlobs{signer: blobSigner},
+		Grants: computerGrants,
 		ResolverFor: func(r *http.Request) (mcp.DeviceResolver, mcp.Scope, context.Context, error) {
 			token := auth.BearerToken(r)
 			if token == "" {

@@ -55,6 +55,13 @@ const (
 	// The live (VNC) observation channel is a separate future addition.
 	MethodScreenRecording Method = "screen_recording"
 
+	// Fixed computer-use contract operations. These are intentionally narrower
+	// than the historical superset below: the first complete slice is one
+	// observation, one left click, and read-only reconciliation.
+	MethodObserve   Method = "observe"
+	MethodAct       Method = "act"
+	MethodReconcile Method = "reconcile"
+
 	// Live view (the screen_recording live channel). The server sends this to tell
 	// the device to start a local VNC server and reverse-connect it out to the
 	// server's VNC ingress WebSocket, or to stop it. Params: {action:"start", url,
@@ -73,6 +80,7 @@ var Methods = []Method{
 	MethodBack, MethodHome, MethodRecents,
 	MethodClick, MethodRightClick, MethodDrag, MethodScroll, MethodPressKeys, MethodComposite,
 	MethodExecute,
+	MethodObserve, MethodAct, MethodReconcile,
 	MethodPushFile, MethodPullFile,
 	MethodScreenRecording,
 }

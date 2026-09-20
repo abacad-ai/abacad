@@ -127,9 +127,10 @@ func sourceFrom(ctx context.Context) string {
 // bearing: smoke.mjs retries the first tool call while it still matches, to
 // paper over the device connecting a beat after the agent.
 var (
-	ErrNoDevice   = errors.New("no device connected — open the abacad app and connect it to this server")
-	ErrDeviceGone = errors.New("device disconnected")
-	ErrTimeout    = errors.New("device timed out")
+	ErrNoDevice         = errors.New("no device connected — open the abacad app and connect it to this server")
+	ErrDeviceGone       = errors.New("device disconnected")
+	ErrTimeout          = errors.New("device timed out")
+	ErrComputerRejected = errors.New("computer command rejected")
 )
 
 // DefaultTimeout matches the v0 server's 15s per-command deadline.
@@ -506,6 +507,172 @@ func (c *DeviceConn) Send(ctx context.Context, method protocol.Method, params ma
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
+}
+
+// SendComputer sends one fixed abacad.computer JSON envelope over the same
+// authenticated control socket as the ordinary device protocol. The computer
+// envelope carries caller identities and an absolute deadline all the way to
+// the device; the ordinary Send path remains unchanged for the existing tools.
+func (c *DeviceConn) SendComputer(ctx context.Context, cmd protocol.ComputerCommand) (out protocol.ComputerResult, err error) {
+	start := time.Now()
+	defer func() {
+		dur := time.Since(start)
+		outcome, detail := classify(err)
+		src := sourceFrom(ctx)
+		actor := ActorFrom(ctx)
+		who := actor.Label
+		if who == "" {
+			who = actor.ID
+		}
+		suffix := ""
+		if who != "" {
+			suffix = fmt.Sprintf(" actor=%s", who)
+		}
+		if actor.IP != "" {
+			suffix += " ip=" + actor.IP
+		}
+		if detail != "" {
+			log.Printf("[cmd] device=%s src=%s%s method=%s dur=%dms result=%s: %s",
+				c.DeviceID, src, suffix, cmd.Method, dur.Milliseconds(), outcome, detail)
+		} else {
+			log.Printf("[cmd] device=%s src=%s%s method=%s dur=%dms result=%s",
+				c.DeviceID, src, suffix, cmd.Method, dur.Milliseconds(), outcome)
+		}
+		if c.onCmd != nil {
+			c.onCmd(CommandRecord{
+				DeviceID: c.DeviceID, Method: cmd.Method, Source: src,
+				Duration: dur, Outcome: outcome, Detail: detail, Actor: actor,
+			})
+		}
+	}()
+
+	if cmd.Contract == "" {
+		cmd.Contract = protocol.ContractID
+	}
+	if cmd.Contract != protocol.ContractID {
+		return out, fmt.Errorf("%w: unexpected contract %q", ErrComputerRejected, cmd.Contract)
+	}
+	if cmd.Method != protocol.ComputerObserve && cmd.Method != protocol.ComputerAct && cmd.Method != protocol.ComputerReconcile {
+		return out, fmt.Errorf("%w: unsupported method %q", ErrComputerRejected, cmd.Method)
+	}
+	if cmd.CommandID == "" {
+		cmd.CommandID = "cmd_" + strconv.FormatUint(c.seq.Add(1), 10)
+	}
+	if cmd.CorrelationID == "" {
+		cmd.CorrelationID = "corr_" + cmd.CommandID
+	}
+	if cmd.IdempotencyKey == "" {
+		cmd.IdempotencyKey = "idem_" + cmd.CommandID
+	}
+	if cmd.ID == "" {
+		cmd.ID = cmd.CommandID
+	}
+	if cmd.Deadline.IsZero() {
+		cmd.Deadline = time.Now().Add(DefaultTimeout)
+	}
+	if !cmd.Deadline.After(time.Now()) {
+		out = protocol.ComputerResult{
+			Contract: protocol.ContractID, CommandID: cmd.CommandID,
+			CorrelationID: cmd.CorrelationID, IdempotencyKey: cmd.IdempotencyKey,
+			Status: protocol.ComputerTimeout, Effect: protocol.ComputerNoEffect,
+			Reason: "deadline elapsed before send",
+		}
+		return out, ErrTimeout
+	}
+
+	if err = c.authorizeComputer(cmd.Method); err != nil {
+		return out, err
+	}
+	select {
+	case <-c.closed:
+		return out, ErrDeviceGone
+	default:
+	}
+
+	ch := make(chan protocol.Reply, 1)
+	c.mu.Lock()
+	if _, exists := c.pending[cmd.ID]; exists {
+		c.mu.Unlock()
+		return out, fmt.Errorf("%w: duplicate transport id %q", ErrComputerRejected, cmd.ID)
+	}
+	c.pending[cmd.ID] = ch
+	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		delete(c.pending, cmd.ID)
+		c.mu.Unlock()
+	}()
+
+	raw, err := json.Marshal(cmd)
+	if err != nil {
+		return out, err
+	}
+	sendCtx, cancel := context.WithDeadline(ctx, cmd.Deadline)
+	defer cancel()
+	c.writeMu.Lock()
+	err = c.ws.Write(sendCtx, websocket.MessageText, raw)
+	c.writeMu.Unlock()
+	if err != nil {
+		return out, ErrDeviceGone
+	}
+
+	select {
+	case reply := <-ch:
+		if !reply.OK {
+			msg := reply.Error
+			if msg == "" {
+				msg = "device reported an error"
+			}
+			return out, errors.New(msg)
+		}
+		if err := json.Unmarshal(reply.Result, &out); err != nil {
+			return out, fmt.Errorf("bad computer result: %w", err)
+		}
+		if err := out.Validate(); err != nil {
+			return out, err
+		}
+		if out.Status == protocol.ComputerRejected {
+			return out, fmt.Errorf("%w: %s", ErrComputerRejected, out.Reason)
+		}
+		return out, nil
+	case <-c.closed:
+		return out, ErrDeviceGone
+	case <-sendCtx.Done():
+		out = protocol.ComputerResult{
+			Contract: protocol.ContractID, CommandID: cmd.CommandID,
+			CorrelationID: cmd.CorrelationID, IdempotencyKey: cmd.IdempotencyKey,
+			Status: protocol.ComputerTimeout, Effect: protocol.ComputerNoEffect,
+			Reason: "absolute deadline elapsed waiting for device",
+		}
+		if errors.Is(sendCtx.Err(), context.DeadlineExceeded) {
+			return out, ErrTimeout
+		}
+		return out, sendCtx.Err()
+	}
+}
+
+func (c *DeviceConn) authorizeComputer(method string) error {
+	var needs []protocol.Capability
+	switch method {
+	case protocol.ComputerObserve:
+		needs = []protocol.Capability{protocol.Capability(protocol.MethodObserve), protocol.Capability(protocol.MethodScreenshot)}
+	case protocol.ComputerAct:
+		needs = []protocol.Capability{protocol.Capability(protocol.MethodAct), protocol.Capability(protocol.MethodClick)}
+	case protocol.ComputerReconcile:
+		needs = []protocol.Capability{protocol.Capability(protocol.MethodReconcile)}
+	}
+	var last error
+	for _, need := range needs {
+		if err := c.capability(need); err == nil {
+			return nil
+		} else {
+			last = err
+		}
+	}
+	if last == nil {
+		last = ErrCapabilityDenied
+	}
+	return last
 }
 
 // classify maps a Send error to an activity-log outcome + optional detail. The

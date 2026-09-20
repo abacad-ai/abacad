@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -111,6 +112,36 @@ func (b *blobClient) upload(srcPath string) (id string, size int64, sha string, 
 	req.Header.Set("Content-Type", "application/octet-stream")
 	b.auth(req)
 
+	resp, err := b.hc.Do(req)
+	if err != nil {
+		return "", 0, "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		return "", 0, "", fmt.Errorf("blob upload failed: %s%s", resp.Status, snippet(resp.Body))
+	}
+	var out struct {
+		ID     string `json:"id"`
+		Size   int64  `json:"size"`
+		SHA256 string `json:"sha256"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", 0, "", fmt.Errorf("bad blob upload response: %w", err)
+	}
+	return out.ID, out.Size, out.SHA256, nil
+}
+
+// uploadBytes streams one in-memory JPEG through the same authenticated blob
+// endpoint used by file transfer. Screenshots are bounded by the capture size;
+// the HTTP data plane still keeps them out of the JSON control frame.
+func (b *blobClient) uploadBytes(p []byte, contentType string) (id string, size int64, sha string, err error) {
+	req, err := http.NewRequest(http.MethodPost, b.base, bytes.NewReader(p))
+	if err != nil {
+		return "", 0, "", err
+	}
+	req.ContentLength = int64(len(p))
+	req.Header.Set("Content-Type", contentType)
+	b.auth(req)
 	resp, err := b.hc.Do(req)
 	if err != nil {
 		return "", 0, "", err

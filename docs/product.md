@@ -8,6 +8,23 @@ an agent anywhere on the internet can operate it, step by step, with a human sup
 
 ---
 
+## Canonical computer contract
+
+The agent-facing execution substrate is the fixed literal `abacad.computer`
+contract. Its only contract operations are `observe`, `act`, and `reconcile`; the
+initial action slice is one Linux X11 left click. Control messages are authenticated
+JSON, while screenshot bytes are authenticated HTTP blobs referenced by `blob_id`.
+Each observation and action carries exact `state_id` / `frame_id` identities, command
+correlation and idempotency identifiers, an absolute deadline, a capability manifest
+hash, and (for actions) a short-lived grant and scope. Results are explicit
+`succeeded`, `rejected`, `timeout`, or `unknown_outcome` with `confirmed`, `none`, or
+`unknown` effect semantics. Recovery is read-only reconciliation; an unknown effect is
+never replayed blindly.
+
+The caller owns model policy, semantic approval, prompt-injection judgment, and the
+observe-decide-act loop. Abacad owns only the constrained device execution substrate
+and its minimal durable receipt/audit.
+
 ## The need (deliberately singular)
 
 > Agents are minds with no body. They can think, but they can't touch anything.

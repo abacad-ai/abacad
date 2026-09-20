@@ -1,5 +1,15 @@
 # Trust model: who proves what, to whom
 
+
+## Computer contract boundary
+
+The fixed `abacad.computer` contract is an execution and integrity boundary, not an
+agent policy boundary. The caller decides task meaning, semantic approval, and
+prompt-injection response. Abacad validates device capability, manifest hash, absolute
+deadline, short-lived grant scope and revocation, exact observation identity, and
+recovery through a durable receipt journal. An `unknown_outcome` is reconciled and
+never replayed blindly.
+
 The chain runs **human → server → device**, with agents hanging off the server and
 the channel itself in the middle. This doc names every identity in that chain and
 the exact thing each one proves before it's trusted. It's the companion to
@@ -19,7 +29,7 @@ destination, and this table as how far along the road we are.
 | Area | Status |
 |---|---|
 | Cleartext removed; `wss://` required by both clients (refuse `ws://` off-loopback) | ✅ shipped, build-verified |
-| Token in the `Authorization` header, out of the URL | ✅ shipped (legacy `?token=` still accepted as a fallback) |
+| Token in the `Authorization` header, out of the URL | ✅ shipped |
 | macOS stores the token in the Keychain | ✅ shipped |
 | `/connect` SSRF target guard (server **and** device) | ✅ shipped |
 | Login throttle + lockout | ✅ shipped |
@@ -125,11 +135,9 @@ An MCP token is a **capability grant, not a master key.**
 
 - `{ which devices, which capabilities, expiry }`, with **multiple named tokens**
   per account, each independently revocable.
-- **Header-first.** Send it as `Authorization: Bearer …` — now the preferred path
-  on both `/device` and `/connect` *(shipped)*. The legacy `?token=` query is still
-  accepted for older clients and should be dropped once they've migrated: a secret
-  in a URL leaks through reverse-proxy access logs, `Referer` headers, and history.
-  (The app itself already logs path-only, but it can't control a fronting proxy.)
+- **Header-only.** Send it as `Authorization: Bearer …` on both `/device` and
+  `/connect`. A secret is not placed in a URL, where reverse-proxy logs, `Referer`
+  headers, and browser history could expose it.
 - A token *uses* its scope; it can never *change* it (principle 2).
 
 ### ③ Device ⇄ server — the mutual-auth core

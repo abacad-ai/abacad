@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"time"
+
+	"abacad/internal/protocol"
 )
 
 // maxBody caps the JSON-RPC request body. Tool-call inputs are tiny (image bytes
@@ -16,6 +19,13 @@ const maxBody = 4 << 20
 // action tool is checked. Satisfied by store.KeyScope.
 type Scope interface {
 	AllowsMethod(name string) bool
+}
+
+// ComputerGrantIssuer is the narrow server boundary for short-lived action
+// grants. The implementation owns account/device binding and revocation.
+type ComputerGrantIssuer interface {
+	Issue(accountID, deviceID, scope string, ttl time.Duration) (protocol.ComputerGrant, error)
+	Validate(accountID, deviceID string, grant protocol.ComputerGrant, scope string, now time.Time) error
 }
 
 // BlobStore mints the signed capability URLs the file-transfer tools hand back to
@@ -50,7 +60,8 @@ type Handler struct {
 	// Blobs backs send_file / get_file (it mints their signed URLs). May be nil,
 	// in which case those tools return a clear "file transfer is not configured"
 	// error rather than panic.
-	Blobs BlobStore
+	Blobs  BlobStore
+	Grants ComputerGrantIssuer
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -87,7 +98,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := dispatch(context.WithoutCancel(ctx), req, resolver, scope, h.Blobs)
+	resp := dispatch(context.WithoutCancel(ctx), req, resolver, scope, h.Blobs, h.Grants)
 	if resp == nil {
 		// Notification (e.g. notifications/initialized): acknowledge, no body.
 		w.WriteHeader(http.StatusAccepted)
