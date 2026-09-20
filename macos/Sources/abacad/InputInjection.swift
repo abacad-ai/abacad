@@ -9,6 +9,22 @@ import ApplicationServices
 enum InputInjection {
     private static let tap: CGEventTapLocation = .cghidEventTap
 
+    /// How long the button stays down, and the pause between the clicks of a
+    /// multi-click.
+    ///
+    /// A menu bar item, a Dock tile and a pop-up button all open a modal
+    /// tracking loop on mouse-down, and that loop starts by draining the events
+    /// already queued behind it. A release posted in the same instant is one of
+    /// them, so the menu opens and closes again before anything is drawn:
+    /// clicking the Go menu reported dispatched=true, moved the cursor onto Go,
+    /// and left the screen exactly as it was. Holding the button for a frame or
+    /// two lets the loop come up first.
+    ///
+    /// Both are far inside the 0.5s the system allows between the halves of a
+    /// double click, so a count=2 click still registers as one.
+    private static let holdUs: useconds_t = 40_000
+    private static let betweenClicksUs: useconds_t = 60_000
+
     static func flags(for names: [String]) -> CGEventFlags {
         var f: CGEventFlags = []
         for n in names { if let m = KeyMap.modifier(n) { f.insert(m) } }
@@ -24,9 +40,17 @@ enum InputInjection {
         let (down, up): (CGEventType, CGEventType) = button == .right
             ? (.rightMouseDown, .rightMouseUp)
             : (.leftMouseDown, .leftMouseUp)
-        for i in 1...max(1, count) {
+        // Move first. Scroll does this because wheel events carry no coordinates
+        // of their own; here the reason is different — a tracking loop reads
+        // where the pointer is, not where the click said it was, so a press that
+        // arrives before the cursor can be handled at the old location.
+        post(mouse: .mouseMoved, pt: pt, button: .left, flags: [], clickState: 0)
+        let clicks = max(1, count)
+        for i in 1...clicks {
             post(mouse: down, pt: pt, button: button, flags: f, clickState: i)
+            usleep(holdUs)
             post(mouse: up, pt: pt, button: button, flags: f, clickState: i)
+            if i < clicks { usleep(betweenClicksUs) }
         }
     }
 
