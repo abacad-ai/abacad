@@ -48,18 +48,46 @@ password**, not the VNC password.
 3. Type the macOS account password and press Return.
 
 If the keyboard does nothing, click **Keyboard** in the viewer's top bar to use
-noVNC's on-screen keyboard. If even that is ignored, macOS may be blocking
-third-party input at the login/lock screen: unlock once with Apple's Screen
-Sharing app (or physically), then use abacad for the logged-in session. To avoid
-the situation on a headless Mac, prevent sleep and disable the lock screen:
+noVNC's on-screen keyboard.
+
+### If the clock in the viewer is frozen
+
+A frozen lock-screen clock (for example it still says 19:43 hours later) means
+the Mac's **display is asleep**, not that the password field is missing. A
+third-party VNC session may keep the last frame and may not be able to wake the
+display. The Mac can still answer ping and accept TCP 5900 while this is true.
+
+Wake it physically or with Apple's Screen Sharing app, then reconnect. To keep a
+headless Mac awake, configure it properly:
 
 ```bash
-caffeinate -s &
-sudo pmset -a sleep 0 displaysleep 0
+# Never sleep the system or display; wake on magic packet.
+sudo pmset -a sleep 0 displaysleep 0 womp 1
 ```
 
-System Settings → Lock Screen → **Require password after screen saver begins or
-display is turned off** → Never.
+Or run `caffeinate -d -s` while the Mac should remain available. On a desktop,
+System Settings → **Energy** also has **Prevent automatic sleeping when the
+display is off**.
+
+For a lock screen you never want to fight, System Settings → **Lock Screen** →
+**Require password after screen saver begins or display is turned off** → Never.
+That is a security trade-off; only do it on a machine you already trust on the
+LAN.
+
+### Screen Sharing vs Remote Management
+
+If **Remote Management** is enabled, it owns the login window and may not accept
+third-party VNC input there. For abacad, prefer:
+
+- **Screen Sharing** on, **Remote Management** off;
+- **Computer Settings… → VNC viewers may control screen with password** on.
+
+Switching from Remote Management to Screen Sharing is a configuration change,
+not a workaround: it removes Apple's managed login session from the path.
+
+If macOS still refuses input at the login/lock screen, unlock once with Apple's
+Screen Sharing app or physically, then use abacad for the logged-in session. We
+do not recommend auto-login or disabling FileVault just to make this work.
 
 ## Keep it reachable
 
