@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>abacad — LAN VNC hub</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+<div class="ambient" aria-hidden="true"></div>
+
+<header class="top">
+  <a class="brand" href="/" aria-label="abacad home">
+    <span class="mark" aria-hidden="true">a</span>
+    <span class="word">abacad</span>
+  </a>
+  <div class="top-right">
+    <span id="hub-status" class="pill"><i></i> connecting</span>
+    <button id="add-btn" class="btn primary" hidden>Add device</button>
+    <button id="logout-btn" class="btn ghost" hidden>Sign out</button>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <p class="eyebrow">LAN VNC HUB</p>
+    <h1>Your machines,<br><em>one quiet place.</em></h1>
+    <p class="lede">A tiny, self-hosted hub for the VNC servers already on your network. Open a browser tab — or hand an agent a standard VNC endpoint.</p>
+  </section>
+
+  <section id="auth" class="auth card" hidden>
+    <div class="auth-mark" aria-hidden="true">⌁</div>
+    <h2>Sign in</h2>
+    <p class="muted">Paste the admin token from <code>~/.config/abacad/config.yaml</code>.</p>
+    <form id="login-form" autocomplete="off">
+      <input id="token" type="password" autocomplete="current-password" placeholder="admin token" required autofocus>
+      <button class="btn primary" type="submit">Unlock</button>
+    </form>
+    <p id="login-error" class="error" hidden></p>
+  </section>
+
+  <section id="devices-section" hidden>
+    <div class="section-head">
+      <h2>Devices</h2>
+      <span id="device-count" class="muted"></span>
+    </div>
+    <div id="devices" class="grid"></div>
+    <div id="empty" class="empty card" hidden>
+      <div class="empty-mark" aria-hidden="true">◌</div>
+      <h3>No devices yet</h3>
+      <p class="muted">Turn on Screen Sharing or a VNC server on a machine, then add its address. Nothing installs on the device.</p>
+      <button class="btn primary" data-action="add">Add your first device</button>
+    </div>
+  </section>
+
+  <section id="discovered-section" hidden>
+    <div class="section-head">
+      <h2>Discovered on the LAN</h2>
+      <span class="muted">mDNS · <code>_rfb._tcp</code></span>
+    </div>
+    <div id="discovered" class="list"></div>
+  </section>
+</main>
+
+<footer class="foot">
+  <span>abacad <span id="version"></span></span>
+  <span>LAN only · no cloud · no relay</span>
+</footer>
+
+<dialog id="add-dialog">
+  <form id="add-form" autocomplete="off">
+    <div class="dialog-head">
+      <h2>Add a device</h2>
+      <button type="button" class="icon-btn" data-close aria-label="Close">×</button>
+    </div>
+    <label>Name
+      <input name="name" placeholder="Mac mini" required>
+    </label>
+    <div class="row">
+      <label class="grow">Host
+        <input name="host" placeholder="192.168.1.20" required>
+      </label>
+      <label class="port">Port
+        <input name="port" type="number" value="5900" min="1" max="65535">
+      </label>
+    </div>
+    <label>VNC password
+      <input name="password" type="password" placeholder="the password you set on the device">
+    </label>
+    <div class="row">
+      <label class="grow">Platform
+        <select name="platform">
+          <option value="">Unknown</option>
+          <option value="macos">macOS</option>
+          <option value="linux">Linux</option>
+          <option value="windows">Windows</option>
+          <option value="android">Android</option>
+        </select>
+      </label>
+      <label class="grow">Mode
+        <select name="mode">
+          <option value="gateway">Gateway (recommended)</option>
+          <option value="l4">Raw TCP (L4)</option>
+          <option value="direct">Catalog only</option>
+        </select>
+      </label>
+    </div>
+    <label class="check"><input name="expose" type="checkbox"> Also open a raw VNC port for agents</label>
+    <p class="hint">Gateway keeps the device password in the hub and gives agents a revocable token. Raw TCP lets a VNC client authenticate directly to the device.</p>
+    <p id="add-error" class="error" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" class="btn ghost" data-close>Cancel</button>
+      <button type="submit" class="btn primary">Add device</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" hidden role="status"></div>
+<script src="/assets/app.js"></script>
+</body>
+</html>

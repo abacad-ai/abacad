@@ -70,6 +70,7 @@
 | D12 | v2 从 main 切普通分支，删 v1 目录 | 保留历史；不做 orphan | 低 |
 | D13 | macOS + Android 先打通 | 覆盖 Apple RFB 变体和最难移动端 | 低 |
 | D14 | v0.1 不做缩略图/录像/OCR | 这些会把 hub 变成 RFB 客户端 | 中 |
+| D15 | macOS 用 legacy VNC 密码，不做 Apple DH | Apple 认证要 macOS 账户密码，比独立 VNC 密码更危险 | 中 |
 
 ### D1 — 只做局域网，不做公网中继
 
@@ -183,6 +184,15 @@
 - **改它时必须同时判断**：是否接受引入 RFB 客户端/CPU/存储；是否作为可选模块；是否影响端口/认证。
 - **可逆性**：中；独立模块。
 
+### D15 — macOS 用 legacy VNC 密码，不实现 Apple DH
+
+- **决定**：macOS Screen Sharing 必须在 **Computer Settings** 勾选 “VNC viewers may control screen with password”；hub 只支持 `None` 和 classic VNC auth（type 2）。
+- **为什么**：实测一台 macOS 的 Screen Sharing 默认只提供 `[30 33 35 36]`（Apple DH / Apple 专有认证），没有 type 1/2。Apple 认证要么需要 macOS 账户密码，要么是 Apple 私有的 Kerberos/SSO 流程；在 hub 里存 macOS 账户密码，比存一个独立的、可随时改的 VNC 密码危险得多。Apple DH 也不是标准 RFB。
+- **放弃的方案**：实现 Apple DH（需要账户凭据、非标准）；默认改用 TigerVNC（安装/权限/登录屏限制更多）。
+- **改它时必须同时判断**：是否愿意在 hub 里存 macOS 账户密码；Apple 协议在不同 macOS 版本的差异；TigerVNC 的屏幕录制/辅助功能权限；是否值得为 macOS 单独维护一条认证路径。
+- **可逆性**：中；Apple DH 可以作为独立认证后端加入，不影响现有 VNC auth 路径。
+- **诊断**：`abacad doctor` 会打印设备提供的 security types；如果看到 `[30 33 35 36]` 且没有 `1`/`2`，就是这个问题。
+
 ### 决策之间的耦合
 
 - **改 D1（公网）**：D7/D9 的认证强度不够，要重新设计身份/TLS/滥用防护；D11 部署也要变。这是换产品，不是加功能。
@@ -191,11 +201,12 @@
 - **改 D5（默认裸 VNC）**：D6/D11 的端口和 Docker 方案变成主路径。
 - **改 D8（做 MCP 动作）**：D3 变成重方案，D6 可能消失。
 - **改 D9（不存密码）**：D7 的浏览器免密失效，UX 退回每次输入。
+- **改 D15（支持 Apple DH）**：D9 的凭据模型要变（可能存 macOS 账户密码）；D2 的“只用标准组件”也要修正。
 
 ### 稳定性分级
 
 - **便宜**：UI、文档、Docker 打包、平台顺序、缩略图（作为可选模块）。
-- **中等**：L7/L4、密码存储、端口分配、MCP `list_devices` 的字段。
+- **中等**：L7/L4、密码存储、端口分配、MCP `list_devices` 的字段、macOS Apple DH。
 - **昂贵**：LAN → 公网、VNC → 自研客户端、薄 hub → RFB 客户端。
 
 ---
@@ -443,7 +454,7 @@ agent 的 VNC 客户端                              hub / 设备
 - 首次启动生成 32 字节 admin token，打印一次；配置文件 0600。
 - 浏览器：`?token=` 换 HttpOnly + SameSite=Strict cookie。
 - MCP：`Authorization: Bearer <admin token>`；`list_devices` 返回的 per-device token 只能用于 VNC 端口，不能调管理 API。
-- 默认监听 `0.0.0.0:8080`；建议用 `--listen <LAN-IP>` 限定到一张网卡。产品不提供公网模式，也不做任何网络层暴露。
+- 默认监听 `0.0.0.0:8787`；建议用 `--listen <LAN-IP>` 限定到一张网卡。产品不提供公网模式，也不做任何网络层暴露。
 - 不做来源 IP 白名单：用户可能从 VPN / Tailscale 进来（`100.64/10` 等不是 RFC1918），那属于用户的网络层。hub 的边界是**监听地址 + token**。
 
 ### 5.2 设备侧
@@ -458,7 +469,7 @@ agent 的 VNC 客户端                              hub / 设备
 ### 5.3 HTTPS 的位置
 
 - 浏览器这段必须 HTTPS/WSS：保护 cookie、剪贴板、画面。
-- hub → 设备这段默认明文 RFB；如果设备支持 VeNCrypt，网关可以上游用 TLS，浏览器侧仍然是 None。v1 可以先只支持 VNC auth，VeNCrypt 放 v1.1。
+- hub → 设备这段默认明文 RFB；如果设备支持 VeNCrypt，网关可以上游用 TLS，浏览器侧仍然是 None。v0.1 可以先只支持 VNC auth，VeNCrypt 放 v0.2。
 - agent → hub 这段默认明文 TCP；LAN 内可接受；要加密就用 WireGuard/Tailscale 包一层，或者以后做 VeNCrypt 下游。
 
 ---
@@ -632,3 +643,39 @@ docs/
 ---
 
 *薄版的核心不是「功能少」，而是「把语义留给标准客户端，把路由和认证留给我们」。*
+
+---
+
+## 14. 实现状态（v0.1，2026-11-21）
+
+### 已完成
+
+- L7 RFB 握手网关：浏览器侧 `None`、agent 侧 VNC token、上游真实密码注入。
+- 每设备裸 VNC 监听（`gateway` / `l4`）；`direct` 仅目录。
+- noVNC 1.6.0 已 vendored 并嵌入二进制。
+- mDNS 浏览 `_rfb._tcp` + 广播 `_abacad._tcp`。
+- MCP stdio `list_devices`（官方 Go SDK）。
+- CLI：`serve` / `add` / `list` / `remove` / `probe` / `mcp` / `doctor` / `token`。
+- 单二进制、YAML 配置 0600、静态 UI（无 React/Node）。
+- Dockerfile（推荐 host network）、Makefile、CI。
+- 单元测试：RFB 握手（VNC/None、错误 token）、WebSocket 浏览器路径、config、inventory。
+- 对真实 x11vnc 的端到端验证：握手、token、ServerInit、Raw framebuffer。
+
+### 尚未完成（有意或待办）
+
+- **TLS 自签/本地 CA**：`serve` 已支持 `--tls-cert` / `--tls-key`，但没有自动生成自签证书或本地 CA 的工具；用户需自备证书或前置反向代理。
+- **OS 钥匙串**：设备密码目前在 `config.yaml`（0600），D9 的 keychain 迁移未做。
+- **view-only / 输入过滤**：浏览器目前可控制；没有服务端只读模式。
+- **缩略图 / 录像 / OCR**：按 D14 不做；它们需要 RFB 客户端。
+- **多 agent 租约**：目前没有连接级互斥；两个 agent 可以同时连。
+- **MCP Streamable HTTP**：只有 stdio；HTTP 入口只有 `/api`。
+- **UI 编辑**：可以添加、删除、probe；`PATCH /api/devices/{id}` 已有，但 UI 还没接入。
+- **token 轮换**：`abacad token --rotate` 只轮换 admin token；设备 token 需改配置后重启。
+- **真实设备矩阵**：x11vnc 已端到端验证；一台真实 macOS Screen Sharing 已验证 banner 与 security types（`RFB 003.889`，默认 `[30 33 35 36]`）。macOS 完整控制需要先按 D15 打开 legacy VNC password；droidVNC-NG、Windows TigerVNC 待实测。
+- **mDNS 在 Docker bridge 下不通**：按 D11 用 host network 或手动添加。
+
+### 与原计划的偏差
+
+- D12：实际用普通 `v2` 分支（从 main 切出）并删除 v1 目录，没有用 orphan；历史保留，树是干净的。
+- D7：`direct` 是 catalog-only；盲转发是 `l4`，两者分开。
+- D9：v0.1 先用配置文件存密码，钥匙串后置；这是有意的临时简化。

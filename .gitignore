@@ -1,11 +1,20 @@
 # OS
 .DS_Store
 Thumbs.db
-# Logs
-*.log
 
-# Local secrets / config. Commit .env.example instead — it documents the keys
-# without the values.
+# Build output
+/abacad
+/bin/
+/dist/
+*.test
+*.out
+coverage.out
+
+# Local secrets / config
 .env
 .env.*
-!.env.example
+config.yaml
+*.local.yaml
+
+# Logs
+*.log

@@ -1,0 +1,68 @@
+# Security
+
+abacad is a LAN tool. This document is deliberately short: it names the trust
+boundary, the weak points, and the operations that keep the weak points from
+mattering.
+
+## The boundary
+
+```
+device VNC server  ──RFB──▶  hub  ──HTTPS/WSS──▶ browser
+                               └──RFB/TCP────▶ agent
+```
+
+- The hub is the only host that needs to reach every device. Put devices on a
+  private segment and allow `5900/tcp` only from the hub's IP.
+- The hub is the only ingress. Do not expose its raw VNC ports to the internet;
+  if you need remote access, use a VPN or an authenticated tunnel you control.
+- abacad does not implement public exposure, relaying, or NAT traversal. That is
+  a network-layer decision, not a feature of this hub.
+
+## What is weak
+
+| Weak point | Why | Mitigation |
+|---|---|---|
+| Classic VNC auth | 8-character password, DES challenge; not strong by modern standards | LAN only; firewall to the hub IP; trusted Wi-Fi/VLAN; prefer VeNCrypt where the device supports it |
+| 8-character device token | RFB VNC auth carries only 8 bytes | Random alphabet, rotatable; gateway rate-limits failed handshakes; treat it as a LAN capability, not an internet secret |
+| No TLS on hub → device | Many VNC servers do not speak TLS | Keep that leg on a trusted segment; use VeNCrypt/TLS where available; use a VPN for untrusted links |
+| Password at rest | v0.1 stores device passwords in `~/.config/abacad/config.yaml` | File is `0600`; full-disk encryption; a later version can use the OS keychain |
+| Hub compromise | The hub can reach every device and holds their passwords | Patch the host, run as a non-root user, don't co-host unrelated services, back up the config securely |
+| mDNS spoofing | Discovery is unauthenticated | A discovered device is only a hint; it must be added and must authenticate before use |
+
+## Browser sessions
+
+- Login exchanges the admin token for an HttpOnly, SameSite=Lax cookie. The
+  cookie value is an HMAC of a random cookie secret, not the admin token.
+- The admin token is 32 random bytes (64 hex characters). It is printed once at
+  startup and stored in the config. Rotate it with `abacad token --rotate`.
+- There is no CSRF token because the API is JSON-only and the cookie is
+  SameSite=Lax. If you put the hub behind a reverse proxy, keep the same origin.
+
+## Device tokens
+
+Each device gets an 8-character token. It is the VNC password an agent uses when
+connecting to the hub's raw port. The real device password never leaves the hub
+in `gateway` mode.
+
+To rotate a token, edit `token:` in the config and restart the hub (or update the
+device through the API in a later version). Removing the device closes its
+listener immediately.
+
+## Operational checklist
+
+- [ ] Hub listens on a LAN address, not a public one.
+- [ ] Device VNC ports accept connections only from the hub IP.
+- [ ] Hub config is `0600` and on an encrypted disk.
+- [ ] Admin token is stored in a password manager, not a shell history.
+- [ ] Raw VNC ports are opt-in per device; most devices can be browser-only.
+- [ ] Hub is updated; no unrelated services share the host.
+- [ ] You have decided how remote access works (VPN), and it is not a raw VNC
+      port on the internet.
+
+## If something leaks
+
+1. Rotate the admin token (`abacad token --rotate`) and restart the hub.
+2. Rotate the affected device token(s).
+3. Change the device's VNC password.
+4. Remove the device from the hub if it is no longer trusted.
+5. Check the hub's logs for connections you do not recognize.
