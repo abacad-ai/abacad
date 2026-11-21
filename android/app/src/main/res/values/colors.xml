@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- Adaptive-icon background: charcoal canvas matching the brand's base scheme
-         (the dark "canvas" design token). The silver graph + green hub sit on top. -->
-    <color name="ic_launcher_bg">#0B0B0D</color>
-</resources>

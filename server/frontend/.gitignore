@@ -1,6 +1,0 @@
-node_modules
-# Build output. The *embedded* copy under backend/internal/web/dist IS
-# committed so `go build` works on a fresh clone.
-dist
-*.local
-.DS_Store

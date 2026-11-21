@@ -1,6 +1,0 @@
-bin/
-obj/
-publish/
-publish-cli/
-installer/Output/
-*.user
