@@ -10,6 +10,9 @@
   --accent-soft: #dcefe8;
   --danger: #a83a32;
   --danger-soft: #f7e4e1;
+  --warn: #8a5500;
+  --warn-soft: #fbf0d9;
+  --warn-line: #efd9ae;
   --ok: #2f8a5b;
   --shadow: 0 1px 2px rgba(24, 26, 22, .04), 0 12px 32px -18px rgba(24, 26, 22, .22);
   --radius: 20px;
@@ -31,6 +34,9 @@
     --accent-soft: #1b3832;
     --danger: #e58a80;
     --danger-soft: #3a211f;
+    --warn: #f0b35a;
+    --warn-soft: #352913;
+    --warn-line: #51401f;
     --ok: #6fce97;
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 18px 40px -22px rgba(0, 0, 0, .8);
   }
@@ -196,6 +202,16 @@ main {
 .muted { color: var(--muted); }
 .small { font-size: 12.5px; }
 .error { color: var(--danger); }
+
+.warn {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--warn-line);
+  border-radius: 10px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  line-height: 1.45;
+}
 .hint { margin: 10px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
 
 .btn {

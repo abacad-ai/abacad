@@ -10,10 +10,12 @@ import (
 	"fmt"
 	"net"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"abacad/internal/config"
+	"abacad/internal/rfb"
 )
 
 // View is a device plus its live state. Password is never serialized because
@@ -23,14 +25,17 @@ type View struct {
 	Online    bool      `json:"online"`
 	Banner    string    `json:"banner,omitempty"`
 	LastSeen  time.Time `json:"last_seen,omitempty"`
+	Warning   string    `json:"warning,omitempty"`
 	LastError string    `json:"last_error,omitempty"`
 }
 
 type Status struct {
-	Online    bool
-	Banner    string
-	LastSeen  time.Time
-	LastError string
+	Online      bool
+	Banner      string
+	LastSeen    time.Time
+	Warning     string
+	LastError   string
+	AuthChecked bool // security-type probe done in this process
 }
 
 // AddRequest is the input to Add.
@@ -47,6 +52,8 @@ type AddRequest struct {
 // UpdateRequest is a sparse update; nil fields are left alone.
 type UpdateRequest struct {
 	Name     *string `json:"name"`
+	Host     *string `json:"host"`
+	Port     *int    `json:"port"`
 	Password *string `json:"password"`
 	Platform *string `json:"platform"`
 	Mode     *string `json:"mode"`
@@ -76,7 +83,7 @@ func (in *Inventory) Devices() []View {
 	out := make([]View, 0, len(in.cfg.Devices))
 	for _, d := range in.cfg.Devices {
 		s := in.status[d.ID]
-		out = append(out, View{Device: d, Online: s.Online, Banner: s.Banner, LastSeen: s.LastSeen, LastError: s.LastError})
+		out = append(out, View{Device: d, Online: s.Online, Banner: s.Banner, LastSeen: s.LastSeen, Warning: s.Warning, LastError: s.LastError})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
@@ -88,7 +95,7 @@ func (in *Inventory) Device(id string) (View, bool) {
 	for _, d := range in.cfg.Devices {
 		if d.ID == id {
 			s := in.status[d.ID]
-			return View{Device: d, Online: s.Online, Banner: s.Banner, LastSeen: s.LastSeen, LastError: s.LastError}, true
+			return View{Device: d, Online: s.Online, Banner: s.Banner, LastSeen: s.LastSeen, Warning: s.Warning, LastError: s.LastError}, true
 		}
 	}
 	return View{}, false
@@ -138,6 +145,7 @@ func (in *Inventory) Add(ctx context.Context, req AddRequest) (View, error) {
 	in.mu.Unlock()
 
 	in.Probe(ctx, d.ID)
+	in.CheckAuth(ctx, d.ID)
 	if in.onChange != nil {
 		in.onChange()
 	}
@@ -182,6 +190,12 @@ func (in *Inventory) Update(ctx context.Context, id string, req UpdateRequest) (
 		if req.Name != nil {
 			d.Name = *req.Name
 		}
+		if req.Host != nil {
+			d.Host = strings.TrimSpace(*req.Host)
+		}
+		if req.Port != nil {
+			d.Port = *req.Port
+		}
 		if req.Password != nil {
 			d.Password = *req.Password
 		}
@@ -212,6 +226,7 @@ func (in *Inventory) Update(ctx context.Context, id string, req UpdateRequest) (
 	in.mu.Unlock()
 
 	in.Probe(ctx, id)
+	in.CheckAuth(ctx, id)
 	if in.onChange != nil {
 		in.onChange()
 	}
@@ -251,11 +266,55 @@ func (in *Inventory) Probe(ctx context.Context, id string) Status {
 		return Status{LastError: "device not found"}
 	}
 
+	in.mu.RLock()
+	old := in.status[id] // preserve an auth warning across routine probes
+	in.mu.RUnlock()
+
 	s := probe(ctx, d)
+	s.Warning = old.Warning
+	s.AuthChecked = old.AuthChecked
 	in.mu.Lock()
 	in.status[id] = s
 	in.mu.Unlock()
 	return s
+}
+
+// CheckAuth probes the RFB security types. It is called when a device is added
+// or edited, not on every health check: it opens one extra connection and is
+// there to turn the most common macOS failure into a readable card warning.
+func (in *Inventory) CheckAuth(ctx context.Context, id string) {
+	v, ok := in.Device(id)
+	if !ok || !v.Online {
+		return
+	}
+	addr := net.JoinHostPort(v.Host, fmt.Sprint(v.Port))
+	_, types, err := rfb.SecurityTypes(ctx, addr, 3*time.Second)
+	if err != nil {
+		return
+	}
+	warning := ""
+	if !rfb.SupportsStandardAuth(types) {
+		warning = fmt.Sprintf("device only offers security types %v; enable \"VNC viewers may control screen with password\" or use TigerVNC", types)
+	}
+	in.mu.Lock()
+	st := in.status[id]
+	st.Warning = warning
+	st.AuthChecked = true
+	in.status[id] = st
+	in.mu.Unlock()
+}
+
+// CheckAuthIfNeeded runs the security-type probe at most once per process (or
+// until the next successful probe), so startup restores the macOS warning
+// without opening an extra connection every 30 seconds.
+func (in *Inventory) CheckAuthIfNeeded(ctx context.Context, id string) {
+	in.mu.RLock()
+	checked := in.status[id].AuthChecked
+	in.mu.RUnlock()
+	if checked {
+		return
+	}
+	in.CheckAuth(ctx, id)
 }
 
 func probe(ctx context.Context, d config.Device) Status {
@@ -293,6 +352,7 @@ func (in *Inventory) ProbeAll(ctx context.Context) {
 			defer wg.Done()
 			defer func() { <-sem }()
 			in.Probe(ctx, d.ID)
+			in.CheckAuthIfNeeded(ctx, d.ID)
 		}()
 	}
 	wg.Wait()

@@ -72,7 +72,7 @@
 <dialog id="add-dialog">
   <form id="add-form" autocomplete="off">
     <div class="dialog-head">
-      <h2>Add a device</h2>
+      <h2 id="add-title">Add a device</h2>
       <button type="button" class="icon-btn" data-close aria-label="Close">×</button>
     </div>
     <label>Name
@@ -112,7 +112,7 @@
     <p id="add-error" class="error" hidden></p>
     <div class="dialog-actions">
       <button type="button" class="btn ghost" data-close>Cancel</button>
-      <button type="submit" class="btn primary">Add device</button>
+      <button id="add-submit" type="submit" class="btn primary">Add device</button>
     </div>
   </form>
 </dialog>

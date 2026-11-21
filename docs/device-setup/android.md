@@ -12,12 +12,16 @@ mDNS advertising and an optional built-in noVNC page.
 5. Keep the device on the same Wi-Fi/LAN as the hub.
 
 The app advertises `_rfb._tcp` via Zeroconf, so the hub's **Discovered** section
-may offer it automatically. Otherwise add it by IP:
+may offer it automatically. Otherwise click **Add device** in the hub and fill
+in:
 
-```bash
-abacad add --name pixel --host 192.168.1.50 \
-  --password 'the-droidvnc-password' --platform android --expose
-```
+- **Name:** `pixel`
+- **Host:** the phone's LAN address, e.g. `192.168.1.50`
+- **Port:** `5900` (or the custom port you set)
+- **VNC password:** the droidVNC-NG password
+- **Platform:** Android
+- **Also open a raw VNC port for agents:** optional; leave it off for
+  browser-only.
 
 ## Android 10+ screen capture
 

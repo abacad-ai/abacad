@@ -39,41 +39,29 @@ On first run it creates `~/.config/abacad/config.yaml` and prints the URL and an
   admin token: 3f2c...
 ```
 
-Open the URL in a browser, paste the token, and add a device:
+Open the URL in a browser, paste the token, and click **Add device**. Fill in
+the device's name, host, VNC port (usually 5900), and the VNC password. Leave
+**Also open a raw VNC port for agents** unchecked for browser-only access, or
+check it to give an agent a standard VNC endpoint.
 
-```bash
-# or from the CLI
-./abacad add --name mac-mini --host 192.168.1.20 --password 'your-vnc-password' \
-  --platform macos --expose
-```
-
-`--expose` opens a raw VNC port on the hub for agents. Without it the device is browser-only.
-
-Then:
+Everything after that is in the web UI: add, edit, remove, probe, open, copy the
+VNC endpoint. There are no management commands to remember.
 
 - **Human:** click **Open** on the device card. noVNC runs in the tab.
-- **Agent:** run `abacad mcp` (stdio) and call `list_devices`; or copy the `vnc://…` endpoint from the card.
+- **Agent:** point it at the hub's MCP endpoint (below), or copy the `vnc://…`
+  endpoint from the card.
 
-## CLI
+## Running
 
 ```text
-abacad serve   [--config PATH] [--listen ADDR] [--no-mdns] [-v]
-abacad add     --name NAME --host HOST [--port 5900] [--password PW]
-               [--platform macos|linux|windows|android]
-               [--mode gateway|l4|direct] [--expose]
-abacad list    [--probe] [--json]
-abacad remove  ID
-abacad probe   [ID]
-abacad mcp     [--host HOST] [--base-url URL]
-abacad doctor
-abacad token   [--rotate]
+abacad [serve] [--config PATH] [--listen ADDR] [--no-mdns]
+               [--tls-cert FILE --tls-key FILE] [-v]
 abacad version
 ```
 
-`list` and `doctor` do not require the hub to be running; they read the same config.
-
-For HTTPS/WSS (needed for browser clipboard access in most browsers), provide a
-certificate:
+With no arguments, `abacad` serves. `serve` is accepted for explicit compose
+files. For HTTPS/WSS (needed for browser clipboard access in most browsers),
+provide a certificate:
 
 ```bash
 ./abacad serve --tls-cert cert.pem --tls-key key.pem
@@ -81,24 +69,32 @@ certificate:
 
 Use a certificate your browser trusts (a local CA, or a reverse proxy in front).
 
-
-The CLI edits the config file. A running hub keeps its in-memory inventory and
-listeners until restart, so use the web UI for live add/remove/probe, or restart
-`abacad serve` after CLI changes. `abacad token --rotate` also takes effect only
-after a restart.
-
 ## MCP
 
-`abacad mcp` speaks MCP over stdio and exposes one tool:
+MCP is served by the hub at **`POST /mcp`** (Streamable HTTP). It uses short-lived sessions and
+returns JSON. Authenticate with the admin token:
+
+```bash
+claude mcp add --transport http \
+  --header "Authorization: Bearer <admin token>" \
+  abacad http://192.168.1.10:8787/mcp
+```
+
+Or in a JSON client config:
 
 ```json
 {
-  "name": "list_devices",
-  "description": "List VNC devices on this LAN and the standard VNC endpoint to use."
+  "mcpServers": {
+    "abacad": {
+      "type": "http",
+      "url": "http://192.168.1.10:8787/mcp",
+      "headers": { "Authorization": "Bearer <admin token>" }
+    }
+  }
 }
 ```
 
-Example output:
+It exposes one tool, `list_devices`:
 
 ```json
 {
@@ -110,6 +106,7 @@ Example output:
       "mode": "gateway",
       "vnc_host": "192.168.1.10",
       "vnc_port": 5901,
+      "auth": "hub-token",
       "token": "Abcd1234",
       "browser_url": "http://192.168.1.10:8787/vnc/mac-mini"
     }
@@ -117,20 +114,8 @@ Example output:
 }
 ```
 
-Register it with an MCP client:
-
-```json
-{
-  "mcpServers": {
-    "abacad": {
-      "command": "/absolute/path/to/abacad",
-      "args": ["mcp", "--host", "192.168.1.10"]
-    }
-  }
-}
-```
-
-The agent then connects its own VNC client to `vnc_host:vnc_port` with `token` as the VNC password. No new screen API to learn.
+The agent connects its own VNC client to `vnc_host:vnc_port` with `token` as the
+VNC password. No new screen API to learn.
 
 ## Modes
 
@@ -176,8 +161,8 @@ v0.1 implements the thin path:
 - raw VNC listeners per device (`gateway` and `l4`)
 - noVNC browser viewer with vendored assets
 - mDNS discovery and advertising
-- MCP `list_devices` over stdio
-- CLI (`serve`, `add`, `list`, `remove`, `probe`, `mcp`, `doctor`, `token`)
+- One `serve` command (also the default); device management is entirely in the web UI
+- MCP `list_devices` over Streamable HTTP at `/mcp`
 - tests for RFB handshake, gateway WebSocket path, config, inventory
 
 Not in v0.1: automatic self-signed cert generation, OS keychain, view-only enforcement, thumbnails, recording, OCR, multi-agent leases.

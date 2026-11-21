@@ -24,14 +24,15 @@ Do not create an any-source rule; do not forward 5900 on the router.
 
 ## Add it to the hub
 
-```bash
-abacad add --name windows-pc --host 192.168.1.40 \
-  --password 'the-vnc-password' --platform windows --expose
-```
+In the hub web UI, click **Add device**:
 
-## Notes
+- **Name:** `windows-pc`
+- **Host:** the machine's LAN address, e.g. `192.168.1.40`
+- **Port:** `5900`
+- **VNC password:** the TigerVNC password
+- **Platform:** Windows
+- **Also open a raw VNC port for agents:** optional; leave it off for
+  browser-only.
 
-- If the machine is on Wi-Fi, reserve its DHCP address.
-- TigerVNC's service mode and the user-session mode both work; service mode is
-  better for a headless/always-on machine.
-- Windows may sleep; disable sleep for the power profile used by the device.
+The card should turn **online**. If it stays offline, check the inbound firewall
+rule and that TigerVNC is running as a service.

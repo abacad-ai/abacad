@@ -34,7 +34,8 @@ device VNC server  ──RFB──▶  hub  ──HTTPS/WSS──▶ browser
 - Login exchanges the admin token for an HttpOnly, SameSite=Lax cookie. The
   cookie value is an HMAC of a random cookie secret, not the admin token.
 - The admin token is 32 random bytes (64 hex characters). It is printed once at
-  startup and stored in the config. Rotate it with `abacad token --rotate`.
+  startup and stored in the config. Rotate it by editing `admin_token` in the
+  config and restarting the hub.
 - There is no CSRF token because the API is JSON-only and the cookie is
   SameSite=Lax. If you put the hub behind a reverse proxy, keep the same origin.
 
@@ -61,7 +62,8 @@ listener immediately.
 
 ## If something leaks
 
-1. Rotate the admin token (`abacad token --rotate`) and restart the hub.
+1. Rotate the admin token by editing `admin_token` in the config and restarting
+   the hub.
 2. Rotate the affected device token(s).
 3. Change the device's VNC password.
 4. Remove the device from the hub if it is no longer trusted.

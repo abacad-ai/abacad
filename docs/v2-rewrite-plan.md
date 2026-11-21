@@ -191,7 +191,7 @@
 - **放弃的方案**：实现 Apple DH（需要账户凭据、非标准）；默认改用 TigerVNC（安装/权限/登录屏限制更多）。
 - **改它时必须同时判断**：是否愿意在 hub 里存 macOS 账户密码；Apple 协议在不同 macOS 版本的差异；TigerVNC 的屏幕录制/辅助功能权限；是否值得为 macOS 单独维护一条认证路径。
 - **可逆性**：中；Apple DH 可以作为独立认证后端加入，不影响现有 VNC auth 路径。
-- **诊断**：`abacad doctor` 会打印设备提供的 security types；如果看到 `[30 33 35 36]` 且没有 `1`/`2`，就是这个问题。
+- **诊断**：设备卡片会显示 warning（MCP 输出里也有）；如果看到 `[30 33 35 36]` 且没有 `1`/`2`，就是这个问题。
 
 ### 决策之间的耦合
 
@@ -480,7 +480,7 @@ agent 的 VNC 客户端                              hub / 设备
 
 1. 在设备上开原生 VNC server，设一个密码（macOS 系统设置、TigerVNC service、droidVNC-NG Start）。
 2. hub 页面「添加设备」：名字、`host:port`、密码；或从 mDNS 待认领列表点「添加」。
-3. hub probe：TCP 连上、读完 `RFB 003.008\n`、用密码握手、拿到分辨率和桌面名。
+3. hub 检查：TCP 连上、读完 RFB banner 判断在线；添加/编辑时再检查 security types，给出认证警告。
 4. 保存；分配一个 hub 端口（`5901`）和一个 token。
 
 ### 人看
@@ -495,7 +495,7 @@ agent 的 VNC 客户端                              hub / 设备
 1. agent 调 MCP `list_devices`（或读 hub 的 `/api/devices`）。
 2. 拿到 `vnc_host`、`vnc_port`、`token`。
 3. 用任意 VNC 客户端连接；之后就是标准的 RFB 交互。
-4. 如果 agent 没有 VNC 客户端，用 `abacad` CLI。
+4. 如果 agent 没有 VNC 客户端，需要一个可选适配器（v0.2 再评估，不进核心）。
 
 ### 状态与发现
 
@@ -567,7 +567,7 @@ docs/
 - [ ] WSS 代理 + cookie 认证。
 - [ ] L7 握手网关：浏览器侧 None、agent 侧 VNC token、上游真实密码。
 - [ ] mDNS 发现 + 待认领。
-- [ ] `abacad doctor`。
+- [x] 设备卡片的 warning（替代 CLI doctor）。
 - [ ] launchd / systemd 示例。
 
 **验收**：WAN 拔掉，浏览器点开两台设备都能看；agent 用 RealVNC/TigerVNC 连 `hub:5901` 能操作；设备 5900 对 LAN 其他机器不可见。
@@ -576,7 +576,7 @@ docs/
 
 - [ ] MCP `list_devices` + `/api/devices`。
 - [ ] 可选：`abacad shot/click/type/key/watch` CLI。
-- [ ] token 轮换、失败锁定、连接审计。
+- [ ] token 轮换（UI）、连接审计；失败锁定已有基础版。
 - [ ] 设备 setup 文档（macOS / Linux X11 / Wayland / Windows / Android）。
 - [ ] Docker `--network host`、Homebrew tap。
 - [ ] 浏览器 view-only、复制 VNC 地址、二维码（可选）。
@@ -654,8 +654,8 @@ docs/
 - 每设备裸 VNC 监听（`gateway` / `l4`）；`direct` 仅目录。
 - noVNC 1.6.0 已 vendored 并嵌入二进制。
 - mDNS 浏览 `_rfb._tcp` + 广播 `_abacad._tcp`。
-- MCP stdio `list_devices`（官方 Go SDK）。
-- CLI：`serve` / `add` / `list` / `remove` / `probe` / `mcp` / `doctor` / `token`。
+- MCP `list_devices`（官方 Go SDK，`POST /mcp` Streamable HTTP）。
+- 一个 `serve` 命令（也是默认命令）；设备管理全部在 Web UI。
 - 单二进制、YAML 配置 0600、静态 UI（无 React/Node）。
 - Dockerfile（推荐 host network）、Makefile、CI。
 - 单元测试：RFB 握手（VNC/None、错误 token）、WebSocket 浏览器路径、config、inventory。
@@ -668,9 +668,9 @@ docs/
 - **view-only / 输入过滤**：浏览器目前可控制；没有服务端只读模式。
 - **缩略图 / 录像 / OCR**：按 D14 不做；它们需要 RFB 客户端。
 - **多 agent 租约**：目前没有连接级互斥；两个 agent 可以同时连。
-- **MCP Streamable HTTP**：只有 stdio；HTTP 入口只有 `/api`。
-- **UI 编辑**：可以添加、删除、probe；`PATCH /api/devices/{id}` 已有，但 UI 还没接入。
-- **token 轮换**：`abacad token --rotate` 只轮换 admin token；设备 token 需改配置后重启。
+- **MCP Streamable HTTP**：已改为 `/mcp`（会话 + JSON、Bearer admin token）；stdio 命令已移除。
+- **UI 编辑**：已接入 `PATCH /api/devices/{id}`；添加、编辑、删除、probe 都在网页里。
+- **token 轮换**：还没有 UI/命令；admin token 与设备 token 目前都需要改配置后重启。
 - **真实设备矩阵**：x11vnc 已端到端验证；一台真实 macOS Screen Sharing 已验证 banner 与 security types（`RFB 003.889`，默认 `[30 33 35 36]`）。macOS 完整控制需要先按 D15 打开 legacy VNC password；droidVNC-NG、Windows TigerVNC 待实测。
 - **mDNS 在 Docker bridge 下不通**：按 D11 用 host network 或手动添加。
 

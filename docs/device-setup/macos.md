@@ -16,45 +16,38 @@ needed.
 
 The server listens on TCP **5900**.
 
-Verify with:
+## Add it to the hub
 
-```bash
-abacad doctor
-```
+In the hub web UI, click **Add device**:
 
-You want to see `security: [1 2]` (or `[2]`). If you see `[30 33 35 36]`, the
-checkbox is off, or this macOS version no longer offers legacy VNC auth. In that
-case install **TigerVNC** and use its server, or accept that the Mac is not
-reachable by abacad.
+- **Name:** `Mac mini`
+- **Host:** the Mac's LAN address, e.g. `192.168.1.20`
+- **Port:** `5900`
+- **VNC password:** the password you just set
+- **Platform:** macOS
+- **Also open a raw VNC port for agents:** check it if an agent should connect
+  with a standard VNC client; leave it off for browser-only.
+
+The card should turn **online**. If it shows a warning about security types
+`[30 33 35 36]`, the legacy VNC password checkbox is off, or this macOS version
+no longer offers legacy VNC auth. In that case install **TigerVNC** and use its
+server, or accept that the Mac is not reachable by abacad.
 
 > Why not support Apple's default authentication? It needs your macOS account
 > password (or Apple's SSO), and storing that in the hub is worse than storing a
 > separate, revocable VNC password. Apple DH is also not standard RFB. See
 > decision D15 in the plan.
 
-## Add it to the hub
-
-```bash
-abacad add --name mac-mini --host 192.168.1.20 \
-  --password 'the-password-you-just-set' \
-  --platform macos --expose
-```
-
-- `--expose` gives agents a raw VNC port on the hub. Omit it for browser-only.
-- The hub uses the password to authenticate upstream; the browser and the agent
-  never see it.
-
 ## Keep it reachable
 
 - Prevent sleep: **System Settings → Energy Saver → Prevent automatic sleeping
   when the display is off**, or run `caffeinate -s` while the hub needs it.
-- If the Mac is on Wi-Fi, give it a DHCP reservation so `--host` stays valid.
+- If the Mac is on Wi-Fi, give it a DHCP reservation so the host field stays valid.
 
 ## Known issues
 
 - Apple's server is an RFB variant. Standard clients work, but Apple-specific
-  authentication and display modes can be picky. Phase 0 of the rewrite tests
-  this explicitly; if your macOS version refuses the standard handshake, install
+  authentication and display modes can be picky. Tested against a real macOS Screen Sharing server; if your macOS version refuses the standard handshake, install
   **TigerVNC** and use its server instead.
 - Screen Sharing may show the login window after a reboot; controlling the
   pre-login screen is not guaranteed.

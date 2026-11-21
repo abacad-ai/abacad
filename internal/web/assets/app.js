@@ -7,6 +7,7 @@ const state = {
   info: null,
   authenticated: false,
   timer: null,
+  editing: null,
 };
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
@@ -145,7 +146,8 @@ function deviceCard(d) {
   const actions = [];
   if (canOpen) actions.push(`<a class="btn primary" href="/vnc/${encodeURIComponent(d.id)}" target="_blank" rel="noopener">Open</a>`);
   if (port) actions.push(`<button class="btn ghost" data-copy-vnc="${esc(d.id)}">Copy VNC</button>`);
-  actions.push(`<button class="btn ghost" data-probe="${esc(d.id)}">Probe</button>`);
+  actions.push(`<button class="btn ghost" data-edit="${esc(d.id)}">Edit</button>`);
+  actions.push(`<button class="btn ghost" data-probe="${esc(d.id)}">Check</button>`);
   actions.push(`<button class="btn ghost danger" data-remove="${esc(d.id)}">Remove</button>`);
 
   return `
@@ -157,6 +159,7 @@ function deviceCard(d) {
       <h3>${esc(d.name)}</h3>
       <p class="addr">${esc(d.host)}:${esc(d.port)}</p>
       <div class="meta">${chips.join("")}</div>
+      ${d.warning ? `<p class="warn small">${esc(d.warning)}</p>` : ""}
       ${d.last_error ? `<p class="error small">${esc(d.last_error)}</p>` : ""}
       <div class="device-actions">${actions.join("")}</div>
       ${usesToken && port ? `<div class="token-row"><span>token</span><code>${esc(token)}</code><button class="icon-btn" data-copy-token="${esc(d.id)}" title="Copy token" aria-label="Copy token">⧉</button></div>` : ""}
@@ -178,14 +181,41 @@ function renderDiscovered() {
 
 function openAdd(prefill = {}) {
   const form = $("#add-form");
+  state.editing = null;
   form.reset();
   form.elements.name.value = prefill.name || "";
   form.elements.host.value = prefill.host || "";
   form.elements.port.value = prefill.port || 5900;
+  form.elements.host.disabled = false;
+  form.elements.port.disabled = false;
   form.elements.password.value = "";
+  form.elements.password.placeholder = "the password you set on the device";
   form.elements.platform.value = prefill.platform || "";
   form.elements.mode.value = prefill.mode || "gateway";
   form.elements.expose.checked = !!prefill.expose;
+  $("#add-title").textContent = "Add a device";
+  $("#add-submit").textContent = "Add device";
+  $("#add-error").hidden = true;
+  $("#add-dialog").showModal();
+  setTimeout(() => form.elements.name.focus(), 60);
+}
+
+function openEdit(d) {
+  const form = $("#add-form");
+  state.editing = d;
+  form.reset();
+  form.elements.name.value = d.name || "";
+  form.elements.host.value = d.host || "";
+  form.elements.port.value = d.port || 5900;
+  form.elements.host.disabled = false;
+  form.elements.port.disabled = false;
+  form.elements.password.value = "";
+  form.elements.password.placeholder = "leave blank to keep the current password";
+  form.elements.platform.value = d.platform || "";
+  form.elements.mode.value = d.mode || "gateway";
+  form.elements.expose.checked = Number(d.vnc_port) > 0;
+  $("#add-title").textContent = "Edit " + (d.name || "device");
+  $("#add-submit").textContent = "Save changes";
   $("#add-error").hidden = true;
   $("#add-dialog").showModal();
   setTimeout(() => form.elements.name.focus(), 60);
@@ -196,19 +226,33 @@ async function submitAdd(event) {
   const form = event.currentTarget;
   const err = $("#add-error");
   err.hidden = true;
+  const editing = state.editing;
   const body = {
     name: form.elements.name.value.trim(),
     host: form.elements.host.value.trim(),
     port: Number(form.elements.port.value) || 5900,
-    password: form.elements.password.value,
     platform: form.elements.platform.value,
     mode: form.elements.mode.value,
     expose: form.elements.expose.checked,
   };
+  if (!editing) {
+    body.password = form.elements.password.value;
+  } else if (form.elements.password.value) {
+    body.password = form.elements.password.value;
+  }
   try {
-    const out = await api("/api/devices", { method: "POST", body: JSON.stringify(body) });
-    $("#add-dialog").close();
-    toast(`${out.device.name} added`);
+    if (editing) {
+      const out = await api(`/api/devices/${encodeURIComponent(editing.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+      $("#add-dialog").close();
+      toast(`${out.device.name} updated`);
+    } else {
+      const out = await api("/api/devices", { method: "POST", body: JSON.stringify(body) });
+      $("#add-dialog").close();
+      toast(`${out.device.name} added`);
+    }
     await load();
   } catch (e) {
     err.textContent = e.message;
@@ -294,6 +338,12 @@ function bind() {
     if (ct) { copyToken(ct.dataset.copyToken); return; }
     const pr = e.target.closest("[data-probe]");
     if (pr) { probe(pr.dataset.probe); return; }
+    const ed = e.target.closest("[data-edit]");
+    if (ed) {
+      const d = state.devices.find((x) => x.id === ed.dataset.edit);
+      if (d) openEdit(d);
+      return;
+    }
     const rm = e.target.closest("[data-remove]");
     if (rm) { remove(rm.dataset.remove); return; }
     const ad = e.target.closest("[data-add-discovered]");
@@ -309,6 +359,9 @@ function bind() {
 
   $("#add-dialog").addEventListener("click", (e) => {
     if (e.target === $("#add-dialog")) $("#add-dialog").close();
+  });
+  $("#add-dialog").addEventListener("close", () => {
+    state.editing = null;
   });
 
   document.addEventListener("visibilitychange", () => {

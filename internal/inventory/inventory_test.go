@@ -69,6 +69,17 @@ func TestAddProbeUpdateRemove(t *testing.T) {
 		t.Fatal("token is empty")
 	}
 
+	newName := "Renamed"
+	newHost := host
+	newPort := port
+	v, err = inv.Update(ctx, v.ID, UpdateRequest{Name: &newName, Host: &newHost, Port: &newPort})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Name != "Renamed" || v.Host != host || v.Port != port {
+		t.Fatalf("update did not apply: %+v", v)
+	}
+
 	expose := false
 	v, err = inv.Update(ctx, v.ID, UpdateRequest{Expose: &expose})
 	if err != nil {

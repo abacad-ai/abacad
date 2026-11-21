@@ -61,9 +61,15 @@ sudo ufw allow from 192.168.1.10 to any port 5900 proto tcp
 
 ## Add it to the hub
 
-```bash
-abacad add --name linux-box --host 192.168.1.30 \
-  --password 'the-vnc-password' --platform linux --expose
-```
+In the hub web UI, click **Add device**:
 
-Omit `--expose` for browser-only access.
+- **Name:** `linux-box`
+- **Host:** the machine's LAN address, e.g. `192.168.1.30`
+- **Port:** `5900`
+- **VNC password:** the password from the server above
+- **Platform:** Linux
+- **Also open a raw VNC port for agents:** optional; leave it off for
+  browser-only.
+
+The card should turn **online**. If it stays offline, check that the VNC server
+is listening on the LAN interface and that the firewall allows the hub's IP.

@@ -20,6 +20,7 @@ import (
 	"abacad/internal/discovery"
 	"abacad/internal/gateway"
 	"abacad/internal/inventory"
+	mcpserver "abacad/internal/mcp"
 )
 
 //go:embed assets
@@ -29,12 +30,13 @@ type Server struct {
 	inv     *inventory.Inventory
 	gw      *gateway.Gateway
 	disc    *discovery.Discovery
+	mcp     *mcpserver.Server
 	log     *slog.Logger
 	version string
 }
 
-func New(inv *inventory.Inventory, gw *gateway.Gateway, disc *discovery.Discovery, log *slog.Logger, version string) *Server {
-	return &Server{inv: inv, gw: gw, disc: disc, log: log, version: version}
+func New(inv *inventory.Inventory, gw *gateway.Gateway, disc *discovery.Discovery, mcp *mcpserver.Server, log *slog.Logger, version string) *Server {
+	return &Server{inv: inv, gw: gw, disc: disc, mcp: mcp, log: log, version: version}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -46,6 +48,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/login", s.login)
 	mux.HandleFunc("POST /api/logout", s.logout)
 	mux.HandleFunc("GET /api/session", s.session)
+
+	if s.mcp != nil {
+		mux.Handle("/mcp", s.mcp.HTTPHandler())
+	}
 
 	mux.HandleFunc("GET /api/devices", s.auth(s.listDevices))
 	mux.HandleFunc("POST /api/devices", s.auth(s.addDevice))
@@ -210,6 +216,11 @@ func (s *Server) probeDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st := s.inv.Probe(r.Context(), id)
+	s.inv.CheckAuth(r.Context(), id)
+	if v, ok := s.inv.Device(id); ok {
+		writeJSON(w, http.StatusOK, map[string]any{"status": st, "device": v})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": st})
 }
 

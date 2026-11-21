@@ -17,11 +17,13 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"abacad/internal/config"
 	"abacad/internal/discovery"
 	"abacad/internal/gateway"
 	"abacad/internal/inventory"
+	mcpserver "abacad/internal/mcp"
 )
 
 func TestLoginAndAuth(t *testing.T) {
@@ -192,7 +194,8 @@ func newTestServer(t *testing.T, upstreamAddr string) (*httptest.Server, *invent
 	gw := gateway.New(inv, log)
 	gw.Sync(inv.Devices())
 	disc := discovery.New(log)
-	s := New(inv, gw, disc, log, "test")
+	mcpSrv := mcpserver.New(inv, "test")
+	s := New(inv, gw, disc, mcpSrv, log, "test")
 	return httptest.NewServer(s.Handler()), inv
 }
 
@@ -264,5 +267,84 @@ func mockVNCServer(conn net.Conn) {
 		if err != nil {
 			return
 		}
+	}
+}
+
+func TestMCPHTTP(t *testing.T) {
+	srv, _ := newTestServer(t, "")
+	defer srv.Close()
+
+	post := func(body string) *http.Response {
+		req, err := http.NewRequest("POST", srv.URL+"/mcp", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer test-admin")
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+
+	initBody := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`
+	resp := post(initBody)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("initialize status = %d", resp.StatusCode)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if !bytes.Contains(b, []byte(`"serverInfo"`)) {
+		t.Fatalf("initialize response: %s", b)
+	}
+
+	// Missing bearer token must be rejected before MCP sees the request.
+	req, _ := http.NewRequest("POST", srv.URL+"/mcp", strings.NewReader(initBody))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated /mcp = %d", resp.StatusCode)
+	}
+}
+
+type bearerTransport struct{ token string }
+
+func (t bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	req.Header.Set("Authorization", "Bearer "+t.token)
+	return http.DefaultTransport.RoundTrip(req)
+}
+
+func TestMCPOfficialClient(t *testing.T) {
+	srv, _ := newTestServer(t, "")
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	client := sdk.NewClient(&sdk.Implementation{Name: "test", Version: "1"}, nil)
+	session, err := client.Connect(ctx, &sdk.StreamableClientTransport{
+		Endpoint:   srv.URL + "/mcp",
+		HTTPClient: &http.Client{Transport: bearerTransport{token: "test-admin"}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	res, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "list_devices", Arguments: map[string]any{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError || len(res.Content) == 0 {
+		t.Fatalf("unexpected result: %+v", res)
+	}
+	text, ok := res.Content[0].(*sdk.TextContent)
+	if !ok || !strings.Contains(text.Text, "devices") {
+		t.Fatalf("content: %+v", res.Content[0])
 	}
 }
