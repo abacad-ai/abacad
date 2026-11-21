@@ -38,6 +38,29 @@ server, or accept that the Mac is not reachable by abacad.
 > separate, revocable VNC password. Apple DH is also not standard RFB. See
 > decision D15 in the plan.
 
+## If the Mac is locked when you connect
+
+The VNC password gets you to the Mac; the **lock screen wants the macOS account
+password**, not the VNC password.
+
+1. Click once inside the viewer.
+2. Press **Space** or click the user avatar to reveal the password field.
+3. Type the macOS account password and press Return.
+
+If the keyboard does nothing, click **Keyboard** in the viewer's top bar to use
+noVNC's on-screen keyboard. If even that is ignored, macOS may be blocking
+third-party input at the login/lock screen: unlock once with Apple's Screen
+Sharing app (or physically), then use abacad for the logged-in session. To avoid
+the situation on a headless Mac, prevent sleep and disable the lock screen:
+
+```bash
+caffeinate -s &
+sudo pmset -a sleep 0 displaysleep 0
+```
+
+System Settings → Lock Screen → **Require password after screen saver begins or
+display is turned off** → Never.
+
 ## Keep it reachable
 
 - Prevent sleep: **System Settings → Energy Saver → Prevent automatic sleeping

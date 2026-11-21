@@ -34,9 +34,18 @@
   }
   button:hover { color: var(--ink); }
   iframe { border: 0; width: 100%; height: 100%; flex: 1 1 auto; background: #000; }
-  .frame { flex: 1 1 auto; min-height: 0; display: flex; }
+  .frame { flex: 1 1 auto; min-height: 0; display: flex; position: relative; }
   .hint { color: var(--muted); font-family: var(--mono); font-size: 11px; }
-  @media (max-width: 600px) { .hint { display: none; } }
+  .type-hint {
+    position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%);
+    z-index: 5; pointer-events: none; white-space: nowrap;
+    padding: 8px 14px; border-radius: 999px;
+    background: rgba(12, 14, 13, .78); color: #f2f1ec;
+    font-size: 12px; box-shadow: 0 8px 30px -12px rgba(0,0,0,.7);
+    transition: opacity .25s ease;
+  }
+  .type-hint.gone { opacity: 0; }
+  @media (max-width: 700px) { .type-hint { white-space: normal; width: calc(100% - 32px); text-align: center; } .hint { display: none; } }
 </style>
 </head>
 <body>
@@ -48,12 +57,14 @@
   </div>
   <div class="right">
     <span class="hint" id="hint">noVNC · RFB 3.8</span>
+    <button id="keyboard" type="button">Keyboard</button>
     <button id="reload" type="button">Reconnect</button>
     <button id="full" type="button">Fullscreen</button>
   </div>
 </header>
 <div class="frame">
   <iframe id="view" allow="clipboard-read; clipboard-write; fullscreen" title="VNC session"></iframe>
+  <div id="type-hint" class="type-hint">Click the screen, then type · macOS lock screen: press Space or click your user</div>
 </div>
 <script>
   const id = decodeURIComponent(location.pathname.split("/").filter(Boolean).pop() || "");
@@ -74,7 +85,46 @@
   frame.src = src;
   document.getElementById("name").textContent = id;
 
+  const typeHint = document.getElementById("type-hint");
+  const hideHint = () => typeHint.classList.add("gone");
+
+  function focusRemoteKeyboard() {
+    try {
+      const doc = frame.contentDocument;
+      const canvas = doc.querySelector("canvas");
+      if (canvas) canvas.focus();
+      const kbButton = doc.getElementById("noVNC_keyboard_button");
+      if (kbButton && !kbButton.classList.contains("noVNC_selected")) kbButton.click();
+      const input = doc.getElementById("noVNC_keyboardinput");
+      if (input) input.focus();
+    } catch (e) { /* cross-origin should not happen; ignore */ }
+    hideHint();
+  }
+
+  frame.addEventListener("load", () => {
+    // noVNC builds its canvas asynchronously. Poll briefly so the remote screen
+    // becomes the keyboard target without the user having to find it first.
+    let tries = 0;
+    const timer = setInterval(() => {
+      tries++;
+      try {
+        const doc = frame.contentDocument;
+        const canvas = doc.querySelector("canvas");
+        if (canvas) {
+          canvas.focus();
+          doc.addEventListener("pointerdown", hideHint, { once: true });
+          clearInterval(timer);
+          return;
+        }
+      } catch (e) { /* ignore */ }
+      if (tries > 20) clearInterval(timer);
+    }, 300);
+  });
+
+  document.getElementById("keyboard").addEventListener("click", focusRemoteKeyboard);
+
   document.getElementById("reload").addEventListener("click", () => {
+    typeHint.classList.remove("gone");
     frame.src = "about:blank";
     setTimeout(() => { frame.src = src; }, 80);
   });
