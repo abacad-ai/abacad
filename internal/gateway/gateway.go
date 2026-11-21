@@ -91,6 +91,9 @@ func (g *Gateway) accept(ln net.Listener, id string) {
 
 func (g *Gateway) handleTCP(id string, conn net.Conn) {
 	defer conn.Close()
+	if tc, ok := conn.(*net.TCPConn); ok {
+		_ = tc.SetNoDelay(true)
+	}
 	v, ok := g.inv.Device(id)
 	if !ok {
 		return
@@ -170,6 +173,12 @@ func pipeL4(down net.Conn, addr string) error {
 		return err
 	}
 	defer up.Close()
+	if tc, ok := up.(*net.TCPConn); ok {
+		_ = tc.SetNoDelay(true)
+	}
+	if tc, ok := down.(*net.TCPConn); ok {
+		_ = tc.SetNoDelay(true)
+	}
 	done := make(chan struct{}, 2)
 	go func() {
 		_, _ = io.Copy(up, down)

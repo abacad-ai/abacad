@@ -51,6 +51,12 @@ func Proxy(ctx context.Context, down net.Conn, opt Options) error {
 	}
 	defer down.Close()
 	defer up.Close()
+	if tc, ok := up.(*net.TCPConn); ok {
+		_ = tc.SetNoDelay(true)
+	}
+	if tc, ok := down.(*net.TCPConn); ok {
+		_ = tc.SetNoDelay(true)
+	}
 
 	deadline := time.Now().Add(opt.Timeout)
 	_ = down.SetDeadline(deadline)

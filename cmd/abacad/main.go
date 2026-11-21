@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -126,6 +127,19 @@ func cmdServe(args []string) error {
 	srv := &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
+		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
+			// Interactive RFB traffic is small and latency-sensitive; Nagle
+			// would coalesce wheel updates into visible stutter.
+			switch conn := c.(type) {
+			case *net.TCPConn:
+				_ = conn.SetNoDelay(true)
+			case *tls.Conn:
+				if tc, ok := conn.NetConn().(*net.TCPConn); ok {
+					_ = tc.SetNoDelay(true)
+				}
+			}
+			return ctx
+		},
 	}
 
 	go inv.Run(ctx, 30*time.Second)

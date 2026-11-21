@@ -46,7 +46,7 @@ const DEFAULT_BACKGROUND = 'rgb(40, 40, 40)';
 const MOUSE_MOVE_DELAY = 17;
 
 // Wheel thresholds
-const WHEEL_STEP = 50; // Pixels needed for one step
+const WHEEL_STEP = 20; // Pixels needed for one step (abacad: was 50; smoother trackpad scrolling)
 const WHEEL_LINE_HEIGHT = 19; // Assumed pixels for one line step
 
 // Gesture thresholds
@@ -1260,27 +1260,22 @@ export default class RFB extends EventTargetMixin {
 
         // Generate a mouse wheel step event when the accumulated delta
         // for one of the axes is large enough.
-        if (Math.abs(this._accumulatedWheelDeltaX) >= WHEEL_STEP) {
-            if (this._accumulatedWheelDeltaX < 0) {
-                this._handleMouseButton(pos.x, pos.y, bmask | 1 << 5);
-                this._handleMouseButton(pos.x, pos.y, bmask);
-            } else if (this._accumulatedWheelDeltaX > 0) {
-                this._handleMouseButton(pos.x, pos.y, bmask | 1 << 6);
-                this._handleMouseButton(pos.x, pos.y, bmask);
-            }
-
-            this._accumulatedWheelDeltaX = 0;
+        // abacad: emit every accumulated step and keep the remainder. The
+        // upstream code used a single `if` and reset to zero, which collapses
+        // fast trackpad flicks into one notch and loses fractional deltas on
+        // slow scrolling. A while loop tracks the physical distance much more
+        // closely, at the cost of a few more pointer messages on the LAN.
+        while (Math.abs(this._accumulatedWheelDeltaX) >= WHEEL_STEP) {
+            const dir = this._accumulatedWheelDeltaX < 0 ? 5 : 6;
+            this._handleMouseButton(pos.x, pos.y, bmask | 1 << dir);
+            this._handleMouseButton(pos.x, pos.y, bmask);
+            this._accumulatedWheelDeltaX -= Math.sign(this._accumulatedWheelDeltaX) * WHEEL_STEP;
         }
-        if (Math.abs(this._accumulatedWheelDeltaY) >= WHEEL_STEP) {
-            if (this._accumulatedWheelDeltaY < 0) {
-                this._handleMouseButton(pos.x, pos.y, bmask | 1 << 3);
-                this._handleMouseButton(pos.x, pos.y, bmask);
-            } else if (this._accumulatedWheelDeltaY > 0) {
-                this._handleMouseButton(pos.x, pos.y, bmask | 1 << 4);
-                this._handleMouseButton(pos.x, pos.y, bmask);
-            }
-
-            this._accumulatedWheelDeltaY = 0;
+        while (Math.abs(this._accumulatedWheelDeltaY) >= WHEEL_STEP) {
+            const dir = this._accumulatedWheelDeltaY < 0 ? 3 : 4;
+            this._handleMouseButton(pos.x, pos.y, bmask | 1 << dir);
+            this._handleMouseButton(pos.x, pos.y, bmask);
+            this._accumulatedWheelDeltaY -= Math.sign(this._accumulatedWheelDeltaY) * WHEEL_STEP;
         }
     }
 
