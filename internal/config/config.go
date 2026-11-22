@@ -27,6 +27,13 @@ const (
 	ModeGateway = "gateway" // hub terminates RFB auth and injects the device password
 	ModeL4      = "l4"      // blind TCP forwarding; the client authenticates to the device
 	ModeDirect  = "direct"  // catalog only; the hub carries no VNC traffic
+
+	// AuthVNC is the classic 8-byte VNC password (RFB security type 2).
+	AuthVNC = "vnc"
+	// AuthARD is Apple's Diffie-Hellman account sign-in (RFB security type 30).
+	// On macOS this is what attaches to the logged-in console session; the VNC
+	// password path has no user identity and can land on the login window.
+	AuthARD = "ard"
 )
 
 // Device is one VNC server the hub knows about.
@@ -35,6 +42,8 @@ type Device struct {
 	Name      string    `yaml:"name" json:"name"`
 	Host      string    `yaml:"host" json:"host"`
 	Port      int       `yaml:"port" json:"port"`
+	Username  string    `yaml:"username,omitempty" json:"username,omitempty"`
+	Auth      string    `yaml:"auth,omitempty" json:"auth,omitempty"`
 	Password  string    `yaml:"password,omitempty" json:"-"`
 	Platform  string    `yaml:"platform,omitempty" json:"platform,omitempty"`
 	Mode      string    `yaml:"mode,omitempty" json:"mode"`
@@ -139,11 +148,15 @@ func (c *Config) normalize() error {
 		d := &c.Devices[i]
 		d.Name = strings.TrimSpace(d.Name)
 		d.Host = strings.TrimSpace(d.Host)
+		d.Username = strings.TrimSpace(d.Username)
 		if d.Port == 0 {
 			d.Port = 5900
 		}
 		if d.Mode == "" {
 			d.Mode = ModeGateway
+		}
+		if d.Auth == "" {
+			d.Auth = AuthVNC
 		}
 		if d.ID == "" {
 			d.ID = slug(d.Name)
@@ -183,6 +196,14 @@ func (c *Config) Validate() error {
 		case ModeGateway, ModeL4, ModeDirect:
 		default:
 			return fmt.Errorf("device %q: invalid mode %q", d.ID, d.Mode)
+		}
+		switch d.Auth {
+		case AuthVNC, AuthARD:
+		default:
+			return fmt.Errorf("device %q: invalid auth %q", d.ID, d.Auth)
+		}
+		if d.Auth == AuthARD && d.Username == "" {
+			return fmt.Errorf("device %q: macOS account name is required for auth %q", d.ID, d.Auth)
 		}
 		if d.VNCPort != 0 {
 			if d.VNCPort < c.VNCPortStart || d.VNCPort > c.VNCPortEnd {
@@ -233,6 +254,7 @@ func (c *Config) Device(id string) (Device, bool) {
 func (c *Config) AddDevice(d Device) (Device, error) {
 	d.Name = strings.TrimSpace(d.Name)
 	d.Host = strings.TrimSpace(d.Host)
+	d.Username = strings.TrimSpace(d.Username)
 	if d.Name == "" {
 		return Device{}, errors.New("name is required")
 	}
@@ -244,6 +266,9 @@ func (c *Config) AddDevice(d Device) (Device, error) {
 	}
 	if d.Mode == "" {
 		d.Mode = ModeGateway
+	}
+	if d.Auth == "" {
+		d.Auth = AuthVNC
 	}
 	if d.ID == "" {
 		d.ID = slug(d.Name)

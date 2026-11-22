@@ -14,8 +14,9 @@ Your machines already have VNC servers. abacad gives them one quiet place: a bro
 In the default `gateway` mode the hub terminates only the RFB handshake (so the browser never sees a device password, and an agent can use a revocable token). After that it is a blind byte pipe. It never decodes a framebuffer and never synthesizes input.
 
 - **Zero abacad software on devices.** Use each platform's existing VNC server (on Android, droidVNC-NG is the standard choice). On macOS,
-  enable **VNC viewers may control screen with password**; without it, Screen
-  Sharing only offers Apple-specific auth that the hub does not speak.
+  choose **macOS account** sign-in: the hub speaks Apple DH (type 30), which
+  attaches to the logged-in user's console session. The legacy VNC password has
+  no user identity and can land on the login window.
 - **One binary.** Go + embedded noVNC + a few static files. No database, no Node build at runtime.
 - **LAN only.** Remote access is your network layer's job (VPN/firewall); abacad does not implement relays or port forwarding.
 - **Standard AI interface.** An MCP tool lists devices and returns `vnc_host`, `vnc_port`, `token`. The agent connects with any VNC client.
@@ -40,7 +41,8 @@ On first run it creates `~/.config/abacad/config.yaml` and prints the URL and an
 ```
 
 Open the URL in a browser, paste the token, and click **Add device**. Fill in
-the device's name, host, VNC port (usually 5900), and the VNC password. Leave
+the device's name, host, VNC port (usually 5900), and either the VNC password or
+a macOS account. Leave
 **Also open a raw VNC port for agents** unchecked for browser-only access, or
 check it to give an agent a standard VNC endpoint.
 
@@ -157,7 +159,7 @@ More: [docs/security.md](docs/security.md).
 
 v0.1 implements the thin path:
 
-- L7 RFB handshake gateway (browser `None`, agent token, upstream device password)
+- L7 RFB handshake gateway (browser `None`, agent token, upstream VNC password or macOS account via Apple DH type 30)
 - raw VNC listeners per device (`gateway` and `l4`)
 - noVNC browser viewer with vendored assets
 - mDNS discovery and advertising
@@ -168,9 +170,9 @@ v0.1 implements the thin path:
 Not in v0.1: automatic self-signed cert generation, OS keychain, view-only enforcement, thumbnails, recording, OCR, multi-agent leases.
 
 Verified against a real **x11vnc** server (handshake, token, ServerInit, Raw
-framebuffer). macOS Screen Sharing was probed over the LAN: it advertises
-`RFB 003.889` and, without the legacy VNC password checkbox, only security types
-`[30 33 35 36]`. Enable the checkbox (or use TigerVNC) before adding a Mac. See
+framebuffer) and the real macOS Screen Sharing banner/type list. macOS offers
+`RFB 003.889` with Apple DH (type 30), which the hub now performs; choose
+**macOS account** sign-in rather than the legacy VNC password. See
 [docs/device-setup/macos.md](docs/device-setup/macos.md) and decision D15.
 
 ## Development

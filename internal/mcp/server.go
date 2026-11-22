@@ -90,6 +90,8 @@ type deviceOut struct {
 	VNCPort    int    `json:"vnc_port,omitempty"`
 	Token      string `json:"token,omitempty"`
 	Auth       string `json:"auth,omitempty"`
+	SignIn     string `json:"sign_in,omitempty"`
+	Username   string `json:"username,omitempty"`
 	DirectHost string `json:"direct_host,omitempty"`
 	DirectPort int    `json:"direct_port,omitempty"`
 	BrowserURL string `json:"browser_url,omitempty"`
@@ -112,6 +114,8 @@ func (s *Server) listDevices(ctx context.Context, host, baseURL string) (*mcp.Ca
 			Platform:  d.Platform,
 			Online:    d.Online,
 			Mode:      d.Mode,
+			SignIn:    d.Auth,
+			Username:  d.Username,
 			Banner:    d.Banner,
 			Warning:   d.Warning,
 			LastError: d.LastError,

@@ -14,11 +14,9 @@ import (
 // security types a server offers. It does not authenticate and does not select
 // a type; it is a diagnostic for "why can't the hub connect?".
 //
-// A macOS Screen Sharing server with legacy VNC access disabled typically
-// offers only Apple-specific types (for example 30, 33, 35, 36). The hub
-// supports None (1) and classic VNC auth (2), so that result means the operator
-// must enable "VNC viewers may control screen with password" or use a different
-// server.
+// A macOS Screen Sharing server offers Apple-specific types (for example 30,
+// 33, 35, 36) next to the legacy VNC password when that is enabled. Type 30 is
+// the account sign-in that reaches the logged-in console session; see D15.
 func SecurityTypes(ctx context.Context, addr string, timeout time.Duration) (banner string, types []byte, err error) {
 	if timeout <= 0 {
 		timeout = 3 * time.Second
@@ -67,11 +65,23 @@ func SecurityTypes(ctx context.Context, addr string, timeout time.Duration) (ban
 	return banner, types, nil
 }
 
-// SupportsStandardAuth reports whether the hub's supported security types
-// (None or classic VNC auth) are present.
+// SupportsStandardAuth reports whether the password-based types (None or
+// classic VNC auth) are present.
 func SupportsStandardAuth(types []byte) bool {
 	for _, t := range types {
 		if t == 1 || t == 2 {
+			return true
+		}
+	}
+	return false
+}
+
+// SupportsARD reports whether Apple's type 30 account authentication is
+// offered. It is present on macOS Screen Sharing and is the only type that
+// signs the connection in as a specific console user.
+func SupportsARD(types []byte) bool {
+	for _, t := range types {
+		if t == securityTypeARD {
 			return true
 		}
 	}

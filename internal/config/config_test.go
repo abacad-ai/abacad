@@ -102,3 +102,28 @@ func TestRandomDeviceToken(t *testing.T) {
 		seen[tok] = true
 	}
 }
+
+func TestARDAuthDefaultsAndValidation(t *testing.T) {
+	path := testPath(t)
+	c, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := c.AddDevice(Device{Name: "Mac mini", Host: "192.168.1.20", Username: "li", Auth: AuthARD, Password: "pw"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Auth != AuthARD || d.Username != "li" {
+		t.Fatalf("device = %+v", d)
+	}
+	if _, err := c.AddDevice(Device{Name: "No user", Host: "192.168.1.21", Auth: AuthARD}); err == nil {
+		t.Fatal("expected missing macOS username to be rejected")
+	}
+	legacy, err := c.AddDevice(Device{Name: "Legacy", Host: "192.168.1.22", Password: "pw"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacy.Auth != AuthVNC {
+		t.Fatalf("legacy auth = %q", legacy.Auth)
+	}
+}

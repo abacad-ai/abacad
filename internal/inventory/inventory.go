@@ -43,6 +43,8 @@ type AddRequest struct {
 	Name     string `json:"name"`
 	Host     string `json:"host"`
 	Port     int    `json:"port"`
+	Username string `json:"username"`
+	Auth     string `json:"auth"`
 	Password string `json:"password"`
 	Platform string `json:"platform"`
 	Mode     string `json:"mode"`
@@ -54,6 +56,8 @@ type UpdateRequest struct {
 	Name     *string `json:"name"`
 	Host     *string `json:"host"`
 	Port     *int    `json:"port"`
+	Username *string `json:"username"`
+	Auth     *string `json:"auth"`
 	Password *string `json:"password"`
 	Platform *string `json:"platform"`
 	Mode     *string `json:"mode"`
@@ -132,6 +136,8 @@ func (in *Inventory) Add(ctx context.Context, req AddRequest) (View, error) {
 		Name:     req.Name,
 		Host:     req.Host,
 		Port:     req.Port,
+		Username: req.Username,
+		Auth:     req.Auth,
 		Password: req.Password,
 		Platform: req.Platform,
 		Mode:     mode,
@@ -195,6 +201,12 @@ func (in *Inventory) Update(ctx context.Context, id string, req UpdateRequest) (
 		}
 		if req.Port != nil {
 			d.Port = *req.Port
+		}
+		if req.Username != nil {
+			d.Username = strings.TrimSpace(*req.Username)
+		}
+		if req.Auth != nil {
+			d.Auth = *req.Auth
 		}
 		if req.Password != nil {
 			d.Password = *req.Password
@@ -279,6 +291,20 @@ func (in *Inventory) Probe(ctx context.Context, id string) Status {
 	return s
 }
 
+// SetSessionError records why the last browser or agent session closed, so the
+// device card can show the reason instead of a silent disconnect. The next
+// successful probe clears it.
+func (in *Inventory) SetSessionError(id string, err error) {
+	if err == nil {
+		return
+	}
+	in.mu.Lock()
+	st := in.status[id]
+	st.LastError = err.Error()
+	in.status[id] = st
+	in.mu.Unlock()
+}
+
 // CheckAuth probes the RFB security types. It is called when a device is added
 // or edited, not on every health check: it opens one extra connection and is
 // there to turn the most common macOS failure into a readable card warning.
@@ -293,8 +319,17 @@ func (in *Inventory) CheckAuth(ctx context.Context, id string) {
 		return
 	}
 	warning := ""
-	if !rfb.SupportsStandardAuth(types) {
-		warning = fmt.Sprintf("device only offers security types %v; enable \"VNC viewers may control screen with password\" or use TigerVNC", types)
+	switch v.Auth {
+	case config.AuthARD:
+		if !rfb.SupportsARD(types) {
+			warning = fmt.Sprintf("device offers no macOS account sign-in (security types %v)", types)
+		}
+	default:
+		if !rfb.SupportsStandardAuth(types) {
+			warning = fmt.Sprintf("device only offers security types %v; enable \"VNC viewers may control screen with password\" or use TigerVNC", types)
+		} else if rfb.SupportsARD(types) && (v.Platform == "macos" || strings.Contains(v.Banner, "003.889")) {
+			warning = "macOS: switch Sign-in to \"macOS account\". The legacy VNC password has no user identity and can land on the login window."
+		}
 	}
 	in.mu.Lock()
 	st := in.status[id]

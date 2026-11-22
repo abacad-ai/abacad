@@ -114,12 +114,15 @@ func (g *Gateway) handleTCP(id string, conn net.Conn) {
 		err = rfb.Proxy(context.Background(), conn, rfb.Options{
 			UpstreamAddr:   addr,
 			UpstreamPass:   v.Password,
+			UpstreamUser:   v.Username,
+			UpstreamARD:    v.Auth == config.AuthARD,
 			DownstreamAuth: rfb.AuthVNC,
 			Token:          v.Token,
 			Timeout:        5 * time.Second,
 		})
 	}
 	if err != nil {
+		g.inv.SetSessionError(id, err)
 		g.limiter.fail(key)
 	} else {
 		g.limiter.reset(key)
@@ -148,9 +151,14 @@ func (g *Gateway) HandleWS(ctx context.Context, c *WSConn, id string) error {
 		err = rfb.Proxy(ctx, c, rfb.Options{
 			UpstreamAddr:   addr,
 			UpstreamPass:   v.Password,
+			UpstreamUser:   v.Username,
+			UpstreamARD:    v.Auth == config.AuthARD,
 			DownstreamAuth: rfb.AuthNone,
 			Timeout:        5 * time.Second,
 		})
+	}
+	if err != nil {
+		g.inv.SetSessionError(id, err)
 	}
 	g.log.Info("browser vnc close", "device", id, "dur", time.Since(start), "err", err)
 	return err

@@ -70,7 +70,7 @@
 | D12 | v2 从 main 切普通分支，删 v1 目录 | 保留历史；不做 orphan | 低 |
 | D13 | macOS + Android 先打通 | 覆盖 Apple RFB 变体和最难移动端 | 低 |
 | D14 | v0.1 不做缩略图/录像/OCR | 这些会把 hub 变成 RFB 客户端 | 中 |
-| D15 | macOS 用 legacy VNC 密码，不做 Apple DH | Apple 认证要 macOS 账户密码，比独立 VNC 密码更危险 | 中 |
+| D15 | macOS 用账户认证（Apple DH type 30） | legacy VNC 密码没有用户身份，会落到 loginwindow，画面冻结且无法输入 | 中 |
 
 ### D1 — 只做局域网，不做公网中继
 
@@ -184,14 +184,15 @@
 - **改它时必须同时判断**：是否接受引入 RFB 客户端/CPU/存储；是否作为可选模块；是否影响端口/认证。
 - **可逆性**：中；独立模块。
 
-### D15 — macOS 用 legacy VNC 密码，不实现 Apple DH
+### D15 — macOS 用账户认证（Apple DH type 30）
 
-- **决定**：macOS Screen Sharing 必须在 **Computer Settings** 勾选 “VNC viewers may control screen with password”；hub 只支持 `None` 和 classic VNC auth（type 2）。
-- **为什么**：实测一台 macOS 的 Screen Sharing 默认只提供 `[30 33 35 36]`（Apple DH / Apple 专有认证），没有 type 1/2。Apple 认证要么需要 macOS 账户密码，要么是 Apple 私有的 Kerberos/SSO 流程；在 hub 里存 macOS 账户密码，比存一个独立的、可随时改的 VNC 密码危险得多。Apple DH 也不是标准 RFB。
-- **放弃的方案**：实现 Apple DH（需要账户凭据、非标准）；默认改用 TigerVNC（安装/权限/登录屏限制更多）。
-- **改它时必须同时判断**：是否愿意在 hub 里存 macOS 账户密码；Apple 协议在不同 macOS 版本的差异；TigerVNC 的屏幕录制/辅助功能权限；是否值得为 macOS 单独维护一条认证路径。
-- **可逆性**：中；Apple DH 可以作为独立认证后端加入，不影响现有 VNC auth 路径。
-- **诊断**：设备卡片会显示 warning（MCP 输出里也有）；如果看到 `[30 33 35 36]` 且没有 `1`/`2`，就是这个问题。
+- **决定**：macOS 设备默认用 **macOS account** 登录：hub 实现 Apple DH（security type 30），用账户短名 + 账户密码认证，再按普通 RFB 3.8 转发。legacy VNC 密码（type 2）仍保留，作为兼容路径。
+- **为什么**：type 2 只有一个机器级密码，没有用户身份。当前 macOS 会把它接到 `loginwindow` 会话，表现为「能看到登录画面、时钟停在登录那一刻、键鼠没反应」，但 ping 和 5900 都正常。这不是显示器睡眠，也不是 hub 丢键。noVNC-ARD 在同一台 Mac 上正常，是因为它用 type 30/33 并以具体用户登录，然后选择 console 会话。Apple DH 虽然非标准，但 noVNC 上游 1.6.0 已实现，协议格式稳定，4096-bit DH 在 Go 里也只是一次普通模幂。
+- **代价**：hub 需要存 macOS 账户密码（`config.yaml` 0600）。这比 8 字符 VNC 密码更敏感；建议专用本地账户，或只在可信 LAN 的 hub 上使用。仍然不引入 keychain，属于 D9 的同一信任模型。
+- **放弃的方案**：只支持 type 2（无法进入已登录会话）；只支持 type 33/35/36（RSA tunnel 更复杂，收益不明显）；macOS 换 TigerVNC（安装/权限/登录屏限制更多）。
+- **改它时必须同时判断**：D9 的凭据模型；macOS 版本差异（type 30 的参数长度、错误码）；Remote Management 的访问列表；是否要给账户密码做静态加密/keychain；MCP 输出里的 `sign_in`/`username` 字段。
+- **可逆性**：中；type 30 是独立的 `ardAuth` 路径，不影响 type 2/None；设备级 `auth: vnc` 可随时切回。
+- **诊断**：设备卡片会显示 warning（MCP 输出里也有）。如果 macOS 卡片还写着 `switch Sign-in to "macOS account"`，说明它仍在用 legacy VNC 密码。
 
 ### 决策之间的耦合
 
@@ -201,7 +202,7 @@
 - **改 D5（默认裸 VNC）**：D6/D11 的端口和 Docker 方案变成主路径。
 - **改 D8（做 MCP 动作）**：D3 变成重方案，D6 可能消失。
 - **改 D9（不存密码）**：D7 的浏览器免密失效，UX 退回每次输入。
-- **改 D15（支持 Apple DH）**：D9 的凭据模型要变（可能存 macOS 账户密码）；D2 的“只用标准组件”也要修正。
+- **改 D15（回到 legacy VNC 密码）**：D9 的凭据模型变简单，但 macOS 只能到 loginwindow，浏览器/agent 都不可控；D6 的端口和 D7 的 L7 仍在。
 
 ### 稳定性分级
 
@@ -599,7 +600,7 @@ docs/
 |---|---|---|
 | VNC auth 只有 8 字符 DES | 中高 | LAN + 防火墙 + token 轮换 + 失败锁定；支持 VeNCrypt 的设备优先 TLS |
 | L7 握手实现有坑（3.3/3.7/3.8、SecurityResult、VeNCrypt） | 中 | 只支持 3.8 + VNC auth/None；先跑通 TigerVNC/macOS/Android；VeNCrypt 后置 |
-| macOS Screen Sharing 是 Apple 变体 | 中 | Phase 0 实测；不行就 macOS 换 TigerVNC，或降为 view-only |
+| macOS Screen Sharing 是 Apple 变体 | 中 | 已实现 type 30 账户认证；不行再评估 type 33 或 TigerVNC |
 | 一设备一端口，端口多 | 低 | 端口池 5901–5999；UI 隐藏细节；文档写清楚 |
 | agent 没有 VNC 客户端 | 中 | 可选 CLI；再不行才做 MCP `screenshot/click` 适配器 |
 | Android 10+ 每次开机授权 | 中 | 文档给 `adb appops`；或保留极小自研 App（唯一例外） |
@@ -671,7 +672,7 @@ docs/
 - **MCP Streamable HTTP**：已改为 `/mcp`（会话 + JSON、Bearer admin token）；stdio 命令已移除。
 - **UI 编辑**：已接入 `PATCH /api/devices/{id}`；添加、编辑、删除、probe 都在网页里。
 - **token 轮换**：还没有 UI/命令；admin token 与设备 token 目前都需要改配置后重启。
-- **真实设备矩阵**：x11vnc 已端到端验证；一台真实 macOS Screen Sharing 已验证 banner 与 security types（`RFB 003.889`，默认 `[30 33 35 36]`）。macOS 完整控制需要先按 D15 打开 legacy VNC password；droidVNC-NG、Windows TigerVNC 待实测。
+- **真实设备矩阵**：x11vnc 已端到端验证；一台真实 macOS Screen Sharing 已验证 banner、security types（`RFB 003.889`，`[30 33 36 2 35]`）和 type 30 DH 参数（generator 5，4096-bit prime）。macOS 账户认证的完整控制待用真实账户做一次端到端确认；droidVNC-NG、Windows TigerVNC 待实测。
 - **mDNS 在 Docker bridge 下不通**：按 D11 用 host network 或手动添加。
 
 ### 与原计划的偏差

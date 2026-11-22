@@ -32,6 +32,8 @@ const (
 type Options struct {
 	UpstreamAddr   string
 	UpstreamPass   string // the real device password; never sent downstream
+	UpstreamUser   string // macOS account name for ARD authentication
+	UpstreamARD    bool   // use Apple DH (security type 30) instead of a VNC password
 	DownstreamAuth AuthMode
 	Token          string // 8 characters when DownstreamAuth is AuthVNC
 	Timeout        time.Duration
@@ -100,7 +102,7 @@ func handshake(dIn *bufio.Reader, dOut io.Writer, uIn *bufio.Reader, uOut io.Wri
 		return fmt.Errorf("write device version: %w", err)
 	}
 
-	if err := negotiateUpstream(uIn, uOut, upVer, opt.UpstreamPass); err != nil {
+	if err := negotiateUpstream(uIn, uOut, upVer, opt.UpstreamPass, opt.UpstreamUser, opt.UpstreamARD); err != nil {
 		return fmt.Errorf("upstream authentication: %w", err)
 	}
 	if err := negotiateDownstream(dIn, dOut, opt.DownstreamAuth, opt.Token); err != nil {
@@ -191,7 +193,7 @@ func upstreamVersion(banner string) (string, error) {
 	}
 }
 
-func negotiateUpstream(in *bufio.Reader, out io.Writer, ver, password string) error {
+func negotiateUpstream(in *bufio.Reader, out io.Writer, ver, password, username string, useARD bool) error {
 	var types []byte
 	if ver == "RFB 003.003\n" {
 		var t uint32
@@ -220,9 +222,15 @@ func negotiateUpstream(in *bufio.Reader, out io.Writer, ver, password string) er
 	}
 
 	var chosen byte
-	if password != "" && bytes.Contains(types, []byte{2}) {
+	switch {
+	case useARD:
+		if !bytes.Contains(types, []byte{securityTypeARD}) {
+			return fmt.Errorf("device offers no macOS account authentication (type 30; offered %v)", types)
+		}
+		chosen = securityTypeARD
+	case password != "" && bytes.Contains(types, []byte{2}):
 		chosen = 2
-	} else if bytes.Contains(types, []byte{1}) {
+	case bytes.Contains(types, []byte{1}):
 		chosen = 1
 	}
 	if chosen == 0 {
@@ -234,7 +242,8 @@ func negotiateUpstream(in *bufio.Reader, out io.Writer, ver, password string) er
 		}
 	}
 
-	if chosen == 2 {
+	switch chosen {
+	case 2:
 		challenge := make([]byte, 16)
 		if _, err := io.ReadFull(in, challenge); err != nil {
 			return err
@@ -246,11 +255,15 @@ func negotiateUpstream(in *bufio.Reader, out io.Writer, ver, password string) er
 		if _, err := out.Write(resp); err != nil {
 			return err
 		}
+	case securityTypeARD:
+		if err := ardAuth(in, out, username, password); err != nil {
+			return err
+		}
 	}
 
 	// 3.8 sends SecurityResult for None as well; older versions only for VNC
 	// auth.
-	if chosen == 2 || ver == "RFB 003.008\n" {
+	if chosen == 2 || chosen == securityTypeARD || ver == "RFB 003.008\n" {
 		var result uint32
 		if err := binary.Read(in, binary.BigEndian, &result); err != nil {
 			return err

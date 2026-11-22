@@ -86,7 +86,16 @@
         <input name="port" type="number" value="5900" min="1" max="65535">
       </label>
     </div>
-    <label>VNC password
+    <label>Sign-in
+      <select name="auth">
+        <option value="vnc">VNC password</option>
+        <option value="ard">macOS account (recommended for Mac)</option>
+      </select>
+    </label>
+    <label id="username-field" hidden>macOS username
+      <input name="username" placeholder="li" autocomplete="off">
+    </label>
+    <label><span id="password-label">VNC password</span>
       <input name="password" type="password" placeholder="the password you set on the device">
     </label>
     <div class="row">
@@ -108,7 +117,7 @@
       </label>
     </div>
     <label class="check"><input name="expose" type="checkbox"> Also open a raw VNC port for agents</label>
-    <p class="hint">Gateway keeps the device password in the hub and gives agents a revocable token. Raw TCP lets a VNC client authenticate directly to the device.</p>
+    <p class="hint">Gateway keeps the device password in the hub and gives agents a revocable token. On macOS, <strong>macOS account</strong> signs in as the logged-in user; the legacy VNC password has no user identity and can show only the login window. Raw TCP lets a VNC client authenticate directly to the device.</p>
     <p id="add-error" class="error" hidden></p>
     <div class="dialog-actions">
       <button type="button" class="btn ghost" data-close>Cancel</button>

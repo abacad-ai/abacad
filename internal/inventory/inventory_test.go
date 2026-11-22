@@ -122,3 +122,31 @@ func TestAddRejectsInvalidMode(t *testing.T) {
 		t.Fatal("expected an error")
 	}
 }
+
+func TestAddARDAccount(t *testing.T) {
+	host, port, stop := startBannerServer(t)
+	defer stop()
+
+	inv := testInventory(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	v, err := inv.Add(ctx, AddRequest{
+		Name: "Mac mini", Host: host, Port: port, Auth: config.AuthARD,
+		Username: "li", Password: "account-pw", Platform: "macos",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Auth != config.AuthARD || v.Username != "li" {
+		t.Fatalf("device = %+v", v)
+	}
+	reloaded, err := config.Load(inv.Config().Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, ok := reloaded.Device(v.ID)
+	if !ok || d.Auth != config.AuthARD || d.Username != "li" {
+		t.Fatalf("reloaded = %+v, ok=%v", d, ok)
+	}
+}

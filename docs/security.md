@@ -45,6 +45,13 @@ Each device gets an 8-character token. It is the VNC password an agent uses when
 connecting to the hub's raw port. The real device password never leaves the hub
 in `gateway` mode.
 
+On macOS, the hub can authenticate with the **macOS account** (Apple DH, RFB
+type 30) instead of a legacy VNC password. That stores a more capable
+credential: the account password, not an 8-character VNC password. Prefer a
+dedicated local account for remote control if you do not want to store your
+main account's password. The config file remains `0600`; there is no OS
+keychain yet.
+
 To rotate a token, edit `token:` in the config and restart the hub (or update the
 device through the API in a later version). Removing the device closes its
 listener immediately.
@@ -65,6 +72,7 @@ listener immediately.
 1. Rotate the admin token by editing `admin_token` in the config and restarting
    the hub.
 2. Rotate the affected device token(s).
-3. Change the device's VNC password.
+3. Change the device's VNC password, or the macOS account password if the
+   device uses `auth: ard`.
 4. Remove the device from the hub if it is no longer trusted.
 5. Check the hub's logs for connections you do not recognize.

@@ -8,6 +8,7 @@ const state = {
   authenticated: false,
   timer: null,
   editing: null,
+  editingAuth: null,
 };
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
@@ -142,6 +143,7 @@ function deviceCard(d) {
   if (d.banner) chips.push(`<span class="chip">${esc(d.banner)}</span>`);
   if (mode === "l4") chips.push(`<span class="chip">L4 · device password</span>`);
   if (mode === "direct") chips.push(`<span class="chip">catalog only</span>`);
+  if ((d.auth || "vnc") === "ard") chips.push(`<span class="chip">macOS account${d.username ? " · " + esc(d.username) : ""}</span>`);
 
   const actions = [];
   if (canOpen) actions.push(`<a class="btn primary" href="/vnc/${encodeURIComponent(d.id)}" target="_blank" rel="noopener">Open</a>`);
@@ -179,20 +181,35 @@ function renderDiscovered() {
   list._entries = entries;
 }
 
+function updateAuthFields(form) {
+  const ard = form.elements.auth.value === "ard";
+  $("#username-field").hidden = !ard;
+  form.elements.username.required = ard;
+  $("#password-label").textContent = ard ? "macOS account password" : "VNC password";
+  const changed = state.editing && state.editingAuth !== form.elements.auth.value;
+  const keep = state.editing && !changed ? "leave blank to keep the current password" : "";
+  form.elements.password.placeholder = keep || (ard
+    ? "the password you use to log in to the Mac"
+    : "the password you set on the device");
+}
+
 function openAdd(prefill = {}) {
   const form = $("#add-form");
   state.editing = null;
+  state.editingAuth = null;
   form.reset();
   form.elements.name.value = prefill.name || "";
   form.elements.host.value = prefill.host || "";
   form.elements.port.value = prefill.port || 5900;
   form.elements.host.disabled = false;
   form.elements.port.disabled = false;
+  form.elements.auth.value = prefill.auth || (prefill.platform === "macos" ? "ard" : "vnc");
+  form.elements.username.value = prefill.username || "";
   form.elements.password.value = "";
-  form.elements.password.placeholder = "the password you set on the device";
   form.elements.platform.value = prefill.platform || "";
   form.elements.mode.value = prefill.mode || "gateway";
   form.elements.expose.checked = !!prefill.expose;
+  updateAuthFields(form);
   $("#add-title").textContent = "Add a device";
   $("#add-submit").textContent = "Add device";
   $("#add-error").hidden = true;
@@ -203,17 +220,20 @@ function openAdd(prefill = {}) {
 function openEdit(d) {
   const form = $("#add-form");
   state.editing = d;
+  state.editingAuth = d.auth || "vnc";
   form.reset();
   form.elements.name.value = d.name || "";
   form.elements.host.value = d.host || "";
   form.elements.port.value = d.port || 5900;
   form.elements.host.disabled = false;
   form.elements.port.disabled = false;
+  form.elements.auth.value = d.auth || "vnc";
+  form.elements.username.value = d.username || "";
   form.elements.password.value = "";
-  form.elements.password.placeholder = "leave blank to keep the current password";
   form.elements.platform.value = d.platform || "";
   form.elements.mode.value = d.mode || "gateway";
   form.elements.expose.checked = Number(d.vnc_port) > 0;
+  updateAuthFields(form);
   $("#add-title").textContent = "Edit " + (d.name || "device");
   $("#add-submit").textContent = "Save changes";
   $("#add-error").hidden = true;
@@ -231,10 +251,28 @@ async function submitAdd(event) {
     name: form.elements.name.value.trim(),
     host: form.elements.host.value.trim(),
     port: Number(form.elements.port.value) || 5900,
+    auth: form.elements.auth.value,
+    username: form.elements.username.value.trim(),
     platform: form.elements.platform.value,
     mode: form.elements.mode.value,
     expose: form.elements.expose.checked,
   };
+  if (body.auth === "ard" && !body.username) {
+    err.textContent = "macOS username is required for macOS account sign-in.";
+    err.hidden = false;
+    return;
+  }
+  const password = form.elements.password.value;
+  if (body.auth === "ard" && !password && (!editing || state.editingAuth !== body.auth)) {
+    err.textContent = "Enter the macOS account password.";
+    err.hidden = false;
+    return;
+  }
+  if (editing && state.editingAuth !== body.auth && !password) {
+    err.textContent = "Enter the password for the new sign-in method.";
+    err.hidden = false;
+    return;
+  }
   if (!editing) {
     body.password = form.elements.password.value;
   } else if (form.elements.password.value) {
@@ -326,6 +364,7 @@ async function logout() {
 function bind() {
   $("#login-form").addEventListener("submit", login);
   $("#add-form").addEventListener("submit", submitAdd);
+  $("#add-form").elements.auth.addEventListener("change", () => updateAuthFields($("#add-form")));
   $("#add-btn").addEventListener("click", () => openAdd());
   $("#logout-btn").addEventListener("click", logout);
 

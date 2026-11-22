@@ -52,9 +52,11 @@ Output: a JSON object with a `devices` array:
       "vnc_host": "192.168.1.10",
       "vnc_port": 5901,
       "auth": "hub-token",
+      "sign_in": "ard",
+      "username": "li",
       "token": "Abcd1234",
       "browser_url": "http://192.168.1.10:8787/vnc/mac-mini",
-      "banner": "RFB 003.008"
+      "banner": "RFB 003.889"
     }
   ]
 }
@@ -65,6 +67,10 @@ Output: a JSON object with a `devices` array:
 - `auth: "hub-token"` means use `token`. `auth: "device"` means the hub is not
   terminating authentication (L4 or direct mode); use the device's own VNC
   password.
+- `sign_in: "ard"` means the hub signs in to the device with a macOS account
+  (Apple DH, type 30); `username` is that account. `sign_in: "vnc"` or an
+  absent field means the hub uses the legacy VNC password. This is the device
+  sign-in, separate from `auth`, which describes the endpoint the agent uses.
 - `browser_url` is for a human. It is present even when `vnc_port` is absent.
 - `warning` is present when the hub knows the device's authentication is not
   usable (for example, macOS Screen Sharing with only Apple-specific types).

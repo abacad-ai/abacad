@@ -183,7 +183,7 @@ func newTestServer(t *testing.T, upstreamAddr string) (*httptest.Server, *invent
 		_, _ = fmt.Sscanf(p, "%d", &port)
 		cfg.Devices = append(cfg.Devices, config.Device{
 			ID: "mock", Name: "Mock", Host: host, Port: port,
-			Password: "device-pass", Mode: config.ModeGateway, Token: "Abcd1234",
+			Auth: config.AuthVNC, Password: "device-pass", Mode: config.ModeGateway, Token: "Abcd1234",
 		})
 	}
 	if err := cfg.Validate(); err != nil {
