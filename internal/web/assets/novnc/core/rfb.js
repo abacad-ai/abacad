@@ -46,8 +46,7 @@ const DEFAULT_BACKGROUND = 'rgb(40, 40, 40)';
 const MOUSE_MOVE_DELAY = 17;
 
 // Wheel thresholds
-const WHEEL_STEP = 20; // Pixels needed for one step (abacad: was 50; smoother trackpad scrolling)
-const WHEEL_DISCRETE = 100; // A single event this large is a mouse notch, not trackpad travel (abacad)
+const WHEEL_STEP = 50; // Pixels needed for one step
 const WHEEL_LINE_HEIGHT = 19; // Assumed pixels for one line step
 
 // Gesture thresholds
@@ -1255,44 +1254,34 @@ export default class RFB extends EventTargetMixin {
         // Mouse wheel events are sent in steps over VNC. This means that the VNC
         // protocol can't handle a wheel event with specific distance or speed.
         // Therefor, if we get a lot of small mouse wheel events we combine them.
-        //
-        // Generate a mouse wheel step event when the accumulated delta
-        // for one of the axes is large enough.
-        //
-        // abacad: trackpads and mouse wheels need different treatment. A
-        // trackpad reports a stream of small pixel deltas, so draining every
-        // WHEEL_STEP and keeping the remainder gives smooth, proportional
-        // scrolling. A mouse wheel reports one large delta per notch (100 or
-        // 120 pixels on macOS); dividing that by WHEEL_STEP would turn one
-        // notch into five or six, which feels far too fast. Treat a single
-        // event at or above WHEEL_DISCRETE, or any line/page-mode event, as
-        // one notch: send one step and reset, as upstream noVNC does.
-        // Continuous events keep the remainder, clamped so a fast flick
-        // cannot build a large backlog.
-        const emit = (dir) => {
-            this._handleMouseButton(pos.x, pos.y, bmask | 1 << dir);
-            this._handleMouseButton(pos.x, pos.y, bmask);
-        };
-        const flush = (delta, negativeDir, positiveDir, discrete) => {
-            if (discrete) {
-                if (delta !== 0) {
-                    emit(delta < 0 ? negativeDir : positiveDir);
-                }
-                return 0;
-            }
-            while (Math.abs(delta) >= WHEEL_STEP) {
-                emit(delta < 0 ? negativeDir : positiveDir);
-                delta -= Math.sign(delta) * WHEEL_STEP;
-            }
-            const cap = WHEEL_STEP * 2;
-            return Math.max(-cap, Math.min(cap, delta));
-        };
-        const discreteX = ev.deltaMode !== 0 || Math.abs(dX) >= WHEEL_DISCRETE;
-        const discreteY = ev.deltaMode !== 0 || Math.abs(dY) >= WHEEL_DISCRETE;
         this._accumulatedWheelDeltaX += dX;
         this._accumulatedWheelDeltaY += dY;
-        this._accumulatedWheelDeltaX = flush(this._accumulatedWheelDeltaX, 5, 6, discreteX);
-        this._accumulatedWheelDeltaY = flush(this._accumulatedWheelDeltaY, 3, 4, discreteY);
+
+
+        // Generate a mouse wheel step event when the accumulated delta
+        // for one of the axes is large enough.
+        if (Math.abs(this._accumulatedWheelDeltaX) >= WHEEL_STEP) {
+            if (this._accumulatedWheelDeltaX < 0) {
+                this._handleMouseButton(pos.x, pos.y, bmask | 1 << 5);
+                this._handleMouseButton(pos.x, pos.y, bmask);
+            } else if (this._accumulatedWheelDeltaX > 0) {
+                this._handleMouseButton(pos.x, pos.y, bmask | 1 << 6);
+                this._handleMouseButton(pos.x, pos.y, bmask);
+            }
+
+            this._accumulatedWheelDeltaX = 0;
+        }
+        if (Math.abs(this._accumulatedWheelDeltaY) >= WHEEL_STEP) {
+            if (this._accumulatedWheelDeltaY < 0) {
+                this._handleMouseButton(pos.x, pos.y, bmask | 1 << 3);
+                this._handleMouseButton(pos.x, pos.y, bmask);
+            } else if (this._accumulatedWheelDeltaY > 0) {
+                this._handleMouseButton(pos.x, pos.y, bmask | 1 << 4);
+                this._handleMouseButton(pos.x, pos.y, bmask);
+            }
+
+            this._accumulatedWheelDeltaY = 0;
+        }
     }
 
     _fakeMouseMove(ev, elementX, elementY) {

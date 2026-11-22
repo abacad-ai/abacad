@@ -4,6 +4,7 @@ Thumbs.db
 
 # Build output
 /abacad
+/abacad.new
 /bin/
 /dist/
 *.test
