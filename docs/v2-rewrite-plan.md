@@ -65,7 +65,7 @@
 | D7 | L7 握手网关为核心，L4 direct 为模式 | 密码不下发、token 可吊销，但仍只碰握手 | 中 |
 | D8 | AI 接口 = MCP `list_devices` + 裸 VNC | agent 用自己的 VNC 客户端，不学新 API | 中 |
 | D9 | 设备密码存 hub，设备 token 8 字符 | 浏览器免密、可吊销；受 VNC auth 限制 | 中 |
-| D10 | 单二进制、YAML/JSONL、静态 UI、无 DB | 小、快、无迁移、无前端构建 | 低 |
+| D10 | 单二进制、YAML/JSONL、React 前端、无 DB | 运行时仍是一个二进制；前端只在构建时要 Node | 中 |
 | D11 | Docker 首选 host network | mDNS/源 IP/动态端口；bridge 有硬限制 | 低 |
 | D12 | v2 从 main 切普通分支，删 v1 目录 | 保留历史；不做 orphan | 低 |
 | D13 | macOS + Android 先打通 | 覆盖 Apple RFB 变体和最难移动端 | 低 |
@@ -144,13 +144,13 @@
 - **改它时必须同时判断**：静态加密、钥匙串/Secret Service、备份、进程权限、token 爆破/限流、轮换/吊销、审计。
 - **可逆性**：中；存储后端可换，协议不变。
 
-### D10 — 单二进制、YAML/JSONL、静态 UI、无 DB
+### D10 — 单二进制、YAML/JSONL、React 前端、无 DB
 
-- **决定**：单 Go 二进制；YAML 配置；JSONL 审计；静态 HTML/CSS/JS；无 DB/React/Node 构建。
-- **为什么**：部署简单、无迁移、启动快、依赖少；hub 是小工具。
-- **放弃的方案**：SQLite、React、SPA、模板引擎、Redis。
-- **改它时必须同时判断**：设备数量/并发、审计量、UI 复杂度、多用户/权限、迁移工具。
-- **可逆性**：低；文件格式可迁移到 DB；UI 可替换。
+- **决定**：单 Go 二进制；YAML 配置；JSONL 审计；前端是 `frontend/` 下的 Vite + React + React Router + Tailwind + shadcn/ui，构建产物 `internal/web/dist` 通过 `go:embed` 嵌进二进制；无 DB。
+- **为什么**：部署仍然简单（运行时不需要 Node/npm/CDN），但 UI 用标准前端栈维护，不再手写 DOM/HTML；组件、路由、表单和无障碍都走 React 生态。Node 只在 `npm run build` / Docker 构建阶段出现。
+- **放弃的方案**：继续手写静态 HTML/CSS/JS（难维护、状态同步靠 DOM）；服务端模板；SQLite、Redis；运行时从 CDN 加载前端。
+- **改它时必须同时判断**：构建链（Node 版本、lockfile、CI/Docker 两阶段）、`internal/web/dist` 的嵌入/占位、Go embed 的 SPA 路由、前端依赖的许可证/供应链、设备数量/并发、多用户/权限。
+- **可逆性**：中；前端是独立目录，后端 API 和 WebSocket 不变；可以换框架而不动 Go。
 
 ### D11 — Docker 首选 host network
 
@@ -657,7 +657,7 @@ docs/
 - mDNS 浏览 `_rfb._tcp` + 广播 `_abacad._tcp`。
 - MCP `list_devices`（官方 Go SDK，`POST /mcp` Streamable HTTP）。
 - 一个 `serve` 命令（也是默认命令）；设备管理全部在 Web UI。
-- 单二进制、YAML 配置 0600、静态 UI（无 React/Node）。
+- 单二进制、YAML 配置 0600；前端 Vite + React + Tailwind + shadcn，构建产物嵌入二进制（运行时无 Node）。
 - Dockerfile（推荐 host network）、Makefile、CI。
 - 单元测试：RFB 握手（VNC/None、错误 token）、WebSocket 浏览器路径、config、inventory。
 - 对真实 x11vnc 的端到端验证：握手、token、ServerInit、Raw framebuffer。

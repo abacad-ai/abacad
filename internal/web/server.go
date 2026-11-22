@@ -23,7 +23,7 @@ import (
 	mcpserver "abacad/internal/mcp"
 )
 
-//go:embed assets
+//go:embed all:dist all:assets/novnc
 var assets embed.FS
 
 type Server struct {
@@ -33,6 +33,7 @@ type Server struct {
 	mcp     *mcpserver.Server
 	log     *slog.Logger
 	version string
+	dist    fs.FS
 }
 
 func New(inv *inventory.Inventory, gw *gateway.Gateway, disc *discovery.Discovery, mcp *mcpserver.Server, log *slog.Logger, version string) *Server {
@@ -63,10 +64,21 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /vnc/{id}", s.view)
 	mux.HandleFunc("GET /ws/vnc/{id}", s.websocket)
 
-	assetsFS, _ := fs.Sub(assets, "assets")
-	novncFS, _ := fs.Sub(assets, "assets/novnc")
-	fileServer := http.FileServer(http.FS(assetsFS))
-	mux.Handle("GET /assets/", http.StripPrefix("/assets/", fileServer))
+	distFS, err := fs.Sub(assets, "dist")
+	if err != nil {
+		panic("embedded frontend: " + err.Error())
+	}
+	s.dist = distFS
+	novncFS, err := fs.Sub(assets, "assets/novnc")
+	if err != nil {
+		panic("embedded noVNC: " + err.Error())
+	}
+
+	// Vite emits hashed files under dist/assets; they can be cached forever.
+	distAssets, err := fs.Sub(distFS, "assets")
+	if err == nil {
+		mux.Handle("GET /assets/", http.StripPrefix("/assets/", immutable(http.FileServer(http.FS(distAssets)))))
+	}
 	mux.HandleFunc("GET /novnc/{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/novnc/vnc.html", http.StatusFound)
 	})
@@ -75,19 +87,20 @@ func (s *Server) Handler() http.Handler {
 		http.Redirect(w, r, "/novnc/vnc.html", http.StatusFound)
 	})
 	mux.HandleFunc("GET /favicon.svg", func(w http.ResponseWriter, r *http.Request) {
-		b, err := assets.ReadFile("assets/favicon.svg")
+		b, err := fs.ReadFile(distFS, "favicon.svg")
 		if err != nil {
 			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
 		_, _ = w.Write(b)
 	})
 	return securityHeaders(mux)
 }
 
 func (s *Server) index(w http.ResponseWriter, r *http.Request) {
-	s.serveAsset(w, r, "index.html", "text/html; charset=utf-8")
+	s.serveIndex(w)
 }
 
 func (s *Server) view(w http.ResponseWriter, r *http.Request) {
@@ -105,16 +118,19 @@ func (s *Server) view(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "catalog-only device: connect your VNC client directly to "+d.Host+":"+fmt.Sprint(d.Port), http.StatusBadRequest)
 		return
 	}
-	s.serveAsset(w, r, "view.html", "text/html; charset=utf-8")
+	s.serveIndex(w)
 }
 
-func (s *Server) serveAsset(w http.ResponseWriter, r *http.Request, name, typ string) {
-	b, err := assets.ReadFile("assets/" + name)
+// serveIndex returns the Vite entry point. Every other route is handled by the
+// React Router inside it. If the tree was built without the frontend, say so
+// instead of serving a blank 404.
+func (s *Server) serveIndex(w http.ResponseWriter) {
+	b, err := fs.ReadFile(s.dist, "index.html")
 	if err != nil {
-		http.NotFound(w, r)
+		http.Error(w, "frontend not built: run `npm --prefix frontend run build`", http.StatusServiceUnavailable)
 		return
 	}
-	w.Header().Set("Content-Type", typ)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = w.Write(b)
 }
@@ -304,6 +320,13 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+		next.ServeHTTP(w, r)
+	})
+}
+
+func immutable(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		next.ServeHTTP(w, r)
 	})
 }

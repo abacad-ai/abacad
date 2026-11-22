@@ -5,6 +5,8 @@ Thumbs.db
 # Build output
 /abacad
 /abacad.new
+/internal/web/dist/*
+!/internal/web/dist/.gitkeep
 /bin/
 /dist/
 *.test
