@@ -47,6 +47,7 @@ const MOUSE_MOVE_DELAY = 17;
 
 // Wheel thresholds
 const WHEEL_STEP = 20; // Pixels needed for one step (abacad: was 50; smoother trackpad scrolling)
+const WHEEL_DISCRETE = 100; // A single event this large is a mouse notch, not trackpad travel (abacad)
 const WHEEL_LINE_HEIGHT = 19; // Assumed pixels for one line step
 
 // Gesture thresholds
@@ -1254,29 +1255,44 @@ export default class RFB extends EventTargetMixin {
         // Mouse wheel events are sent in steps over VNC. This means that the VNC
         // protocol can't handle a wheel event with specific distance or speed.
         // Therefor, if we get a lot of small mouse wheel events we combine them.
-        this._accumulatedWheelDeltaX += dX;
-        this._accumulatedWheelDeltaY += dY;
-
-
+        //
         // Generate a mouse wheel step event when the accumulated delta
         // for one of the axes is large enough.
-        // abacad: emit every accumulated step and keep the remainder. The
-        // upstream code used a single `if` and reset to zero, which collapses
-        // fast trackpad flicks into one notch and loses fractional deltas on
-        // slow scrolling. A while loop tracks the physical distance much more
-        // closely, at the cost of a few more pointer messages on the LAN.
-        while (Math.abs(this._accumulatedWheelDeltaX) >= WHEEL_STEP) {
-            const dir = this._accumulatedWheelDeltaX < 0 ? 5 : 6;
+        //
+        // abacad: trackpads and mouse wheels need different treatment. A
+        // trackpad reports a stream of small pixel deltas, so draining every
+        // WHEEL_STEP and keeping the remainder gives smooth, proportional
+        // scrolling. A mouse wheel reports one large delta per notch (100 or
+        // 120 pixels on macOS); dividing that by WHEEL_STEP would turn one
+        // notch into five or six, which feels far too fast. Treat a single
+        // event at or above WHEEL_DISCRETE, or any line/page-mode event, as
+        // one notch: send one step and reset, as upstream noVNC does.
+        // Continuous events keep the remainder, clamped so a fast flick
+        // cannot build a large backlog.
+        const emit = (dir) => {
             this._handleMouseButton(pos.x, pos.y, bmask | 1 << dir);
             this._handleMouseButton(pos.x, pos.y, bmask);
-            this._accumulatedWheelDeltaX -= Math.sign(this._accumulatedWheelDeltaX) * WHEEL_STEP;
-        }
-        while (Math.abs(this._accumulatedWheelDeltaY) >= WHEEL_STEP) {
-            const dir = this._accumulatedWheelDeltaY < 0 ? 3 : 4;
-            this._handleMouseButton(pos.x, pos.y, bmask | 1 << dir);
-            this._handleMouseButton(pos.x, pos.y, bmask);
-            this._accumulatedWheelDeltaY -= Math.sign(this._accumulatedWheelDeltaY) * WHEEL_STEP;
-        }
+        };
+        const flush = (delta, negativeDir, positiveDir, discrete) => {
+            if (discrete) {
+                if (delta !== 0) {
+                    emit(delta < 0 ? negativeDir : positiveDir);
+                }
+                return 0;
+            }
+            while (Math.abs(delta) >= WHEEL_STEP) {
+                emit(delta < 0 ? negativeDir : positiveDir);
+                delta -= Math.sign(delta) * WHEEL_STEP;
+            }
+            const cap = WHEEL_STEP * 2;
+            return Math.max(-cap, Math.min(cap, delta));
+        };
+        const discreteX = ev.deltaMode !== 0 || Math.abs(dX) >= WHEEL_DISCRETE;
+        const discreteY = ev.deltaMode !== 0 || Math.abs(dY) >= WHEEL_DISCRETE;
+        this._accumulatedWheelDeltaX += dX;
+        this._accumulatedWheelDeltaY += dY;
+        this._accumulatedWheelDeltaX = flush(this._accumulatedWheelDeltaX, 5, 6, discreteX);
+        this._accumulatedWheelDeltaY = flush(this._accumulatedWheelDeltaY, 3, 4, discreteY);
     }
 
     _fakeMouseMove(ev, elementX, elementY) {
