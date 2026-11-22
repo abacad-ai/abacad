@@ -127,3 +127,34 @@ func TestARDAuthDefaultsAndValidation(t *testing.T) {
 		t.Fatalf("legacy auth = %q", legacy.Auth)
 	}
 }
+
+func TestHealthDefaultsAndValidation(t *testing.T) {
+	path := testPath(t)
+	c, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := c.AddDevice(Device{Name: "Passive", Host: "10.0.0.2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Health != HealthSession {
+		t.Fatalf("default health = %q", d.Health)
+	}
+	cmd, err := c.AddDevice(Device{
+		Name: "Command", Host: "10.0.0.3",
+		HealthCommand: "ssh debian 'systemctl is-active tigervncserver@:2'",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmd.Health != HealthCommand {
+		t.Fatalf("command health = %q", cmd.Health)
+	}
+	if _, err := c.AddDevice(Device{Name: "Bad", Host: "10.0.0.4", Health: "poll"}); err == nil {
+		t.Fatal("expected an invalid health mode to be rejected")
+	}
+	if _, err := c.AddDevice(Device{Name: "Empty", Host: "10.0.0.5", Health: HealthCommand}); err == nil {
+		t.Fatal("expected a missing health command to be rejected")
+	}
+}

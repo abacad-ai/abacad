@@ -108,6 +108,11 @@ func (g *Gateway) handleTCP(id string, conn net.Conn) {
 	g.log.Info("raw vnc connect", "device", id, "remote", conn.RemoteAddr().String(), "mode", v.Mode)
 
 	var err error
+	ready := false
+	markReady := func() {
+		ready = true
+		g.inv.MarkOnline(id)
+	}
 	if v.Mode == config.ModeL4 {
 		err = pipeL4(conn, addr)
 	} else {
@@ -119,10 +124,19 @@ func (g *Gateway) handleTCP(id string, conn net.Conn) {
 			DownstreamAuth: rfb.AuthVNC,
 			Token:          v.Token,
 			Timeout:        5 * time.Second,
+			OnReady:        markReady,
 		})
 	}
 	if err != nil {
-		g.inv.SetSessionError(id, err)
+		switch {
+		case rfb.IsDownstreamAuthFailure(err):
+			// The hub rejected the client token before touching the device.
+			g.inv.SetSessionError(id, err)
+		case ready:
+			g.inv.SetSessionError(id, err)
+		default:
+			g.inv.MarkOffline(id, err)
+		}
 		g.limiter.fail(key)
 	} else {
 		g.limiter.reset(key)
@@ -145,6 +159,11 @@ func (g *Gateway) HandleWS(ctx context.Context, c *WSConn, id string) error {
 	g.log.Info("browser vnc connect", "device", id, "remote", c.RemoteAddr().String())
 
 	var err error
+	ready := false
+	markReady := func() {
+		ready = true
+		g.inv.MarkOnline(id)
+	}
 	if v.Mode == config.ModeL4 {
 		err = pipeL4(c, addr)
 	} else {
@@ -155,10 +174,15 @@ func (g *Gateway) HandleWS(ctx context.Context, c *WSConn, id string) error {
 			UpstreamARD:    v.Auth == config.AuthARD,
 			DownstreamAuth: rfb.AuthNone,
 			Timeout:        5 * time.Second,
+			OnReady:        markReady,
 		})
 	}
 	if err != nil {
-		g.inv.SetSessionError(id, err)
+		if ready {
+			g.inv.SetSessionError(id, err)
+		} else {
+			g.inv.MarkOffline(id, err)
+		}
 	}
 	g.log.Info("browser vnc close", "device", id, "dur", time.Since(start), "err", err)
 	return err

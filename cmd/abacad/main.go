@@ -142,7 +142,7 @@ func cmdServe(args []string) error {
 		},
 	}
 
-	go inv.Run(ctx, 30*time.Second)
+	go inv.Run(ctx)
 	go func() {
 		log.Info("abacad ready", "url", baseURL, "mcp", baseURL+"/mcp", "devices", len(inv.Devices()))
 		fmt.Printf("\n  abacad is running\n  → %s\n  MCP: %s/mcp  (Authorization: Bearer <admin token>)\n  admin token: %s\n\n", baseURL, baseURL, cfg.AdminToken)

@@ -2,6 +2,7 @@ package rfb
 
 import (
 	"bufio"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -123,4 +124,101 @@ func TestLiveServer(t *testing.T) {
 		t.Logf("rect %d: %dx%d raw %d bytes", i, rw, rhgt, len(pixels))
 	}
 	fmt.Println("live VNC probe: ok")
+}
+
+// TestLiveProbe is the opt-in authenticated health probe against a real device:
+//
+//	ABACAD_LIVE_VNC=172.16.1.186:5902 ABACAD_LIVE_PASSWORD=... go test ./internal/rfb -run TestLiveProbe -v
+func TestLiveProbe(t *testing.T) {
+	addr := os.Getenv("ABACAD_LIVE_VNC")
+	password := os.Getenv("ABACAD_LIVE_PASSWORD")
+	if addr == "" || password == "" {
+		t.Skip("set ABACAD_LIVE_VNC and ABACAD_LIVE_PASSWORD to run")
+	}
+	res, err := Probe(context.Background(), ProbeOptions{
+		Addr: addr, Password: password, Timeout: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("probe: %v (blacklisted=%v, auth failure=%v)", err, IsTooManySecurityFailures(err), IsAuthFailure(err))
+	}
+	t.Logf("probe ok: banner=%q desktop=%q %dx%d types=%v", res.Banner, res.DesktopName, res.Width, res.Height, res.Types)
+}
+
+// TestLiveProbeRepeated is the acceptance check for the blacklist fix: ten
+// complete authenticated probes, followed by a normal client session, against
+// a real server. It is opt-in like TestLiveProbe.
+func TestLiveProbeRepeated(t *testing.T) {
+	addr := os.Getenv("ABACAD_LIVE_VNC")
+	password := os.Getenv("ABACAD_LIVE_PASSWORD")
+	if addr == "" || password == "" {
+		t.Skip("set ABACAD_LIVE_VNC and ABACAD_LIVE_PASSWORD to run")
+	}
+	for i := 0; i < 10; i++ {
+		if _, err := Probe(context.Background(), ProbeOptions{
+			Addr: addr, Password: password, Timeout: 5 * time.Second,
+		}); err != nil {
+			t.Fatalf("probe %d: %v", i+1, err)
+		}
+	}
+
+	downClient, downProxy := net.Pipe()
+	defer downClient.Close()
+	proxyErr := make(chan error, 1)
+	go func() {
+		proxyErr <- Proxy(context.Background(), downProxy, Options{
+			UpstreamAddr:   addr,
+			UpstreamPass:   password,
+			DownstreamAuth: AuthNone,
+			Timeout:        5 * time.Second,
+		})
+	}()
+
+	_ = downClient.SetDeadline(time.Now().Add(5 * time.Second))
+	br := bufio.NewReader(downClient)
+	if _, err := br.ReadString('\n'); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(downClient, "RFB 003.008\n"); err != nil {
+		t.Fatal(err)
+	}
+	n, err := br.ReadByte()
+	if err != nil {
+		t.Fatal(err)
+	}
+	types := make([]byte, int(n))
+	if _, err := io.ReadFull(br, types); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := downClient.Write([]byte{1}); err != nil { // None
+		t.Fatal(err)
+	}
+	var result uint32
+	if err := binary.Read(br, binary.BigEndian, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result != 0 {
+		t.Fatalf("downstream security result = %d", result)
+	}
+	if _, err := downClient.Write([]byte{1}); err != nil { // ClientInit
+		t.Fatal(err)
+	}
+	hdr := make([]byte, 24)
+	if _, err := io.ReadFull(br, hdr); err != nil {
+		t.Fatal(err)
+	}
+	nameLen := binary.BigEndian.Uint32(hdr[20:24])
+	name := make([]byte, nameLen)
+	if _, err := io.ReadFull(br, name); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("10 probes + real client: %q", name)
+	_ = downClient.Close()
+	select {
+	case err := <-proxyErr:
+		if err != nil {
+			t.Fatalf("proxy: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("proxy did not finish")
+	}
 }

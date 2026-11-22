@@ -39,13 +39,18 @@ export function DeviceCard({
   const signIn = device.auth ?? "vnc"
   const port = device.vnc_port ?? 0
   const canOpen = mode !== "direct"
+  const known = device.known ?? false
+  const statusLabel = known ? (device.online ? "online" : "offline") : "not checked"
   const usesToken = mode === "gateway" && Boolean(device.token)
 
   const chips: string[] = []
   chips.push(port ? `VNC :${port}` : "browser only")
   if (device.banner) chips.push(device.banner)
+  if (device.detail) chips.push(device.detail)
   if (mode === "l4") chips.push("L4 · device password")
   if (mode === "direct") chips.push("catalog only")
+  if (device.health === "command") chips.push("health · command")
+  if (device.health === "vnc") chips.push("health · authenticated RFB")
   if (signIn === "ard") {
     chips.push(`macOS account${device.username ? ` · ${device.username}` : ""}`)
   }
@@ -62,16 +67,20 @@ export function DeviceCard({
         <span
           className={cn(
             "inline-flex items-center gap-1.5 text-xs font-medium",
-            device.online ? "text-emerald-700" : "text-muted-foreground",
+            known && device.online ? "text-emerald-700" : "text-muted-foreground",
           )}
         >
           <span
             className={cn(
               "size-1.5 rounded-full",
-              device.online ? "bg-emerald-500" : "bg-muted-foreground/40",
+              known && device.online
+                ? "bg-emerald-500"
+                : known
+                  ? "bg-red-400/70"
+                  : "border border-muted-foreground/50",
             )}
           />
-          {device.online ? "online" : "offline"}
+          {statusLabel}
         </span>
       </CardHeader>
 

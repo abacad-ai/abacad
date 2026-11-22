@@ -45,6 +45,12 @@ const UI = {
     inhibitReconnect: true,
     reconnectCallback: null,
     reconnectPassword: null,
+    // Exponential backoff for network hiccups. A security failure stops
+    // automatic retries entirely: hammering a server that has blacklisted this
+    // client only extends the lockout.
+    reconnectAttempt: 0,
+    reconnectMaxDelay: 300000,
+    securityBlocked: false,
 
     async start(options={}) {
         UI.customSettings = options.settings || {};
@@ -1030,6 +1036,10 @@ const UI = {
             return;
         }
 
+        // A human pressed Reconnect (or the first manual connect happened):
+        // clear the security stop so the attempt is allowed again.
+        UI.securityBlocked = false;
+
         const host = UI.getSetting('host');
         const port = UI.getSetting('port');
         const path = UI.getSetting('path');
@@ -1144,6 +1154,8 @@ const UI = {
     connectFinished(e) {
         UI.connected = true;
         UI.inhibitReconnect = false;
+        UI.reconnectAttempt = 0;
+        UI.securityBlocked = false;
 
         let msg;
         if (UI.getSetting('encrypt')) {
@@ -1178,11 +1190,26 @@ const UI = {
                 UI.showStatus(_("Failed to connect to server"), 'error');
             }
         }
-        // If reconnecting is allowed process it now
+        // Never retry automatically after a security failure. The device may
+        // have blacklisted this client, and another immediate attempt would
+        // only make the lockout worse.
+        if (UI.securityBlocked) {
+            UI.updateVisualState('disconnected');
+            UI.openControlbar();
+            UI.openConnectPanel();
+            return;
+        }
+
+        // If reconnecting is allowed process it now, with exponential backoff
+        // (1.5s, 3s, 6s, … capped at five minutes). A fixed 1.5s loop is what
+        // turns a transient outage into a server-side rate-limit lockout.
         if (UI.getSetting('reconnect', false) === true && !UI.inhibitReconnect) {
             UI.updateVisualState('reconnecting');
 
-            const delay = parseInt(UI.getSetting('reconnect_delay'));
+            const base = Math.max(500, parseInt(UI.getSetting('reconnect_delay')) || 1500);
+            const delay = Math.min(base * Math.pow(2, UI.reconnectAttempt), UI.reconnectMaxDelay);
+            UI.reconnectAttempt += 1;
+            UI.showStatus(_("Reconnecting in ") + Math.ceil(delay / 1000) + "s…", 'normal');
             UI.reconnectCallback = setTimeout(UI.reconnect, delay);
             return;
         } else {
@@ -1205,8 +1232,10 @@ const UI = {
             msg = _("New connection has been rejected with reason: ") +
                 e.detail.reason;
         } else {
-            msg = _("New connection has been rejected");
+            msg = _("New connection has been rejected. If the server is rate-limiting this client, wait and retry.");
         }
+        UI.securityBlocked = true;
+        UI.inhibitReconnect = true;
         UI.showStatus(msg, 'error');
     },
 

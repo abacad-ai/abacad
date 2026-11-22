@@ -38,7 +38,7 @@ func TestNegotiateARD(t *testing.T) {
 	if _, err := io.WriteString(client, "RFB 003.008\n"); err != nil {
 		t.Fatal(err)
 	}
-	if err := negotiateUpstream(in, client, "RFB 003.008\n", "pässwörd", "li", true); err != nil {
+	if _, _, err := negotiateUpstream(in, client, "RFB 003.008\n", "pässwörd", "li", true); err != nil {
 		t.Fatal(err)
 	}
 	if err := <-serverErr; err != nil {
@@ -145,7 +145,7 @@ func TestNegotiateARDRequiresType30(t *testing.T) {
 	if _, err := io.WriteString(client, "RFB 003.008\n"); err != nil {
 		t.Fatal(err)
 	}
-	err := negotiateUpstream(in, client, "RFB 003.008\n", "pw", "li", true)
+	_, _, err := negotiateUpstream(in, client, "RFB 003.008\n", "pw", "li", true)
 	if err == nil || !strings.Contains(err.Error(), "type 30") {
 		t.Fatalf("err = %v", err)
 	}

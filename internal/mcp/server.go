@@ -85,6 +85,8 @@ type deviceOut struct {
 	Name       string `json:"name"`
 	Platform   string `json:"platform,omitempty"`
 	Online     bool   `json:"online"`
+	Known      bool   `json:"known"`
+	Status     string `json:"status"`
 	Mode       string `json:"mode"`
 	VNCHost    string `json:"vnc_host,omitempty"`
 	VNCPort    int    `json:"vnc_port,omitempty"`
@@ -96,12 +98,23 @@ type deviceOut struct {
 	DirectPort int    `json:"direct_port,omitempty"`
 	BrowserURL string `json:"browser_url,omitempty"`
 	Banner     string `json:"banner,omitempty"`
+	Detail     string `json:"detail,omitempty"`
 	Warning    string `json:"warning,omitempty"`
 	LastError  string `json:"last_error,omitempty"`
 }
 
 type listOut struct {
 	Devices []deviceOut `json:"devices"`
+}
+
+func deviceStatus(known, online bool) string {
+	if !known {
+		return "unknown"
+	}
+	if online {
+		return "online"
+	}
+	return "offline"
 }
 
 func (s *Server) listDevices(ctx context.Context, host, baseURL string) (*mcp.CallToolResult, any, error) {
@@ -113,10 +126,13 @@ func (s *Server) listDevices(ctx context.Context, host, baseURL string) (*mcp.Ca
 			Name:      d.Name,
 			Platform:  d.Platform,
 			Online:    d.Online,
+			Known:     d.Known,
+			Status:    deviceStatus(d.Known, d.Online),
 			Mode:      d.Mode,
 			SignIn:    d.Auth,
 			Username:  d.Username,
 			Banner:    d.Banner,
+			Detail:    d.Detail,
 			Warning:   d.Warning,
 			LastError: d.LastError,
 		}

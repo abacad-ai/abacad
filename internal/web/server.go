@@ -232,7 +232,10 @@ func (s *Server) probeDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st := s.inv.Probe(r.Context(), id)
-	s.inv.CheckAuth(r.Context(), id)
+	if st.Throttled {
+		writeErr(w, http.StatusTooManyRequests, st.ThrottleMessage)
+		return
+	}
 	if v, ok := s.inv.Device(id); ok {
 		writeJSON(w, http.StatusOK, map[string]any{"status": st, "device": v})
 		return

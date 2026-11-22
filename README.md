@@ -113,6 +113,8 @@ It exposes one tool, `list_devices`:
       "id": "mac-mini",
       "name": "Mac mini",
       "online": true,
+      "known": true,
+      "status": "online",
       "mode": "gateway",
       "vnc_host": "192.168.1.10",
       "vnc_port": 5901,
@@ -136,6 +138,42 @@ VNC password. No new screen API to learn.
 | `direct` | no | no | catalog only; the agent connects to the device directly |
 
 Raw VNC ports are opt-in per device. The browser path only needs one HTTP port.
+
+## Health checks
+
+The hub does **not** port-scan devices. TigerVNC counts every connection that
+closes before authenticating as a security failure, and that counter does not
+decay: a 30-second TCP probe eventually blacklists the hub's IP permanently.
+There is no side-effect-free way to probe a VNC port.
+
+Each device chooses one health mode:
+
+| `health` | What it does |
+|---|---|
+| `session` (default) | Opens no connection. A device becomes online after a browser or agent session authenticates; the state goes stale after 10 minutes. |
+| `command` | Runs `health_command` on the hub every 60 seconds, with exponential backoff. Exit 0 means online. Prefer SSH/systemd or an agent report. |
+| `vnc` | One complete authenticated RFB handshake, at most every 5 minutes, with bounded failures. |
+
+The command mode is the recommended way to watch a server that is already
+reachable over SSH. It runs on the hub host, so `ssh` and the key must be
+available there (and inside the container if you run abacad in Docker):
+
+```yaml
+health: command
+health_command: ssh -o BatchMode=yes debian 'systemctl is-active tigervncserver@:2'
+```
+
+In `vnc` mode the hub sends `RFB 003.008`, selects VncAuth or Apple DH,
+authenticates with the stored credential, reads ServerInit, and disconnects. It
+never opens a connection without starting the handshake. After two
+authentication failures it stops automatic checks for an hour; the manual
+**Check** button is also limited to one VNC probe every five minutes.
+
+If a server already answers `RFB 003.003` + `Too many security failures`,
+restart the VNC server to clear its in-memory counter. Raising
+`BlacklistThreshold` alone does not clear an existing lockout. See
+[docs/incidents/2026-11-22-vnc-blacklist.md](docs/incidents/2026-11-22-vnc-blacklist.md)
+for the full incident and verification.
 
 ## Docker
 

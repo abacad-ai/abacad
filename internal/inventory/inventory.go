@@ -5,7 +5,6 @@
 package inventory
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"net"
@@ -23,45 +22,63 @@ import (
 type View struct {
 	config.Device
 	Online    bool      `json:"online"`
+	Known     bool      `json:"known"`
 	Banner    string    `json:"banner,omitempty"`
+	Detail    string    `json:"detail,omitempty"`
 	LastSeen  time.Time `json:"last_seen,omitempty"`
 	Warning   string    `json:"warning,omitempty"`
 	LastError string    `json:"last_error,omitempty"`
+	NextCheck time.Time `json:"next_check,omitempty"`
 }
 
 type Status struct {
-	Online      bool
-	Banner      string
-	LastSeen    time.Time
-	Warning     string
-	LastError   string
-	AuthChecked bool // security-type probe done in this process
+	Online       bool      `json:"online"`
+	Known        bool      `json:"known"`
+	Banner       string    `json:"banner,omitempty"`
+	Detail       string    `json:"detail,omitempty"`
+	LastSeen     time.Time `json:"last_seen,omitempty"`
+	Warning      string    `json:"warning,omitempty"`
+	LastError    string    `json:"last_error,omitempty"`
+	Failures     int       `json:"failures,omitempty"`      // consecutive failed checks (network or auth)
+	AuthFailures int       `json:"auth_failures,omitempty"` // consecutive auth failures; these count on the device
+	LastCheck    time.Time `json:"last_check,omitempty"`
+	NextCheck    time.Time `json:"next_check,omitempty"`
+	Checking     bool      `json:"checking,omitempty"`
+
+	// Set only on the manual Probe response when the five-minute floor has not
+	// elapsed. It is not stored, so the card keeps its last real result.
+	Throttled       bool   `json:"throttled,omitempty"`
+	ThrottleMessage string `json:"throttle_message,omitempty"`
 }
 
 // AddRequest is the input to Add.
 type AddRequest struct {
-	Name     string `json:"name"`
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	Username string `json:"username"`
-	Auth     string `json:"auth"`
-	Password string `json:"password"`
-	Platform string `json:"platform"`
-	Mode     string `json:"mode"`
-	Expose   bool   `json:"expose"`
+	Name          string `json:"name"`
+	Host          string `json:"host"`
+	Port          int    `json:"port"`
+	Username      string `json:"username"`
+	Auth          string `json:"auth"`
+	Password      string `json:"password"`
+	Platform      string `json:"platform"`
+	Mode          string `json:"mode"`
+	Expose        bool   `json:"expose"`
+	Health        string `json:"health"`
+	HealthCommand string `json:"health_command"`
 }
 
 // UpdateRequest is a sparse update; nil fields are left alone.
 type UpdateRequest struct {
-	Name     *string `json:"name"`
-	Host     *string `json:"host"`
-	Port     *int    `json:"port"`
-	Username *string `json:"username"`
-	Auth     *string `json:"auth"`
-	Password *string `json:"password"`
-	Platform *string `json:"platform"`
-	Mode     *string `json:"mode"`
-	Expose   *bool   `json:"expose"`
+	Name          *string `json:"name"`
+	Host          *string `json:"host"`
+	Port          *int    `json:"port"`
+	Username      *string `json:"username"`
+	Auth          *string `json:"auth"`
+	Password      *string `json:"password"`
+	Platform      *string `json:"platform"`
+	Mode          *string `json:"mode"`
+	Expose        *bool   `json:"expose"`
+	Health        *string `json:"health"`
+	HealthCommand *string `json:"health_command"`
 }
 
 type Inventory struct {
@@ -86,8 +103,7 @@ func (in *Inventory) Devices() []View {
 	defer in.mu.RUnlock()
 	out := make([]View, 0, len(in.cfg.Devices))
 	for _, d := range in.cfg.Devices {
-		s := in.status[d.ID]
-		out = append(out, View{Device: d, Online: s.Online, Banner: s.Banner, LastSeen: s.LastSeen, Warning: s.Warning, LastError: s.LastError})
+		out = append(out, viewOf(d, in.status[d.ID]))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
@@ -98,16 +114,29 @@ func (in *Inventory) Device(id string) (View, bool) {
 	defer in.mu.RUnlock()
 	for _, d := range in.cfg.Devices {
 		if d.ID == id {
-			s := in.status[d.ID]
-			return View{Device: d, Online: s.Online, Banner: s.Banner, LastSeen: s.LastSeen, Warning: s.Warning, LastError: s.LastError}, true
+			return viewOf(d, in.status[d.ID]), true
 		}
 	}
 	return View{}, false
 }
 
-// Add validates, optionally allocates a raw-VNC port, probes once, and saves.
-// A failed probe does not reject the device: the host may still be booting, and
-// the UI can show the error.
+func viewOf(d config.Device, s Status) View {
+	return View{
+		Device:    d,
+		Online:    s.Online,
+		Known:     s.Known,
+		Banner:    s.Banner,
+		Detail:    s.Detail,
+		LastSeen:  s.LastSeen,
+		Warning:   s.Warning,
+		LastError: s.LastError,
+		NextCheck: s.NextCheck,
+	}
+}
+
+// Add validates, optionally allocates a raw-VNC port, checks the device once,
+// and saves. A failed check does not reject the device: the host may still be
+// booting, and the UI can show the error.
 func (in *Inventory) Add(ctx context.Context, req AddRequest) (View, error) {
 	mode := req.Mode
 	if mode == "" {
@@ -133,25 +162,26 @@ func (in *Inventory) Add(ctx context.Context, req AddRequest) (View, error) {
 		return View{}, err
 	}
 	d, err := in.cfg.AddDevice(config.Device{
-		Name:     req.Name,
-		Host:     req.Host,
-		Port:     req.Port,
-		Username: req.Username,
-		Auth:     req.Auth,
-		Password: req.Password,
-		Platform: req.Platform,
-		Mode:     mode,
-		VNCPort:  port,
+		Name:          req.Name,
+		Host:          req.Host,
+		Port:          req.Port,
+		Username:      req.Username,
+		Auth:          req.Auth,
+		Password:      req.Password,
+		Platform:      req.Platform,
+		Mode:          mode,
+		VNCPort:       port,
+		Health:        req.Health,
+		HealthCommand: req.HealthCommand,
 	})
 	if err != nil {
 		in.mu.Unlock()
 		return View{}, err
 	}
-	in.status[d.ID] = Status{LastError: "probing"}
+	in.status[d.ID] = Status{LastError: "checking"}
 	in.mu.Unlock()
 
-	in.Probe(ctx, d.ID)
-	in.CheckAuth(ctx, d.ID)
+	in.checkNow(ctx, d.ID)
 	if in.onChange != nil {
 		in.onChange()
 	}
@@ -192,6 +222,8 @@ func (in *Inventory) Update(ctx context.Context, id string, req UpdateRequest) (
 		}
 		port = p
 	}
+	connChanged := req.Host != nil || req.Port != nil || req.Password != nil ||
+		req.Auth != nil || req.Username != nil || req.Health != nil || req.HealthCommand != nil
 	d, err := in.cfg.UpdateDevice(id, func(d *config.Device) error {
 		if req.Name != nil {
 			d.Name = *req.Name
@@ -217,6 +249,26 @@ func (in *Inventory) Update(ctx context.Context, id string, req UpdateRequest) (
 		if req.Mode != nil {
 			d.Mode = *req.Mode
 		}
+		if req.Health != nil {
+			d.Health = strings.TrimSpace(*req.Health)
+		}
+		if req.HealthCommand != nil {
+			d.HealthCommand = strings.TrimSpace(*req.HealthCommand)
+			if req.Health == nil && d.HealthCommand != "" && d.Health == config.HealthSession {
+				// A caller that supplies only a command clearly wants command
+				// health; do not leave it in passive mode by accident.
+				d.Health = config.HealthCommand
+			}
+		}
+		// A device without an explicit health mode falls back to the command
+		// when one is set, otherwise to passive session-derived state.
+		if d.Health == "" {
+			if d.HealthCommand != "" {
+				d.Health = config.HealthCommand
+			} else {
+				d.Health = config.HealthSession
+			}
+		}
 		if allocate {
 			d.VNCPort = port
 		}
@@ -235,10 +287,22 @@ func (in *Inventory) Update(ctx context.Context, id string, req UpdateRequest) (
 	if in.status == nil {
 		in.status = map[string]Status{}
 	}
+	if connChanged {
+		// New address or credential: allow an immediate check and clear the
+		// failure history so a corrected password is not stuck behind backoff.
+		st := in.status[id]
+		st.Failures = 0
+		st.AuthFailures = 0
+		st.LastCheck = time.Time{}
+		st.NextCheck = time.Time{}
+		st.Checking = false
+		in.status[id] = st
+	}
 	in.mu.Unlock()
 
-	in.Probe(ctx, id)
-	in.CheckAuth(ctx, id)
+	if connChanged {
+		in.checkNow(ctx, id)
+	}
 	if in.onChange != nil {
 		in.onChange()
 	}
@@ -260,155 +324,73 @@ func (in *Inventory) Remove(id string) error {
 	return nil
 }
 
-// Probe checks TCP reachability and reads the RFB banner. It deliberately does
-// not authenticate: a health check must not consume a password attempt or
-// disturb an active session.
+// Probe runs a user-initiated check. With a health command configured it runs
+// that command; otherwise it performs one complete authenticated RFB handshake,
+// rate-limited to one every five minutes. It never opens a bare TCP connection.
 func (in *Inventory) Probe(ctx context.Context, id string) Status {
-	in.mu.RLock()
-	var d config.Device
-	found := false
-	for _, x := range in.cfg.Devices {
-		if x.ID == id {
-			d, found = x, true
-			break
-		}
-	}
-	in.mu.RUnlock()
-	if !found {
-		return Status{LastError: "device not found"}
-	}
-
-	in.mu.RLock()
-	old := in.status[id] // preserve an auth warning across routine probes
-	in.mu.RUnlock()
-
-	s := probe(ctx, d)
-	s.Warning = old.Warning
-	s.AuthChecked = old.AuthChecked
-	in.mu.Lock()
-	in.status[id] = s
-	in.mu.Unlock()
-	return s
+	return in.checkDevice(ctx, id, true)
 }
 
-// SetSessionError records why the last browser or agent session closed, so the
-// device card can show the reason instead of a silent disconnect. The next
-// successful probe clears it.
+func (in *Inventory) checkNow(ctx context.Context, id string) {
+	_ = in.checkDevice(ctx, id, true)
+}
+
+// MarkOnline records a successful authenticated session. It is called after the
+// upstream ServerInit, so it never claims a device is online just because TCP
+// accepted a connection.
+func (in *Inventory) MarkOnline(id string) {
+	now := time.Now().UTC()
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	st := in.status[id]
+	st.Online = true
+	st.Known = true
+	st.LastSeen = now
+	st.LastError = ""
+	st.Failures = 0
+	st.AuthFailures = 0
+	in.status[id] = st
+}
+
+// SetSessionError records why a session failed after the device was already
+// known to be online (for example a downstream token error). It keeps the
+// online state.
 func (in *Inventory) SetSessionError(id string, err error) {
 	if err == nil {
 		return
 	}
 	in.mu.Lock()
+	defer in.mu.Unlock()
 	st := in.status[id]
-	st.LastError = err.Error()
+	st.LastError = describeError(err)
 	in.status[id] = st
-	in.mu.Unlock()
 }
 
-// CheckAuth probes the RFB security types. It is called when a device is added
-// or edited, not on every health check: it opens one extra connection and is
-// there to turn the most common macOS failure into a readable card warning.
-func (in *Inventory) CheckAuth(ctx context.Context, id string) {
-	v, ok := in.Device(id)
-	if !ok || !v.Online {
+// MarkOffline records a session failure that happened before the device
+// authenticated, so the card can show a readable reason and an offline state.
+func (in *Inventory) MarkOffline(id string, err error) {
+	if err == nil {
 		return
 	}
-	addr := net.JoinHostPort(v.Host, fmt.Sprint(v.Port))
-	_, types, err := rfb.SecurityTypes(ctx, addr, 3*time.Second)
-	if err != nil {
-		return
-	}
-	warning := ""
-	switch v.Auth {
-	case config.AuthARD:
-		if !rfb.SupportsARD(types) {
-			warning = fmt.Sprintf("device offers no macOS account sign-in (security types %v)", types)
-		}
-	default:
-		if !rfb.SupportsStandardAuth(types) {
-			warning = fmt.Sprintf("device only offers security types %v; enable \"VNC viewers may control screen with password\" or use TigerVNC", types)
-		} else if rfb.SupportsARD(types) && (v.Platform == "macos" || strings.Contains(v.Banner, "003.889")) {
-			warning = "macOS: switch Sign-in to \"macOS account\". The legacy VNC password has no user identity and can land on the login window."
-		}
-	}
+	now := time.Now().UTC()
 	in.mu.Lock()
+	defer in.mu.Unlock()
 	st := in.status[id]
-	st.Warning = warning
-	st.AuthChecked = true
+	st.Online = false
+	st.Known = true
+	st.LastError = describeError(err)
+	if rfb.IsTooManySecurityFailures(err) {
+		st.AuthFailures = vncMaxAuthFailures
+		st.NextCheck = now.Add(vncFailureCooldown)
+	}
 	in.status[id] = st
-	in.mu.Unlock()
 }
 
-// CheckAuthIfNeeded runs the security-type probe at most once per process (or
-// until the next successful probe), so startup restores the macOS warning
-// without opening an extra connection every 30 seconds.
-func (in *Inventory) CheckAuthIfNeeded(ctx context.Context, id string) {
-	in.mu.RLock()
-	checked := in.status[id].AuthChecked
-	in.mu.RUnlock()
-	if checked {
-		return
+func describeError(err error) string {
+	if rfb.IsTooManySecurityFailures(err) {
+		return rfb.TooManySecurityFailuresHint
 	}
-	in.CheckAuth(ctx, id)
-}
-
-func probe(ctx context.Context, d config.Device) Status {
-	addr := net.JoinHostPort(d.Host, fmt.Sprint(d.Port))
-	dialer := net.Dialer{Timeout: 2 * time.Second}
-	conn, err := dialer.DialContext(ctx, "tcp", addr)
-	if err != nil {
-		return Status{LastError: err.Error(), LastSeen: time.Now().UTC()}
-	}
-	defer conn.Close()
-	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	banner, err := bufio.NewReader(conn).ReadString('\n')
-	if err != nil {
-		return Status{LastError: "no RFB banner: " + err.Error(), LastSeen: time.Now().UTC()}
-	}
-	if len(banner) > 0 && banner[len(banner)-1] == '\n' {
-		banner = banner[:len(banner)-1]
-	}
-	if len(banner) < 7 || banner[:4] != "RFB " {
-		return Status{LastError: fmt.Sprintf("unexpected banner %q", banner), LastSeen: time.Now().UTC()}
-	}
-	return Status{Online: true, Banner: banner, LastSeen: time.Now().UTC()}
-}
-
-// ProbeAll probes every device with a small concurrency cap.
-func (in *Inventory) ProbeAll(ctx context.Context) {
-	devices := in.Devices()
-	sem := make(chan struct{}, 8)
-	var wg sync.WaitGroup
-	for _, d := range devices {
-		d := d
-		wg.Add(1)
-		sem <- struct{}{}
-		go func() {
-			defer wg.Done()
-			defer func() { <-sem }()
-			in.Probe(ctx, d.ID)
-			in.CheckAuthIfNeeded(ctx, d.ID)
-		}()
-	}
-	wg.Wait()
-}
-
-// Run probes on an interval until ctx is canceled.
-func (in *Inventory) Run(ctx context.Context, interval time.Duration) {
-	if interval <= 0 {
-		interval = 30 * time.Second
-	}
-	t := time.NewTicker(interval)
-	defer t.Stop()
-	in.ProbeAll(ctx)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-			in.ProbeAll(ctx)
-		}
-	}
+	return err.Error()
 }
 
 // allocatePortLocked finds a port in the range that is neither assigned in the

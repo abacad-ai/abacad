@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { api } from "@/lib/api"
-import type { Device, DeviceMode, DevicePayload, SignIn } from "@/lib/types"
+import type { Device, DeviceMode, DevicePayload, HealthMode, SignIn } from "@/lib/types"
 
 export type DevicePrefill = Partial<
   Pick<Device, "name" | "host" | "port" | "platform" | "auth" | "username">
@@ -63,6 +63,8 @@ export function DeviceDialog({
   const [platform, setPlatform] = useState("unknown")
   const [mode, setMode] = useState<DeviceMode>("gateway")
   const [expose, setExpose] = useState(false)
+  const [health, setHealth] = useState<HealthMode>("session")
+  const [healthCommand, setHealthCommand] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
 
@@ -81,6 +83,8 @@ export function DeviceDialog({
     setPlatform(device?.platform ?? prefill?.platform ?? "unknown")
     setMode(device?.mode ?? "gateway")
     setExpose(Boolean(device?.vnc_port))
+    setHealth(device?.health ?? (device?.health_command ? "command" : "session"))
+    setHealthCommand(device?.health_command ?? "")
     setBusy(false)
     setError("")
   }, [open, device, prefill])
@@ -109,6 +113,10 @@ export function DeviceDialog({
       setError("Enter the password for the new sign-in method.")
       return
     }
+    if (health === "command" && healthCommand.trim() === "") {
+      setError("Enter a health command, or choose a different health check.")
+      return
+    }
 
     const payload: DevicePayload = {
       name: name.trim(),
@@ -119,6 +127,8 @@ export function DeviceDialog({
       platform: platform === "unknown" ? "" : platform,
       mode,
       expose,
+      health,
+      health_command: health === "command" ? healthCommand.trim() : "",
     }
     if (password !== "") payload.password = password
 
@@ -274,6 +284,34 @@ export function DeviceDialog({
             />
             <span>Also open a raw VNC port for agents</span>
           </label>
+
+          <div className="space-y-1.5">
+            <Label>Health check</Label>
+            <Select value={health} onValueChange={(value) => setHealth(value as HealthMode)}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="session">On connect only (no probes)</SelectItem>
+                <SelectItem value="command">Run a command on the hub</SelectItem>
+                <SelectItem value="vnc">Authenticated VNC check (≥ 5 min)</SelectItem>
+              </SelectContent>
+            </Select>
+            {health === "command" ? (
+              <Input
+                value={healthCommand}
+                onChange={(event) => setHealthCommand(event.target.value)}
+                placeholder="ssh debian 'systemctl is-active tigervncserver@:2'"
+                autoComplete="off"
+              />
+            ) : null}
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              A bare TCP probe is never used: TigerVNC counts every connection that closes before
+              authenticating as a security failure and can blacklist the hub. Prefer an SSH/systemd
+              command. An authenticated VNC check completes the handshake, runs at most every five
+              minutes, and stops automatic retries after two authentication failures.
+            </p>
+          </div>
 
           <p className="rounded-lg bg-muted/60 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
             Gateway keeps the device password in the hub and gives agents a revocable token.

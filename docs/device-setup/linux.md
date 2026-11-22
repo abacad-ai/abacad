@@ -31,6 +31,40 @@ WantedBy=default.target
 systemctl --user enable --now x11vnc.service
 ```
 
+## X11: TigerVNC (systemd)
+
+TigerVNC's per-user config lives at `~/.config/tigervnc/config`:
+
+```ini
+localhost = no
+SecurityTypes = VncAuth
+geometry = 1600x900
+depth = 24
+
+# Optional hardening: raise the bar for source-IP blacklisting. This does not
+# clear an existing lockout; restart the service after changing it.
+BlacklistThreshold = 1000000
+```
+
+Run it as a system service:
+
+```bash
+sudo systemctl enable --now tigervncserver@:2.service   # RFB port 5902
+```
+
+TigerVNC counts every connection that closes before authenticating as a
+security failure. Its failure counter does not decay, so a 30-second TCP
+health probe from the hub eventually blacklists the hub's IP and rejects even
+correct clients with `Too many security failures`. Do not probe the port with
+`nc`, a load balancer, or a monitoring system.
+
+For the hub, prefer an SSH health command (see below) over `health: vnc`.
+To clear an existing lockout, restart the VNC server:
+
+```bash
+sudo systemctl restart tigervncserver@:2.service
+```
+
 ## Wayland
 
 - **wlroots (sway, etc.)**: `wayvnc 0.0.0.0 5900`, configured in
@@ -70,6 +104,10 @@ In the hub web UI, click **Add device**:
 - **Platform:** Linux
 - **Also open a raw VNC port for agents:** optional; leave it off for
   browser-only.
+- **Health check:** **Run a command on the hub**, for example
+  `ssh -o BatchMode=yes debian 'systemctl is-active tigervncserver@:2'`.
+  This avoids touching the VNC port at all.
 
 The card should turn **online**. If it stays offline, check that the VNC server
-is listening on the LAN interface and that the firewall allows the hub's IP.
+is listening on the LAN interface, that the hub can run the health command
+non-interactively, and that the firewall allows the hub's IP.
