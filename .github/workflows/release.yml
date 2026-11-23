@@ -29,6 +29,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      # Semver without the "v" prefix, e.g. 2.0.0 — the tag users pull.
+      version: ${{ steps.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -86,7 +89,7 @@ jobs:
             ```bash
             docker run -d --name abacad --network host \
               -v abacad-config:/config \
-              ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+              ghcr.io/${{ github.repository }}:${{ needs.image.outputs.version }}
             docker logs abacad   # prints the admin token
             ```
 
