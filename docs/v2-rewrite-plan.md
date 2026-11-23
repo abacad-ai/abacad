@@ -579,7 +579,8 @@ docs/
 - [ ] 可选：`abacad shot/click/type/key/watch` CLI。
 - [ ] token 轮换（UI）、连接审计；失败锁定已有基础版。
 - [ ] 设备 setup 文档（macOS / Linux X11 / Wayland / Windows / Android）。
-- [ ] Docker `--network host`、Homebrew tap。
+- [x] Docker：GHCR 多架构镜像（amd64/arm64）、`compose.yaml`（`--network host`）与 `compose.bridge.yaml`、环境变量配置、`/healthz` healthcheck。
+- [ ] Homebrew tap。
 - [ ] 浏览器 view-only、复制 VNC 地址、二维码（可选）。
 
 **验收**：agent 从 `list_devices` 到用 VNC 客户端完成一个 5 步任务，全程不需要人教它新 API。
