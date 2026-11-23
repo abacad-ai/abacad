@@ -11,8 +11,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +25,19 @@ const (
 	DefaultListen       = "0.0.0.0:8787"
 	DefaultVNCPortStart = 5901
 	DefaultVNCPortEnd   = 5999
+
+	// Container deployments configure the hub through the environment
+	// instead of editing YAML inside a volume. An unset variable is
+	// ignored; flags still win over all of them.
+	EnvConfig     = "ABACAD_CONFIG"
+	EnvListen     = "ABACAD_LISTEN"
+	EnvAdminToken = "ABACAD_ADMIN_TOKEN"
+	EnvMDNS       = "ABACAD_MDNS"
+
+	// MinAdminTokenLen is the shortest admin token ApplyEnv accepts. The
+	// generated token is 64 hex characters; a hand-written one should at
+	// least not be guessable.
+	MinAdminTokenLen = 16
 
 	ModeGateway = "gateway" // hub terminates RFB auth and injects the device password
 	ModeL4      = "l4"      // blind TCP forwarding; the client authenticates to the device
@@ -132,6 +147,36 @@ func (c *Config) Path() string { return c.path }
 // MDNSEnabled reports whether discovery is on. The default is on; an explicit
 // "mdns: false" in the file turns it off.
 func (c *Config) MDNSEnabled() bool { return c.MDNS == nil || *c.MDNS }
+
+// ApplyEnv applies the environment overrides used by container images.
+// getenv is os.Getenv in production; tests pass a map lookup.
+//
+// Overrides are runtime-only: the YAML file stays the record of what someone
+// configured by hand, so removing the variable restores the file's value and
+// a secret passed as ABACAD_ADMIN_TOKEN is never written to disk. Command-line
+// flags are applied after this and therefore win.
+func (c *Config) ApplyEnv(getenv func(string) string) error {
+	if v := strings.TrimSpace(getenv(EnvListen)); v != "" {
+		if _, _, err := net.SplitHostPort(v); err != nil {
+			return fmt.Errorf("%s: %w", EnvListen, err)
+		}
+		c.Listen = v
+	}
+	if v := strings.TrimSpace(getenv(EnvAdminToken)); v != "" {
+		if len(v) < MinAdminTokenLen {
+			return fmt.Errorf("%s must be at least %d characters", EnvAdminToken, MinAdminTokenLen)
+		}
+		c.AdminToken = v
+	}
+	if v := strings.TrimSpace(getenv(EnvMDNS)); v != "" {
+		on, err := strconv.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("%s: %w", EnvMDNS, err)
+		}
+		c.MDNS = &on
+	}
+	return nil
+}
 
 // New creates an in-memory default config. The caller normally follows with
 // Save.

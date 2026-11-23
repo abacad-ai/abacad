@@ -1,0 +1,29 @@
+# abacad over bridge networking — for macOS/Windows Docker Desktop, or any host
+# where host networking is unavailable.
+#
+#   docker compose -f compose.bridge.yaml up -d
+#
+# Trade-offs, all of which host networking avoids:
+#   - mDNS does not cross a bridge, so discovery is off and devices must be
+#     added by hand (host + port).
+#   - Raw VNC ports are published as a fixed range chosen at container
+#     creation; devices that get a port later are unreachable until the
+#     container is recreated. Browser access only needs 8787.
+services:
+  abacad:
+    image: ghcr.io/abacad-ai/abacad:latest
+    container_name: abacad
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+      # Optional: raw VNC for agents. Remove if you only use the browser.
+      - "5901-5999:5901-5999"
+    environment:
+      ABACAD_CONFIG: /config/config.yaml
+      ABACAD_LISTEN: 0.0.0.0:8787
+      ABACAD_MDNS: "false"
+    volumes:
+      - abacad-config:/config
+
+volumes:
+  abacad-config:

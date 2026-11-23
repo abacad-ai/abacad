@@ -32,6 +32,9 @@ make build          # npm ci + vite build + go build
 ./bin/abacad serve
 ```
 
+Or skip the toolchain entirely and run the container: `docker compose up -d`
+(see [Docker](#docker)).
+
 Or build the two halves by hand:
 
 ```bash
@@ -68,6 +71,10 @@ abacad [serve] [--config PATH] [--listen ADDR] [--no-mdns]
                [--tls-cert FILE --tls-key FILE] [-v]
 abacad version
 ```
+
+`ABACAD_CONFIG`, `ABACAD_LISTEN`, `ABACAD_ADMIN_TOKEN` and `ABACAD_MDNS` set
+the same things from the environment, for containers; flags win. See
+[Docker](#docker).
 
 With no arguments, `abacad` serves. `serve` is accepted for explicit compose
 files. For HTTPS/WSS (needed for browser clipboard access in most browsers),
@@ -177,19 +184,77 @@ for the full incident and verification.
 
 ## Docker
 
-`--network host` is strongly recommended: it keeps mDNS discovery, source IPs, and dynamically allocated VNC ports working. Bridge networking can publish a fixed range, but mDNS will not cross it and new ports cannot appear without recreating the container.
+A prebuilt image is published on every tagged release for **linux/amd64** and
+**linux/arm64**:
 
-```yaml
-services:
-  abacad:
-    build: .
-    network_mode: host
-    volumes:
-      - ./config:/config
-    command: ["serve", "--config", "/config/config.yaml", "--listen", "0.0.0.0:8787"]
+```bash
+docker run -d --name abacad --network host \
+  -v abacad-config:/config \
+  ghcr.io/abacad-ai/abacad:latest
+docker logs abacad    # prints the admin token
 ```
 
-On macOS, run the native binary instead; Docker Desktop's host networking is limited.
+Then open `http://<host>:8787`. `--network host` is strongly recommended on
+Linux: it keeps mDNS discovery, source IPs, and the dynamically allocated raw
+VNC ports (5901-5999) working. The compose file in this repo is the same setup:
+
+```bash
+docker compose up -d
+```
+
+### Configuration
+
+The image keeps state in `/config` on a volume and takes deployment settings
+from the environment. Flags still win over both.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ABACAD_CONFIG` | `/config/config.yaml` | config file path in the container |
+| `ABACAD_LISTEN` | `0.0.0.0:8787` | listen address (the healthcheck follows its port) |
+| `ABACAD_ADMIN_TOKEN` | generated | admin token, at least 16 characters, never written to `config.yaml` |
+| `ABACAD_MDNS` | `true` | `false` disables discovery and advertising |
+
+The generated token is printed to `docker logs`. To pin one from your secret
+store instead:
+
+```bash
+docker run -d --name abacad --network host \
+  -e ABACAD_ADMIN_TOKEN="$(openssl rand -hex 32)" \
+  -v abacad-config:/config \
+  ghcr.io/abacad-ai/abacad:latest
+```
+
+Devices live in `config.yaml` on the volume: `docker compose down` keeps them,
+`docker compose down -v` deletes them. To keep the file on the host, bind-mount
+`./config:/config` and `chown -R 10001 ./config` (the image runs as uid 10001).
+
+### Upgrading
+
+```bash
+docker compose pull && docker compose up -d
+docker run --rm ghcr.io/abacad-ai/abacad:latest version
+```
+
+The `/config` volume is left alone, so devices and tokens survive. Tags are
+`latest`, `2`, `2.0`, `2.0.0`; pin a version if you would rather upgrade on
+purpose.
+
+### Bridge networking
+
+Where host networking is unavailable (macOS/Windows Docker Desktop, or a host
+namespace you do not control), use `compose.bridge.yaml`. It publishes 8787 and
+the raw VNC range 5901-5999. mDNS does not cross a bridge, so discovery is off
+and devices are added by hand; a device that needs a raw port allocated after
+container creation requires `docker compose up -d --force-recreate`.
+
+### Healthcheck
+
+The image probes `GET /healthz` on `ABACAD_LISTEN`'s port every 30 seconds.
+That probe is plain HTTP, so a TLS deployment (`--tls-cert`/`--tls-key`) should
+run with `--no-healthcheck`.
+
+On macOS, run the native binary instead; Docker Desktop's host networking is
+limited.
 
 ## Security model
 
@@ -203,7 +268,7 @@ More: [docs/security.md](docs/security.md).
 
 ## Status
 
-v0.1 implements the thin path:
+The thin path is implemented:
 
 - L7 RFB handshake gateway (browser `None`, agent token, upstream VNC password or macOS account via Apple DH type 30)
 - raw VNC listeners per device (`gateway` and `l4`)
@@ -212,9 +277,10 @@ v0.1 implements the thin path:
 - mDNS discovery and advertising
 - One `serve` command (also the default); device management is entirely in the web UI
 - MCP `list_devices` over Streamable HTTP at `/mcp`
+- multi-arch container image on GHCR with environment-only configuration and a healthcheck
 - tests for RFB handshake, gateway WebSocket path, config, inventory
 
-Not in v0.1: automatic self-signed cert generation, OS keychain, view-only enforcement, thumbnails, recording, OCR, multi-agent leases.
+Not yet: automatic self-signed cert generation, OS keychain, view-only enforcement, thumbnails, recording, OCR, multi-agent leases.
 
 Verified against a real **x11vnc** server (handshake, token, ServerInit, Raw
 framebuffer) and the real macOS Screen Sharing banner/type list. macOS offers

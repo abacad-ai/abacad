@@ -24,7 +24,8 @@ import (
 	"abacad/internal/web"
 )
 
-const version = "0.1.0"
+// version is overridden at build time with -X main.version=<tag>.
+var version = "0.1.0"
 
 func main() {
 	args := os.Args[1:]
@@ -60,6 +61,12 @@ Usage:
                  [--tls-cert FILE --tls-key FILE] [-v]
   abacad version
 
+Environment (overrides the config file, flags win over both):
+  ABACAD_CONFIG      config file path
+  ABACAD_LISTEN      listen address, e.g. 0.0.0.0:8787
+  ABACAD_ADMIN_TOKEN admin token (at least 16 characters, never persisted)
+  ABACAD_MDNS        true/false; false disables discovery and advertising
+
 Everything else — adding, editing, and removing devices — is in the web UI.
 Agents use MCP at /mcp on the same hub.
 `)
@@ -67,7 +74,7 @@ Agents use MCP at /mcp on the same hub.
 
 func cmdServe(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	configPath := fs.String("config", "", "config file")
+	configPath := fs.String("config", os.Getenv(config.EnvConfig), "config file (default $"+config.EnvConfig+")")
 	listen := fs.String("listen", "", "listen address (overrides config)")
 	noMDNS := fs.Bool("no-mdns", false, "disable mDNS discovery/advertising")
 	tlsCert := fs.String("tls-cert", "", "TLS certificate (PEM) for HTTPS/WSS")
@@ -85,6 +92,9 @@ func cmdServe(args []string) error {
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
+		return err
+	}
+	if err := cfg.ApplyEnv(os.Getenv); err != nil {
 		return err
 	}
 	if *listen != "" {

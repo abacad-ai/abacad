@@ -1,7 +1,12 @@
 .git
+.github
+.gitignore
 bin
 dist
+docs
 *.log
+*.md
+.claude
 .env
 .env.*
 config.yaml
@@ -10,3 +15,6 @@ config.yaml
 frontend/node_modules
 frontend/dist
 internal/web/dist
+# locally built binaries at the repo root
+/abacad
+/abacad.new

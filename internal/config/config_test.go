@@ -158,3 +158,74 @@ func TestHealthDefaultsAndValidation(t *testing.T) {
 		t.Fatal("expected a missing health command to be rejected")
 	}
 }
+
+func TestApplyEnvOverridesWithoutPersisting(t *testing.T) {
+	path := testPath(t)
+	c, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := c.AdminToken
+
+	env := map[string]string{
+		EnvListen:     "127.0.0.1:9000",
+		EnvAdminToken: "0123456789abcdef",
+		EnvMDNS:       "false",
+	}
+	if err := c.ApplyEnv(func(k string) string { return env[k] }); err != nil {
+		t.Fatal(err)
+	}
+	if c.Listen != "127.0.0.1:9000" {
+		t.Fatalf("listen = %q", c.Listen)
+	}
+	if c.AdminToken != "0123456789abcdef" {
+		t.Fatalf("admin token = %q", c.AdminToken)
+	}
+	if c.MDNSEnabled() {
+		t.Fatal("mDNS still enabled")
+	}
+
+	reloaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.AdminToken != original {
+		t.Fatal("environment token was written to disk")
+	}
+	if reloaded.Listen != DefaultListen {
+		t.Fatalf("environment listen was written to disk: %q", reloaded.Listen)
+	}
+}
+
+func TestApplyEnvRejectsBadValues(t *testing.T) {
+	path := testPath(t)
+	c, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []map[string]string{
+		{EnvListen: "not-an-address"},
+		{EnvAdminToken: "short"},
+		{EnvMDNS: "maybe"},
+	}
+	for _, env := range cases {
+		if err := c.ApplyEnv(func(k string) string { return env[k] }); err == nil {
+			t.Fatalf("expected %v to be rejected", env)
+		}
+	}
+}
+
+func TestApplyEnvIgnoresEmpty(t *testing.T) {
+	path := testPath(t)
+	c, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := *c
+	if err := c.ApplyEnv(func(string) string { return "  " }); err != nil {
+		t.Fatal(err)
+	}
+	if c.Listen != before.Listen || c.AdminToken != before.AdminToken || c.MDNSEnabled() != before.MDNSEnabled() {
+		t.Fatal("empty environment changed the config")
+	}
+}
