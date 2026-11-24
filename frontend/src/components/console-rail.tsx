@@ -1,6 +1,7 @@
 import { Bot, ExternalLink, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react"
 import { Link } from "react-router-dom"
 
+import { BrandMark } from "@/components/brand-mark"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -136,9 +137,7 @@ export function ConsoleRail({
     <aside className="flex w-full min-w-0 shrink-0 flex-col border-b border-border/80 bg-[#f8f4eb] lg:h-screen lg:w-[288px] lg:border-r lg:border-b-0">
       <div className="flex h-16 shrink-0 items-center justify-between px-4 lg:px-3.5">
         <Link to="/" className="flex items-center gap-2.5" aria-label="abacad home">
-          <span className="grid size-8 place-items-center rounded-[10px] bg-primary text-[17px] font-semibold text-primary-foreground shadow-sm">
-            a
-          </span>
+          <BrandMark className="size-8 shrink-0" />
           <span className="text-[15px] font-semibold tracking-tight">abacad</span>
         </Link>
         <div className="flex items-center gap-1 lg:hidden">

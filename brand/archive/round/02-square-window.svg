@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!--
+    B · 方窗 / Square Window
+    Same grammar in a square vessel: an 84×84 squircle (rx 26), 20-wide band,
+    a 44×44 window (rx 13), dots r 10 that fill the band top and bottom.
+    Blue #13a7f5 = left half + top dot.  Coral #fd605e = right half + bottom dot.
+  -->
+  <defs>
+    <clipPath id="tile">
+      <rect x="8" y="8" width="84" height="84" rx="26"/>
+    </clipPath>
+    <mask id="window" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
+      <rect width="100" height="100" fill="#fff"/>
+      <rect x="28" y="28" width="44" height="44" rx="13" fill="#000"/>
+    </mask>
+  </defs>
+  <g clip-path="url(#tile)" mask="url(#window)">
+    <rect width="100" height="100" fill="#fd605e"/>
+    <rect width="50" height="100" fill="#13a7f5"/>
+    <circle cx="50" cy="18" r="10" fill="#13a7f5"/>
+    <circle cx="50" cy="82" r="10" fill="#fd605e"/>
+  </g>
+</svg>

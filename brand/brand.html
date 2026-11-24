@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>abacad · 标志</title>
+<style>
+  @font-face{
+    font-family:"Geist";
+    src:url("../frontend/node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2") format("woff2-variations");
+    font-weight:100 900; font-display:block;
+  }
+  :root{
+    --ink:#141513; --body:#5b5b54; --muted:#8e8e86; --line:#e5e3dc;
+    --paper:#f6f4ef; --card:#fffefb; --blue:#13a7f5; --coral:#fd605e;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:"Geist","PingFang SC","Hiragino Sans GB",-apple-system,system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1440px;margin:0 auto;padding:64px 64px 76px}
+  .eyebrow{font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted)}
+  h1{margin:16px 0 0;font-size:48px;line-height:1.05;letter-spacing:-.035em;font-weight:600}
+  .lede{margin:18px 0 0;max-width:700px;font-size:14px;line-height:1.95;color:var(--body)}
+  .lede b{font-weight:600;color:var(--ink)}
+
+  .hero{display:grid;grid-template-columns:1.3fr 1fr;gap:22px;margin-top:44px}
+  .panel{border-radius:26px;border:1px solid var(--line);background:var(--card);padding:34px 38px;
+         display:flex;align-items:center;gap:34px}
+  .panel.dark{background:#151613;border-color:#151613;color:#f3efe6}
+  .mark{width:210px;height:210px;display:block;flex:0 0 auto}
+  .panel.dark .mark{width:180px;height:180px}
+  .lock{display:flex;align-items:center;gap:13px}
+  .lock img{width:46px;height:46px;display:block}
+  .lock .wm{font-size:35px;font-weight:600;letter-spacing:-.035em;line-height:1}
+  .tag{margin:18px 0 0;font-size:12.5px;line-height:1.85;color:var(--muted);max-width:230px}
+  .panel.dark .tag{color:#8c8c82}
+
+  h3{margin:38px 0 14px;font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:#a8a8a0;font-weight:500}
+  .row{display:flex;align-items:center;gap:26px;flex-wrap:wrap}
+
+  .dark{background:#151613;border-radius:24px;padding:26px 30px;display:flex;align-items:flex-end;gap:26px}
+  .caps{font-size:9px;letter-spacing:.16em;color:#8c8c82;margin-right:6px;padding-bottom:4px}
+
+  .sys{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+  .sys figure{margin:0;background:var(--card);border:1px solid var(--line);border-radius:20px;
+              padding:22px;display:flex;flex-direction:column;align-items:center;gap:14px}
+  .sys figcaption{font-size:10px;color:#9a9a91;letter-spacing:.03em}
+  .sys .ic1024{width:104px;height:104px;display:block;border-radius:22.5%}
+  .sys .icmask{width:104px;height:104px;display:block;border-radius:50%;overflow:hidden}
+  .sys .icmask img{width:100%;height:100%;display:block}
+  .chrome{background:#efede6;border-radius:10px;padding:6px 7px}
+  .tab{background:#fff;border-radius:6px;padding:7px 12px;display:flex;align-items:center;gap:8px;
+       box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .tab img{width:16px;height:16px;display:block}
+  .tab span{font-size:11.5px;color:#3a3a34}
+
+  table.spec{width:100%;border-collapse:collapse;font-size:12px;color:var(--body);margin-top:4px}
+  table.spec th{text-align:left;font-weight:500;color:#a8a8a0;font-size:9.5px;letter-spacing:.1em;
+                padding:0 0 10px;width:130px}
+  table.spec td{padding:8px 0;border-top:1px solid #efede6;vertical-align:top}
+  table.spec td.k{color:var(--ink);font-weight:500;width:130px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#3a3a34}
+
+  .two{display:grid;grid-template-columns:1.15fr .85fr;gap:44px;margin-top:6px}
+  .chips{display:flex;gap:26px;margin-top:6px}
+  .chip{display:flex;align-items:center;gap:12px}
+  .chip i{width:44px;height:44px;border-radius:11px;display:block}
+  .chip b{display:block;font-size:12px;font-weight:500;letter-spacing:.02em}
+  .chip em{font-style:normal;font-size:10.5px;color:#9a9a91}
+  ul.dont{margin:6px 0 0;padding-left:16px;font-size:12px;line-height:1.95;color:var(--body)}
+  ul.dont li{margin-bottom:2px}
+</style>
+
+<div class="wrap">
+
+  <div class="eyebrow">abacad — 标志</div>
+  <h1>两片</h1>
+  <p class="lede">
+    两片一样大的屏，45° 错开 <b>22</b>，中间留 <b>5</b> 的空气。前面那片蓝，是你正在看的那一页；
+    后面那片珊瑚，是它背后还开着的那些。前面那片把后面切出一个 <b>17 宽的 L</b> —— 那个 L 就是"还有很多台"。
+    整张图只有两片、一个角度、一条缝，没有第三条线。
+  </p>
+
+  <div class="hero">
+    <div class="panel">
+      <img class="mark" src="mark.svg" alt="abacad mark">
+      <div>
+        <div class="lock"><span class="wm">abacad</span></div>
+        <p class="tag">Every screen on your LAN,<br>in one quiet place.</p>
+      </div>
+    </div>
+    <div class="panel dark">
+      <img class="mark" src="mark.svg" alt="abacad mark dark">
+      <div>
+        <div class="lock"><span class="wm" style="color:#f3efe6;font-size:30px">abacad</span></div>
+        <p class="tag">深底不换色。蓝是 #13A7F5，珊瑚是 #FD605E，两个颜色在 #151613 上都还亮着。</p>
+      </div>
+    </div>
+  </div>
+
+  <h3>尺寸</h3>
+  <div class="row">
+    <img src="mark.svg" style="width:64px;height:64px;display:block">
+    <img src="mark.svg" style="width:48px;height:48px;display:block">
+    <img src="mark.svg" style="width:32px;height:32px;display:block">
+    <img src="mark.svg" style="width:24px;height:24px;display:block">
+    <img src="favicon.svg" style="width:16px;height:16px;display:block">
+    <span style="font-size:10px;color:#a8a8a0;line-height:1.7;margin-left:10px">64 · 48 · 32 · 24 · 16<br>16 用加宽缝的切版</span>
+  </div>
+
+  <div class="dark" style="margin-top:18px">
+    <span class="caps">深底</span>
+    <img src="mark.svg" style="width:64px;height:64px;display:block">
+    <img src="mark.svg" style="width:32px;height:32px;display:block">
+    <img src="favicon.svg" style="width:24px;height:24px;display:block">
+    <img src="favicon.svg" style="width:16px;height:16px;display:block">
+  </div>
+
+  <h3>在系统里</h3>
+  <div class="sys">
+    <figure>
+      <img class="ic1024" src="icons/icon-rounded-1024.png" alt="">
+      <figcaption>App 图标 · 1024（圆角版）</figcaption>
+    </figure>
+    <figure>
+      <div class="icmask"><img src="icons/icon-maskable-1024.png" alt=""></div>
+      <figcaption>maskable · 安全区内缩</figcaption>
+    </figure>
+    <figure>
+      <div class="chrome"><div class="tab"><img src="favicon.svg"><span>abacad</span></div></div>
+      <figcaption>标签页 · 16px</figcaption>
+    </figure>
+    <figure>
+      <img src="lockup@2x.png" style="width:150px;display:block" alt="">
+      <figcaption>字标组合 · Geist 600 −0.035em</figcaption>
+    </figure>
+  </div>
+
+  <div class="two">
+    <div>
+      <h3>结构</h3>
+      <table class="spec">
+        <tr><td class="k">片</td><td>62 × 62，圆角 15（≈ 24%，和 App 图标同一个手感）</td></tr>
+        <tr><td class="k">错位</td><td>22 / 22，即 45° 斜向；两片的对角正好落在 8 与 92 —— 满 84 的画布</td></tr>
+        <tr><td class="k">空气</td><td>5，沿两条边等宽；后面那片因此只露 17 宽的 L</td></tr>
+        <tr><td class="k">小尺寸切版</td><td>16–24px 用 <code>favicon.svg</code>：空气加宽到 8，隙在 16px 下还剩 1.3px，不会糊成一块</td></tr>
+        <tr><td class="k">颜色</td><td>前 <code>#13A7F5</code> ／ 后 <code>#FD605E</code></td></tr>
+      </table>
+    </div>
+    <div>
+      <h3>颜色</h3>
+      <div class="chips">
+        <div class="chip"><i style="background:var(--blue)"></i><div><b>#13A7F5</b><em>前 · 你在看的那页</em></div></div>
+        <div class="chip"><i style="background:var(--coral)"></i><div><b>#FD605E</b><em>后 · 背后的那些</em></div></div>
+      </div>
+      <h3 style="margin-top:30px">不要做</h3>
+      <ul class="dont">
+        <li>不要加渐变、投影、玻璃效果 —— 只有两块平色才耐看。</li>
+        <li>不要把空气压到 3 以下，也不要把错位改成 45° 之外的角度。</li>
+        <li>不要把前后两色互换：蓝在前，是这套图案唯一的叙事。</li>
+        <li>不要非等比缩放；16px 以下不要用主标，用 favicon 切版。</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+</html>

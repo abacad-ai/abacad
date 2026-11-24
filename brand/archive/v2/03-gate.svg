@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!--
+    C · 门 / Gate
+    "A single entry point for your LAN." An 84-square wall (rx 10) with one doorway
+    knocked out of it: 44 wide, opening onto the ground, semicircular head r 22 —
+    the head's apex lands exactly 20 from the top edge, so the wall keeps a 20 border
+    on all three sides. The wall takes one vertical seam above the door: the keystone.
+  -->
+  <defs>
+    <clipPath id="wall">
+      <rect x="8" y="8" width="84" height="84" rx="10"/>
+    </clipPath>
+    <mask id="door" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
+      <rect width="100" height="100" fill="#fff"/>
+      <path d="M28 92 V50 A22 22 0 0 1 72 50 V92 Z" fill="#000"/>
+    </mask>
+  </defs>
+  <g clip-path="url(#wall)" mask="url(#door)">
+    <rect width="100" height="100" fill="#fd605e"/>
+    <rect width="50" height="100" fill="#13a7f5"/>
+  </g>
+</svg>

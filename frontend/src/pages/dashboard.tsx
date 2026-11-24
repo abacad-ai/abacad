@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { toast } from "sonner"
 
+import { BrandMark } from "@/components/brand-mark"
 import { ConsoleRail } from "@/components/console-rail"
 import { DeviceDialog } from "@/components/device-dialog"
 import { LoginCard } from "@/components/login-card"
@@ -20,9 +21,7 @@ type AuthState = "loading" | "locked" | "in"
 function Brand() {
   return (
     <Link to="/" className="flex items-center gap-2.5" aria-label="abacad home">
-      <span className="grid size-8 place-items-center rounded-[10px] bg-primary text-[17px] font-semibold text-primary-foreground shadow-sm">
-        a
-      </span>
+      <BrandMark className="size-8 shrink-0" />
       <span className="text-[15px] font-semibold tracking-tight">abacad</span>
     </Link>
   )

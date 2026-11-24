@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!--
+    A · 屏 / Screen
+    abacad's whole job is putting one machine's screen inside your page — so the mark
+    is that screen. Same structure as open-linux-router's ring, pulled from a circle
+    into a pane: an 84×68 frame (rx 16), an 18-wide border, and two ⌀18 dots that fill
+    the top and bottom border exactly, tangent to both edges.
+
+    Blue #13a7f5 = left half + top dot.  Coral #fd605e = right half + bottom dot.
+  -->
+  <defs>
+    <clipPath id="pane">
+      <rect x="8" y="16" width="84" height="68" rx="16"/>
+    </clipPath>
+    <mask id="window" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
+      <rect width="100" height="100" fill="#fff"/>
+      <rect x="26" y="34" width="48" height="32" rx="4" fill="#000"/>
+    </mask>
+  </defs>
+  <g clip-path="url(#pane)" mask="url(#window)">
+    <rect width="100" height="100" fill="#fd605e"/>
+    <rect width="50" height="100" fill="#13a7f5"/>
+    <circle cx="50" cy="25" r="9" fill="#13a7f5"/>
+    <circle cx="50" cy="75" r="9" fill="#fd605e"/>
+  </g>
+</svg>

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!--
+    A · 环窗 / Ring Window
+    Outer ring: r 42, band 23 (inner r 19) — the same band as open-linux-router's mark.
+    The two dots (r 11.5) fill the band exactly, tangent to the outer edge and the window.
+    Knocked out of the ring: a 38×38 window (rx 10) instead of olr's round hole.
+
+    Blue #13a7f5 = the left half + the top dot.
+    Coral #fd605e = the right half + the bottom dot.
+  -->
+  <defs>
+    <mask id="window" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
+      <rect width="100" height="100" fill="#fff"/>
+      <rect x="31" y="31" width="38" height="38" rx="10" fill="#000"/>
+    </mask>
+  </defs>
+  <g mask="url(#window)">
+    <path fill="#fd605e" d="M50 8A42 42 0 0 1 50 92V69A19 19 0 0 0 50 31Z"/>
+    <path fill="#13a7f5" d="M50 8A42 42 0 0 0 50 92V69A19 19 0 0 1 50 31Z"/>
+    <circle fill="#13a7f5" cx="50" cy="19.5" r="11.5"/>
+    <circle fill="#fd605e" cx="50" cy="80.5" r="11.5"/>
+  </g>
+</svg>

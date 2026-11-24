@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!--
+    C · 缝 / Seam
+    The same tile, opened: a wide pane (84×68, rx 20) split by a lens-shaped gap that
+    runs edge to edge — 24 wide at its waist, pointed at both ends. The two halves
+    never touch. That gap is the whole idea: the pipe the bytes go through.
+
+    Lens: tips (50,16) and (50,84); both arcs r 54.17, derived so the waist is exactly 24.
+  -->
+  <defs>
+    <clipPath id="pane">
+      <rect x="8" y="16" width="84" height="68" rx="20"/>
+    </clipPath>
+    <mask id="gap" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
+      <rect width="100" height="100" fill="#fff"/>
+      <path d="M50 16 A54.17 54.17 0 0 1 50 84 A54.17 54.17 0 0 1 50 16 Z" fill="#000"/>
+    </mask>
+  </defs>
+  <g clip-path="url(#pane)" mask="url(#gap)">
+    <rect width="100" height="100" fill="#fd605e"/>
+    <rect width="50" height="100" fill="#13a7f5"/>
+  </g>
+</svg>

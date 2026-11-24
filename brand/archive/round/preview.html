@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>abacad · 标志提案</title>
+<style>
+  @font-face{
+    font-family:"Geist";
+    src:url("../../../frontend/node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2") format("woff2-variations");
+    font-weight:100 900;
+    font-display:block;
+  }
+  :root{
+    --ink:#16171a;
+    --body:#5f5f58;
+    --muted:#8f8f87;
+    --line:#e7e6e1;
+    --paper:#f7f7f4;
+    --card:#ffffff;
+    --blue:#13a7f5;
+    --coral:#fd605e;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Geist","PingFang SC","Hiragino Sans GB","Microsoft YaHei",-apple-system,system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1480px;margin:0 auto;padding:60px 64px 72px}
+
+  /* ---------- header ---------- */
+  .eyebrow{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+  h1{margin:14px 0 0;font-size:42px;line-height:1.1;letter-spacing:-.025em;font-weight:600}
+  .lede{margin:16px 0 0;max-width:760px;font-size:14px;line-height:1.85;color:var(--body)}
+  .lede b{font-weight:600;color:var(--ink)}
+  .swatches{display:flex;gap:10px;margin-top:22px;align-items:center}
+  .sw{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--body);letter-spacing:.04em}
+  .sw i{width:16px;height:16px;border-radius:5px;display:block}
+
+  /* ---------- cards ---------- */
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:44px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:8px 30px 28px}
+  .stage{height:230px;display:flex;align-items:center;justify-content:center}
+  .stage img{width:200px;height:200px;display:block}
+  .head{display:flex;align-items:center;gap:10px;margin-top:2px}
+  .head .num{
+    width:20px;height:20px;border-radius:50%;background:#16171a;color:#fff;
+    font-size:10.5px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:0 0 auto
+  }
+  .head h2{margin:0;font-size:17px;font-weight:600;letter-spacing:-.01em}
+  .badge{
+    margin-left:auto;font-size:10px;letter-spacing:.06em;color:#0d7ec0;
+    background:#e8f5fe;border-radius:999px;padding:4px 9px;font-weight:500
+  }
+  .why{margin:12px 0 0;font-size:13px;line-height:1.85;color:var(--body);min-height:96px}
+  .why b{font-weight:600;color:var(--ink)}
+
+  .ruler{margin-top:6px;border-top:1px solid var(--line);padding-top:16px}
+  .label{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:#a8a8a0}
+  .ladder{display:flex;align-items:flex-end;gap:20px;margin-top:12px;height:66px}
+  .ladder span{display:flex;flex-direction:column;align-items:center;gap:7px}
+  .ladder img{display:block}
+  .ladder em{font-style:normal;font-size:9px;color:#b4b4ac;letter-spacing:.04em}
+
+  .lockup{display:flex;align-items:center;gap:9px;margin-top:20px}
+  .lockup img{width:24px;height:24px;display:block}
+  .lockup strong{font-size:18px;font-weight:600;letter-spacing:-.015em}
+
+  /* ---------- app icons ---------- */
+  .icons{margin-top:26px;background:var(--card);border:1px solid var(--line);border-radius:22px;
+         padding:24px 30px;display:flex;align-items:center;gap:44px}
+  .icons .caption{font-size:9.5px;letter-spacing:.12em;color:#a8a8a0;
+                  width:132px;line-height:1.7}
+  .icons .tile{width:84px;height:84px;border-radius:22.5%;background:#1b1c1a;
+               display:flex;align-items:center;justify-content:center}
+  .icons .tile img{width:54px;height:54px;display:block}
+  .icons .bare{width:84px;height:84px;display:flex;align-items:center;justify-content:center}
+  .icons .bare img{width:84px;height:84px;display:block}
+  .icons figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:9px}
+  .icons figcaption{font-size:9.5px;color:#a8a8a0;letter-spacing:.04em}
+
+  /* ---------- dark band ---------- */
+  .dark{margin-top:26px;background:#1b1c1a;border-radius:24px;padding:34px 40px 30px;color:#f4f1ea}
+  .dark .caption{font-size:10px;letter-spacing:.12em;color:#8b8b83;margin-bottom:22px}
+  .darkgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:32px}
+  .darkcell{display:flex;align-items:center;gap:20px}
+  .darkcell .big{width:84px;height:84px;display:block;flex:0 0 auto}
+  .darkcell .col{display:flex;flex-direction:column;gap:12px;min-width:0}
+  .darkcell .name{font-size:11px;letter-spacing:.06em;color:#a9a9a1}
+  .chrome{background:#2a2b27;border-radius:11px;padding:7px 8px;display:flex;gap:6px}
+  .tab{background:#3b3c36;border-radius:7px;padding:6px 11px;display:flex;align-items:center;gap:8px}
+  .tab img{width:16px;height:16px;display:block}
+  .tab span{font-size:11.5px;color:#e8e5db;letter-spacing:.01em}
+  .darklock{display:flex;align-items:center;gap:8px}
+  .darklock img{width:22px;height:22px;display:block}
+  .darklock strong{font-size:16px;font-weight:500;letter-spacing:-.01em;color:#f4f1ea}
+
+  /* ---------- footer ---------- */
+  .foot{display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:28px;margin-top:30px;
+        border-top:1px solid var(--line);padding-top:26px}
+  .foot h3{margin:0 0 12px;font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:#a8a8a0;font-weight:500}
+  .foot p{margin:0;font-size:12px;line-height:1.85;color:var(--body)}
+  .spec{display:grid;grid-template-columns:auto 1fr;gap:5px 16px;font-size:12px;color:var(--body);margin:0}
+  .spec dt{color:#a8a8a0}
+  .spec dd{margin:0;font-variant-numeric:tabular-nums}
+  .family{display:flex;align-items:center;gap:14px}
+  .family img{width:46px;height:46px;display:block}
+  .family .arrow{color:#c3c3ba;font-size:14px}
+  .family .note{font-size:11.5px;line-height:1.7;color:var(--body);margin-left:4px}
+</style>
+
+<div class="wrap">
+
+  <div class="eyebrow">abacad — 标志提案 · 2026</div>
+  <h1>三个方向，同一套语法</h1>
+  <p class="lede">
+    骨架直接借自 open-linux-router：<b>84 见方</b>的整体、<b>23 宽的环带</b>、两个<b>直径 23 的实心点</b>，
+    点恰好填满环带并与内外边缘相切，垂直镜像与 180° 旋转都成立 —— 所以它看起来安静。
+    下面三个方向只改一处：<b>环中间那个孔是什么形状</b>，以及环要不要闭合。
+  </p>
+  <div class="swatches">
+    <div class="sw"><i style="background:var(--blue)"></i>#13A7F5 · 左边 / 你</div>
+    <div class="sw"><i style="background:var(--coral)"></i>#FD605E · 右边 / agent</div>
+  </div>
+
+  <div class="grid">
+
+    <!-- A -->
+    <article class="card">
+      <div class="stage"><img src="01-ring-window.svg" alt="A 环窗"></div>
+      <div class="head">
+        <span class="num">A</span><h2>环窗</h2>
+        <span class="badge">推荐</span>
+      </div>
+      <p class="why">
+        圆环是网络，方窗是任意一台机器的屏幕。孔从 olr 的圆换成 38 见方的窗，
+        两色的接缝正好从窗口的切线流过 —— <b>家族感最强</b>，也是三个里在 16px 下最先认得出的。
+      </p>
+      <div class="ruler">
+        <div class="label">尺寸梯</div>
+        <div class="ladder">
+          <span><img src="01-ring-window.svg" style="width:64px;height:64px"><em>64</em></span>
+          <span><img src="01-ring-window.svg" style="width:40px;height:40px"><em>40</em></span>
+          <span><img src="01-ring-window.svg" style="width:24px;height:24px"><em>24</em></span>
+          <span><img src="01-ring-window.svg" style="width:16px;height:16px"><em>16</em></span>
+        </div>
+      </div>
+      <div class="lockup">
+        <img src="01-ring-window.svg"><strong>abacad</strong>
+      </div>
+    </article>
+
+    <!-- B -->
+    <article class="card">
+      <div class="stage"><img src="02-square-window.svg" alt="B 方窗"></div>
+      <div class="head"><span class="num">B</span><h2>方窗</h2></div>
+      <p class="why">
+        同一套语法换进方形容器：一块屏里开一扇窗，四周留 20 的厚边。
+        它和现在那枚<b>深色圆角底图标</b>的轮廓咬合，做 App 图标、进 Dock 都不用再加底板。
+      </p>
+      <div class="ruler">
+        <div class="label">尺寸梯</div>
+        <div class="ladder">
+          <span><img src="02-square-window.svg" style="width:64px;height:64px"><em>64</em></span>
+          <span><img src="02-square-window.svg" style="width:40px;height:40px"><em>40</em></span>
+          <span><img src="02-square-window.svg" style="width:24px;height:24px"><em>24</em></span>
+          <span><img src="02-square-window.svg" style="width:16px;height:16px"><em>16</em></span>
+        </div>
+      </div>
+      <div class="lockup">
+        <img src="02-square-window.svg"><strong>abacad</strong>
+      </div>
+    </article>
+
+    <!-- C -->
+    <article class="card">
+      <div class="stage"><img src="03-open-ring.svg" alt="C 开口"></div>
+      <div class="head"><span class="num">C</span><h2>开口</h2></div>
+      <p class="why">
+        环不闭合。olr 里那两个实心点，在这里变成<b>同一条管道的两个端口</b>：
+        只握手、不窥看的盲管道。三个里最轻、最概念的一个，两端的圆帽就是那 23 的环带本身。
+      </p>
+      <div class="ruler">
+        <div class="label">尺寸梯</div>
+        <div class="ladder">
+          <span><img src="03-open-ring.svg" style="width:64px;height:64px"><em>64</em></span>
+          <span><img src="03-open-ring.svg" style="width:40px;height:40px"><em>40</em></span>
+          <span><img src="03-open-ring.svg" style="width:24px;height:24px"><em>24</em></span>
+          <span><img src="03-open-ring.svg" style="width:16px;height:16px"><em>16</em></span>
+        </div>
+      </div>
+      <div class="lockup">
+        <img src="03-open-ring.svg"><strong>abacad</strong>
+      </div>
+    </article>
+
+  </div>
+
+  <!-- app icons -->
+  <div class="icons">
+    <div class="caption">放进 Dock<br>深色底板 · 1024</div>
+    <figure>
+      <div class="tile"><img src="01-ring-window.svg" alt=""></div>
+      <figcaption>A · 环窗</figcaption>
+    </figure>
+    <figure>
+      <div class="bare"><img src="02-square-window.svg" alt=""></div>
+      <figcaption>B · 方窗（自带底板）</figcaption>
+    </figure>
+    <figure>
+      <div class="tile"><img src="03-open-ring.svg" alt=""></div>
+      <figcaption>C · 开口</figcaption>
+    </figure>
+    <p class="note" style="margin-left:auto;max-width:250px;font-size:11.5px;line-height:1.8;color:#7d7d75">
+      深色底板沿用现在那枚 favicon 的 <code style="font-size:11px;color:#5f5f58">#1b1c1a</code>，圆角 22.5%。
+      B 的轮廓本身就是一个方角图标，不需要再加底板。
+    </p>
+  </div>
+
+  <!-- dark band -->
+  <div class="dark">
+    <div class="caption">在深色里 · 标签页 16px · 字标组合</div>
+    <div class="darkgrid">
+      <div class="darkcell">
+        <img class="big" src="01-ring-window.svg">
+        <div class="col">
+          <div class="name">A · 环窗</div>
+          <div class="chrome"><div class="tab"><img src="01-ring-window.svg"><span>abacad</span></div></div>
+          <div class="darklock"><img src="01-ring-window.svg"><strong>abacad</strong></div>
+        </div>
+      </div>
+      <div class="darkcell">
+        <img class="big" src="02-square-window.svg">
+        <div class="col">
+          <div class="name">B · 方窗</div>
+          <div class="chrome"><div class="tab"><img src="02-square-window.svg"><span>abacad</span></div></div>
+          <div class="darklock"><img src="02-square-window.svg"><strong>abacad</strong></div>
+        </div>
+      </div>
+      <div class="darkcell">
+        <img class="big" src="03-open-ring.svg">
+        <div class="col">
+          <div class="name">C · 开口</div>
+          <div class="chrome"><div class="tab"><img src="03-open-ring.svg"><span>abacad</span></div></div>
+          <div class="darklock"><img src="03-open-ring.svg"><strong>abacad</strong></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- footer -->
+  <div class="foot">
+    <div>
+      <h3>颜色</h3>
+      <p>
+        只用这两个，和 olr 完全一致。白色底、深色底都不用换色，
+        也不给标志做主题化 tint —— 换色它就不是那个标志了。
+      </p>
+    </div>
+    <div>
+      <h3>骨架（A 为例）</h3>
+      <dl class="spec">
+        <dt>外径</dt><dd>42（占 100 见方的 84）</dd>
+        <dt>环带</dt><dd>23</dd>
+        <dt>点</dt><dd>⌀23，与内外缘相切</dd>
+        <dt>窗</dt><dd>38 见方，rx 10</dd>
+        <dt>对称</dt><dd>垂直镜像 + 180° 旋转</dd>
+      </dl>
+    </div>
+    <div>
+      <h3>并排看</h3>
+      <div class="family">
+        <svg viewBox="0 0 100 100" width="46" height="46">
+          <path fill="#13a7f5" d="M50 8A42 42 0 0 0 50 92V69A19 19 0 0 1 50 31Z"/>
+          <path fill="#fd605e" d="M50 8A42 42 0 0 1 50 92V69A19 19 0 0 0 50 31Z"/>
+          <circle fill="#13a7f5" cx="50" cy="19.5" r="11.5"/>
+          <circle fill="#fd605e" cx="50" cy="80.5" r="11.5"/>
+        </svg>
+        <span class="arrow">→</span>
+        <img src="01-ring-window.svg">
+        <span class="note">同一个环带、同一个点径，<br>孔从圆换成了窗。</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+</html>

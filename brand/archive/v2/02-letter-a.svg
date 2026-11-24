@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!--
+    B · A 字 / Monogram
+    The name's first letter, geometric: full 84 base, apex (50,8), flat feet, a 16-tall
+    bar at y 56..72, legs 15 wide. One straight seam at x=50 from the apex through the
+    bar: blue left, coral right, meeting at a single point on top.
+
+    Every corner is a corner of the letter — nothing is decoration.
+  -->
+  <path fill="#13a7f5" d="M50 8 L8 92 L23 92 L33 72 L50 72 L50 56 L41 56 L50 38 Z"/>
+  <path fill="#fd605e" d="M50 8 L92 92 L77 92 L67 72 L50 72 L50 56 L59 56 L50 38 Z"/>
+</svg>

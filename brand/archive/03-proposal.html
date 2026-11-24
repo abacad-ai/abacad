@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>abacad · 标志提案 03</title>
+<style>
+  @font-face{
+    font-family:"Geist";
+    src:url("../frontend/node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2") format("woff2-variations");
+    font-weight:100 900; font-display:block;
+  }
+  :root{
+    --ink:#141513; --body:#5b5b54; --muted:#8e8e86; --line:#e5e3dc;
+    --paper:#f6f4ef; --card:#fffefb; --blue:#13a7f5; --coral:#fd605e;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:"Geist","PingFang SC","Hiragino Sans GB",-apple-system,system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1460px;margin:0 auto;padding:64px 64px 80px}
+
+  .eyebrow{font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted)}
+  h1{margin:16px 0 0;font-size:46px;line-height:1.08;letter-spacing:-.03em;font-weight:600}
+  .lede{margin:18px 0 0;max-width:720px;font-size:14px;line-height:1.9;color:var(--body)}
+  .lede b{font-weight:600;color:var(--ink)}
+  .swatches{display:flex;gap:14px;margin-top:24px}
+  .sw{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--body);letter-spacing:.05em}
+  .sw i{width:15px;height:15px;border-radius:4px;display:block}
+
+  /* hero */
+  .hero{display:grid;grid-template-columns:1.35fr 1fr;gap:22px;margin-top:46px}
+  .panel{border-radius:26px;padding:38px 40px;display:flex;align-items:center;justify-content:space-between;gap:28px;
+         border:1px solid var(--line);background:var(--card)}
+  .panel.dark{background:#151613;border-color:#151613;color:#f3efe6}
+  .panel .big{width:196px;height:196px;display:block;flex:0 0 auto}
+  .lockup{display:flex;align-items:center;gap:14px}
+  .lockup img{display:block}
+  .lockup .wm{font-size:40px;font-weight:600;letter-spacing:-.035em;line-height:1}
+  .tagline{margin:16px 0 0;font-size:12.5px;line-height:1.8;color:var(--muted);max-width:240px}
+  .panel.dark .tagline{color:#8c8c82}
+
+  /* cards */
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:22px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:24px;padding:10px 30px 28px}
+  .stage{height:236px;display:flex;align-items:center;justify-content:center}
+  .stage img{width:206px;height:206px;display:block}
+  .head{display:flex;align-items:center;gap:10px}
+  .head .num{width:20px;height:20px;border-radius:50%;background:var(--ink);color:#fff;
+    font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .head h2{margin:0;font-size:18px;font-weight:600;letter-spacing:-.01em}
+  .badge{margin-left:auto;font-size:9.5px;letter-spacing:.08em;color:#0d6ea5;
+    background:#e6f4fe;border-radius:999px;padding:4px 9px;font-weight:500}
+  .why{margin:13px 0 0;font-size:12.5px;line-height:1.9;color:var(--body);min-height:130px}
+  .why b{font-weight:600;color:var(--ink)}
+  .spec{margin:12px 0 0;font-size:10.5px;line-height:1.7;color:#9a9a91;letter-spacing:.02em}
+  .ruler{margin-top:14px;border-top:1px solid #f0eee7;padding-top:14px}
+  .label{font-size:9px;letter-spacing:.14em;color:#a8a8a0}
+  .ladder{display:flex;align-items:flex-end;gap:18px;margin-top:12px;height:64px}
+  .ladder span{display:flex;flex-direction:column;align-items:center;gap:7px}
+  .ladder em{font-style:normal;font-size:9px;color:#b6b6ae}
+
+  .icons{margin-top:22px;background:var(--card);border:1px solid var(--line);border-radius:24px;
+         padding:24px 30px;display:flex;align-items:center;gap:40px}
+  .icons .caption{font-size:9px;letter-spacing:.14em;color:#a8a8a0;width:120px;line-height:1.8}
+  .icons .tile{width:82px;height:82px;border-radius:22.5%;background:#1b1c1a;
+               display:flex;align-items:center;justify-content:center}
+  .icons .tile img{width:54px;height:54px;display:block}
+  .icons figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:9px}
+  .icons figcaption{font-size:9.5px;color:#a8a8a0}
+
+  .dark{margin-top:22px;background:#151613;border-radius:26px;padding:36px 40px 32px;color:#f3efe6}
+  .dark .caption{font-size:9px;letter-spacing:.16em;color:#8c8c82;margin-bottom:24px}
+  .darkgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:30px}
+  .darkcell{display:flex;align-items:center;gap:18px}
+  .darkcell .big{width:88px;height:88px;display:block;flex:0 0 auto}
+  .darkcell .col{display:flex;flex-direction:column;gap:12px}
+  .darkcell .name{font-size:10.5px;letter-spacing:.06em;color:#a5a59c}
+  .chrome{background:#242521;border-radius:10px;padding:6px 7px;display:inline-flex}
+  .tab{background:#35362f;border-radius:6px;padding:6px 10px;display:flex;align-items:center;gap:8px}
+  .tab img{width:16px;height:16px;display:block}
+  .tab span{font-size:11px;color:#e6e2d7}
+  .darklock{display:flex;align-items:center;gap:8px}
+  .darklock img{width:20px;height:20px;display:block}
+  .darklock strong{font-size:15px;font-weight:500;letter-spacing:-.01em}
+
+  .foot{display:grid;grid-template-columns:.9fr 1.4fr;gap:46px;margin-top:34px;
+        border-top:1px solid var(--line);padding-top:28px}
+  .foot h3{margin:0 0 14px;font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:#a8a8a0;font-weight:500}
+  .foot p{margin:0;font-size:12px;line-height:1.9;color:var(--body)}
+  table.spec2{width:100%;border-collapse:collapse;font-size:11.5px;color:var(--body)}
+  table.spec2 th{text-align:left;font-weight:500;color:#a8a8a0;font-size:9.5px;letter-spacing:.08em;padding:0 0 9px}
+  table.spec2 td{padding:6px 0;border-top:1px solid #efede6;vertical-align:top}
+  table.spec2 td:first-child{color:var(--ink);font-weight:500;width:52px}
+</style>
+
+<div class="wrap">
+
+  <div class="eyebrow">abacad — 标志提案 03</div>
+  <h1>一块砖，一条缝</h1>
+  <p class="lede">
+    三个方向共用同一条构造：<b>一整块形，中间一条缝隙，缝隙里有圆</b>。olr 那两个颜色的关系不是"左右两半"，
+    而是"两半之间那点事"—— 相切、咬合、让开。缝宽、球的直径、窝的半径全是同一个数推出来的，
+    所以它看上去静，但经得起凑近看。
+  </p>
+  <div class="swatches">
+    <div class="sw"><i style="background:var(--blue)"></i>#13A7F5</div>
+    <div class="sw"><i style="background:var(--coral)"></i>#FD605E</div>
+  </div>
+
+  <div class="hero">
+    <div class="panel">
+      <img class="big" src="03/01-joint.svg" alt="接">
+      <div>
+        <div class="lockup"><span class="wm">abacad</span></div>
+        <p class="tagline">Every screen on your LAN,<br>in one quiet place.</p>
+      </div>
+    </div>
+    <div class="panel dark">
+      <img class="big" src="03/01-joint.svg" alt="接 · dark" style="width:170px;height:170px">
+      <div>
+        <div class="lockup"><span class="wm" style="font-size:30px">abacad</span></div>
+        <p class="tagline">深底不换色。蓝和珊瑚在 #151613 上都还亮着。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid">
+
+    <article class="card">
+      <div class="stage"><img src="03/01-joint.svg" alt="A 接"></div>
+      <div class="head"><span class="num">A</span><h2>接 · Joint</h2><span class="badge">推荐</span></div>
+      <p class="why">
+        一块砖，一条缝，缝上有一个球关节。蓝的一半把 <b>⌀34</b> 的球推进珊瑚的一半，珊瑚的一半回一个
+        <b>⌀43</b> 的窝；缝宽 4.5，绕球一圈也还是 4.5 —— 所以这两半是<b>铰接</b>的，不是切开的。
+        olr 那套"圆与线相切"，从圆环搬进了方砖。
+      </p>
+      <div class="spec">砖 84×84 · rx 26 ／ 球 ⌀34 ／ 窝 ⌀43 ／ 通缝 4.5</div>
+      <div class="ruler"><div class="label">尺寸梯</div>
+        <div class="ladder">
+          <span><img src="03/01-joint.svg" style="width:60px;height:60px"><em>60</em></span>
+          <span><img src="03/01-joint.svg" style="width:40px;height:40px"><em>40</em></span>
+          <span><img src="03/01-joint.svg" style="width:24px;height:24px"><em>24</em></span>
+          <span><img src="03/01-joint.svg" style="width:16px;height:16px"><em>16</em></span>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="stage"><img src="03/02-cascade.svg" alt="B 叠"></div>
+      <div class="head"><span class="num">B</span><h2>叠 · Cascade</h2></div>
+      <p class="why">
+        三块屏，每块比前一块往后挪 <b>15</b>、退 <b>5</b>。珊瑚、蓝、珊瑚 —— 中间那块蓝永远只露一道阶梯，
+        因为它夹在两层之间。它讲的是这个产品的日常：<b>很多台机器，一页里翻</b>。颜色也在打拍子。
+      </p>
+      <div class="spec">屏 54×54 · rx 15 ／ 步距 15 ／ 退让 5</div>
+      <div class="ruler"><div class="label">尺寸梯</div>
+        <div class="ladder">
+          <span><img src="03/02-cascade.svg" style="width:60px;height:60px"><em>60</em></span>
+          <span><img src="03/02-cascade.svg" style="width:40px;height:40px"><em>40</em></span>
+          <span><img src="03/02-cascade.svg" style="width:24px;height:24px"><em>24</em></span>
+          <span><img src="03/02-cascade.svg" style="width:16px;height:16px"><em>16</em></span>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="stage"><img src="03/03-seam.svg" alt="C 缝"></div>
+      <div class="head"><span class="num">C</span><h2>缝 · Seam</h2></div>
+      <p class="why">
+        同一块砖，摊开成一块宽屏：中间那条缝长成一枚两头顶尖的梭形，最宽处 <b>24</b>。两半从此不相交 ——
+        <b>那条缝就是管道本身</b>：字节从这头进去，从那头出来，中间没有人看。三个里最抽象、最流动的一个。
+      </p>
+      <div class="spec">屏 84×68 · rx 20 ／ 缝 24 ／ 梭形弧 r 54.17</div>
+      <div class="ruler"><div class="label">尺寸梯</div>
+        <div class="ladder">
+          <span><img src="03/03-seam.svg" style="width:60px;height:60px"><em>60</em></span>
+          <span><img src="03/03-seam.svg" style="width:40px;height:40px"><em>40</em></span>
+          <span><img src="03/03-seam.svg" style="width:24px;height:24px"><em>24</em></span>
+          <span><img src="03/03-seam.svg" style="width:16px;height:16px"><em>16</em></span>
+        </div>
+      </div>
+    </article>
+
+  </div>
+
+  <div class="icons">
+    <div class="caption">放进 Dock<br>深色底板 · 1024</div>
+    <figure><div class="tile"><img src="03/01-joint.svg" alt=""></div><figcaption>A · 接</figcaption></figure>
+    <figure><div class="tile"><img src="03/02-cascade.svg" alt=""></div><figcaption>B · 叠</figcaption></figure>
+    <figure><div class="tile"><img src="03/03-seam.svg" alt=""></div><figcaption>C · 缝</figcaption></figure>
+    <p style="margin-left:auto;max-width:250px;font-size:11px;line-height:1.85;color:#7d7d75">
+      底板沿用现有 favicon 的 <code style="font-size:10.5px">#1b1c1a</code>、圆角 22.5%。三个都自带透明底，
+      不加底板也能直接用。
+    </p>
+  </div>
+
+  <div class="dark">
+    <div class="caption">在深色里 · 16px 标签页 · 字标组合</div>
+    <div class="darkgrid">
+      <div class="darkcell"><img class="big" src="03/01-joint.svg">
+        <div class="col"><div class="name">A · 接</div>
+          <div class="chrome"><div class="tab"><img src="03/01-joint.svg"><span>abacad</span></div></div>
+          <div class="darklock"><img src="03/01-joint.svg"><strong>abacad</strong></div></div></div>
+      <div class="darkcell"><img class="big" src="03/02-cascade.svg">
+        <div class="col"><div class="name">B · 叠</div>
+          <div class="chrome"><div class="tab"><img src="03/02-cascade.svg"><span>abacad</span></div></div>
+          <div class="darklock"><img src="03/02-cascade.svg"><strong>abacad</strong></div></div></div>
+      <div class="darkcell"><img class="big" src="03/03-seam.svg">
+        <div class="col"><div class="name">C · 缝</div>
+          <div class="chrome"><div class="tab"><img src="03/03-seam.svg"><span>abacad</span></div></div>
+          <div class="darklock"><img src="03/03-seam.svg"><strong>abacad</strong></div></div></div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <div>
+      <h3>为什么这样好看</h3>
+      <p>
+        三个数在管一整张图：<b>砖 84</b>、<b>缝 4.5</b>、<b>圆</b>。缝宽处处相等，圆的半径从缝宽反推，
+        所以没有一处是"差不多"。颜色永远贴着一条几何关系走 —— 贴住、咬住、让开，而不是随便劈成两半。
+      </p>
+    </div>
+    <div>
+      <h3>骨架</h3>
+      <table class="spec2">
+        <tr><th></th><th>A · 接</th><th>B · 叠</th><th>C · 缝</th></tr>
+        <tr><td>整体</td><td>84 见方 rx26</td><td>三块 54 见方</td><td>84×68 rx20</td></tr>
+        <tr><td>缝 / 让</td><td>4.5 通缝</td><td>5 退让</td><td>24 梭形缝</td></tr>
+        <tr><td>圆</td><td>球 ⌀34 / 窝 ⌀43</td><td>—</td><td>弧 r 54.17</td></tr>
+        <tr><td>步距</td><td>—</td><td>15 + 15</td><td>—</td></tr>
+        <tr><td>对称</td><td>镜像 + 180°</td><td>180°</td><td>镜像 + 180°</td></tr>
+      </table>
+    </div>
+  </div>
+
+</div>
+</html>

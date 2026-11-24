@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!--
+    B · 叠 / Cascade
+    Three panes, one delta apart, each held off the last by exactly 5 — so the mark
+    reads as depth, not as a pile. Coral, blue, coral: the accent is the one you are
+    looking at, and the blue step between them never gets its own outline.
+  -->
+  <defs>
+    <mask id="back">
+      <rect width="100" height="100" fill="#fff"/>
+      <rect x="18" y="18" width="64" height="64" rx="20" fill="#000"/>
+    </mask>
+    <mask id="mid">
+      <rect width="100" height="100" fill="#fff"/>
+      <rect x="33" y="33" width="64" height="64" rx="20" fill="#000"/>
+    </mask>
+  </defs>
+  <rect x="8" y="8" width="54" height="54" rx="15" fill="#fd605e" mask="url(#back)"/>
+  <rect x="23" y="23" width="54" height="54" rx="15" fill="#13a7f5" mask="url(#mid)"/>
+  <rect x="38" y="38" width="54" height="54" rx="15" fill="#fd605e"/>
+</svg>
