@@ -1,15 +1,18 @@
-import { ArrowLeft, Plus, Server } from "lucide-react"
+import { ArrowLeft, Copy, Monitor, Plus, Server } from "lucide-react"
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { toast } from "sonner"
 
 import { ConsoleRail } from "@/components/console-rail"
-import { DeviceDetail } from "@/components/device-detail"
 import { DeviceDialog } from "@/components/device-dialog"
 import { LoginCard } from "@/components/login-card"
 import { Button } from "@/components/ui/button"
+import { VncStage } from "@/components/vnc-stage"
 import { ApiError, api } from "@/lib/api"
+import { copyText } from "@/lib/clipboard"
+import { deviceStatus, statusLabel } from "@/lib/device"
 import type { Device, HubInfo } from "@/lib/types"
+import { cn } from "@/lib/utils"
 
 type AuthState = "loading" | "locked" | "in"
 
@@ -69,56 +72,85 @@ function LoginScreen({
   )
 }
 
-function EmptyMain({ onAdd }: { onAdd: () => void }) {
+function Centered({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] flex-col">
-      <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between gap-3 border-b border-border bg-background/85 px-4 backdrop-blur-md lg:px-8">
-        <span className="text-[11.5px] text-muted-foreground">Devices</span>
-        <Button size="lg" className="h-9 px-3.5 text-[12.5px]" onClick={onAdd}>
-          <Plus />
-          Add device
-        </Button>
-      </header>
-
-      <div className="grid flex-1 place-items-center px-5 py-16">
-        <div className="w-full max-w-md text-center">
-          <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-accent text-accent-foreground">
-            <Server className="size-5" />
-          </span>
-          <h1 className="mt-4 text-[26px] font-semibold tracking-tight">No machines yet</h1>
-          <p className="mx-auto mt-2 max-w-sm text-[13px] leading-relaxed text-muted-foreground">
-            Turn on Screen Sharing or a VNC server on a machine, then add its address. Nothing
-            installs on the device.
-          </p>
-          <Button className="mt-5 h-9 px-3.5 text-[12.5px]" onClick={onAdd}>
-            <Plus />
-            Add your first device
-          </Button>
-
-          <p className="mx-auto mt-6 max-w-sm text-[11px] leading-relaxed text-muted-foreground/80">
-            abacad does not scan your network. Add the machine&apos;s address by hand.
-          </p>
-        </div>
-      </div>
-      <footer className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-5 text-[11px] text-muted-foreground/70 lg:px-8">
-        <span>LAN only</span>
-        <span>no cloud · no relay</span>
-      </footer>
+    <div className="grid min-h-0 flex-1 place-items-center overflow-y-auto px-6 py-14">
+      <div className="w-full max-w-md text-center">{children}</div>
     </div>
   )
 }
 
-function MissingMain({ children }: { children: ReactNode }) {
+function EmptyMain({ onAdd }: { onAdd: () => void }) {
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] flex-col">
-      <header className="flex h-16 shrink-0 items-center border-b border-border px-4 lg:px-8">
-        <span className="text-[11.5px] text-muted-foreground">Devices</span>
-      </header>
-      <div className="grid flex-1 place-items-center px-5 py-16 text-center">
-        <div className="max-w-sm">{children}</div>
-      </div>
-    </div>
+    <Centered>
+      <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-accent text-accent-foreground">
+        <Server className="size-5" />
+      </span>
+      <h1 className="mt-4 text-[26px] font-semibold tracking-tight">No machines yet</h1>
+      <p className="mx-auto mt-2 max-w-sm text-[13px] leading-relaxed text-muted-foreground">
+        Turn on Screen Sharing or a VNC server on a machine, then add its address. Nothing installs
+        on the device.
+      </p>
+      <Button className="mt-5 h-9 px-3.5 text-[12.5px]" onClick={onAdd}>
+        <Plus />
+        Add your first device
+      </Button>
+      <p className="mx-auto mt-6 max-w-sm text-[11px] leading-relaxed text-muted-foreground/80">
+        abacad does not scan your network. Add the machine&apos;s address by hand.
+      </p>
+    </Centered>
   )
+}
+
+// A catalog-only machine has no port through the hub, so there is no screen to
+// show — just the address an agent or VNC client has to reach on its own.
+function DirectMachine({ device, onEdit }: { device: Device; onEdit: () => void }) {
+  const address = `${device.host}:${device.port}`
+  const status = deviceStatus(device)
+  return (
+    <Centered>
+      <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-accent text-accent-foreground">
+        <Monitor className="size-5" />
+      </span>
+      <h1 className="mt-4 text-[24px] font-semibold tracking-tight">{device.name}</h1>
+      <p className="mt-2 flex items-center justify-center gap-1.5 text-[11.5px] text-muted-foreground">
+        <span
+          className={cn(
+            "size-1.5 rounded-full",
+            status === "online" ? "bg-[#1f9d7f]" : status === "attention" ? "bg-[#b4752a]" : "bg-[#b3b4aa]",
+          )}
+        />
+        {statusLabel(status)} · catalog only
+      </p>
+      <p className="mx-auto mt-3 max-w-sm text-[13px] leading-relaxed text-muted-foreground">
+        The hub carries no traffic for this machine. Point a VNC client or an agent at the address
+        below.
+      </p>
+      <div className="mx-auto mt-5 flex w-full max-w-[320px] items-center gap-1 rounded-xl border border-border bg-card py-1 pr-1 pl-3">
+        <span className="min-w-0 flex-1 truncate text-left font-mono text-[11.5px] text-foreground/80">
+          {address}
+        </span>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="text-muted-foreground/70 hover:text-foreground"
+          aria-label="Copy address"
+          onClick={() => void copy(address, "Device address copied")}
+        >
+          <Copy className="size-3.5" />
+        </Button>
+      </div>
+      <Button variant="outline" className="mt-4 h-8 px-3 text-[12px]" onClick={onEdit}>
+        Edit this machine
+      </Button>
+    </Centered>
+  )
+}
+
+async function copy(value: string, message: string) {
+  const copied = await copyText(value)
+  if (copied) toast.success(message)
+  else toast.error("Could not copy")
 }
 
 export default function Dashboard() {
@@ -220,14 +252,6 @@ export default function Dashboard() {
     }
   }
 
-  async function handleLogout() {
-    await api.logout().catch(() => {})
-    setAuth("locked")
-    setDevices([])
-    setReady(true)
-    navigate("/", { replace: true })
-  }
-
   function openAdd() {
     setEditing(null)
     setDialogOpen(true)
@@ -252,7 +276,7 @@ export default function Dashboard() {
 
   async function handleSaved(saved: Device) {
     const adding = editing === null
-    toast.success(adding ? "Device added — open it once to verify." : "Device updated")
+    toast.success(adding ? "Device added" : "Device updated")
     setEditing(null)
     await load()
     if (adding) {
@@ -275,21 +299,22 @@ export default function Dashboard() {
     )
   }
 
-  const hubOnline = auth === "in" && !hubError
-
   let main: ReactNode
   if (selected) {
-    main = (
-      <DeviceDetail
-        device={selected}
-        onEdit={() => openEdit(selected)}
-        onRemove={() => void handleRemove(selected)}
-      />
-    )
+    main =
+      selected.mode === "direct" ? (
+        <DirectMachine
+          key={selected.id}
+          device={selected}
+          onEdit={() => openEdit(selected)}
+        />
+      ) : (
+        <VncStage key={selected.id} device={selected} />
+      )
   } else if (devices.length === 0) {
     if (hubError) {
       main = (
-        <MissingMain>
+        <Centered>
           <h1 className="text-[22px] font-semibold tracking-tight">Can’t reach the hub</h1>
           <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
             The page is signed in, but the device list did not load. The hub may be restarting.
@@ -297,16 +322,14 @@ export default function Dashboard() {
           <Button className="mt-5" variant="outline" onClick={() => void load()}>
             Try again
           </Button>
-        </MissingMain>
+        </Centered>
       )
     } else {
-      main = (
-        <EmptyMain onAdd={() => openAdd()} />
-      )
+      main = <EmptyMain onAdd={() => openAdd()} />
     }
   } else {
     main = (
-      <MissingMain>
+      <Centered>
         <h1 className="text-[22px] font-semibold tracking-tight">Machine not found</h1>
         <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
           It may have been removed, or the link is stale.
@@ -317,21 +340,22 @@ export default function Dashboard() {
             Back to devices
           </Link>
         </Button>
-      </MissingMain>
+      </Centered>
     )
   }
 
   return (
-    <div className="flex min-h-screen min-w-0 flex-col lg:grid lg:h-screen lg:grid-cols-[296px_minmax(0,1fr)] lg:overflow-hidden">
+    <div className="flex h-dvh min-w-0 flex-col lg:grid lg:h-screen lg:grid-cols-[288px_minmax(0,1fr)] lg:overflow-hidden">
       <ConsoleRail
         devices={devices}
         selectedId={selected?.id}
-        hubOnline={hubOnline}
-        version={info?.version}
         onAdd={() => openAdd()}
-        onLogout={() => void handleLogout()}
+        onEdit={(device) => openEdit(device)}
+        onRemove={(device) => void handleRemove(device)}
       />
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col lg:h-screen lg:overflow-y-auto">{main}</main>
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col lg:h-screen lg:overflow-hidden">
+        {main}
+      </main>
 
       <DeviceDialog
         open={dialogOpen}

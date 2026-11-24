@@ -60,9 +60,10 @@ check it to give an agent a standard VNC endpoint.
 Everything after that is in the web UI: add, edit, remove, open, copy the VNC
 endpoint. There are no management commands to remember.
 
-- **Human:** select a machine in the rail and click **Open in browser**. noVNC runs in the tab.
-- **Agent:** point it at the hub's MCP endpoint (below), or copy the `vnc://…`
-  endpoint from the **Agent access** panel.
+- **Human:** select a machine in the rail and its screen opens in the pane next to
+  it. The `…` menu on a row is where a machine is edited or removed.
+- **Agent:** point it at the hub's MCP endpoint (below); the device list it returns
+  carries the `vnc://…` endpoint and token.
 
 ## Running
 
