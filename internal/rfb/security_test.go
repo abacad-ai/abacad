@@ -35,34 +35,6 @@ func blacklistedServer(conn net.Conn) error {
 	return err
 }
 
-func TestProbeDetectsBlacklist(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ln.Close()
-	go func() {
-		conn, err := ln.Accept()
-		if err == nil {
-			_ = blacklistedServer(conn)
-		}
-	}()
-
-	_, err = Probe(context.Background(), ProbeOptions{Addr: ln.Addr().String(), Timeout: 2 * time.Second})
-	if err == nil {
-		t.Fatal("expected an error")
-	}
-	if !IsTooManySecurityFailures(err) {
-		t.Fatalf("error %q not recognized as a blacklist", err)
-	}
-	if !IsAuthFailure(err) {
-		t.Fatalf("blacklist should count as an authentication failure")
-	}
-	if !strings.Contains(err.Error(), "Too many security failures") {
-		t.Fatalf("reason lost: %q", err)
-	}
-}
-
 func TestProxyForwardsBlacklistReason(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

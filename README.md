@@ -57,24 +57,23 @@ a macOS account. Leave
 **Also open a raw VNC port for agents** unchecked for browser-only access, or
 check it to give an agent a standard VNC endpoint.
 
-Everything after that is in the web UI: add, edit, remove, probe, open, copy the
-VNC endpoint. There are no management commands to remember.
+Everything after that is in the web UI: add, edit, remove, open, copy the VNC
+endpoint. There are no management commands to remember.
 
-- **Human:** click **Open** on the device card. noVNC runs in the tab.
+- **Human:** select a machine in the rail and click **Open in browser**. noVNC runs in the tab.
 - **Agent:** point it at the hub's MCP endpoint (below), or copy the `vnc://…`
-  endpoint from the card.
+  endpoint from the **Agent access** panel.
 
 ## Running
 
 ```text
-abacad [serve] [--config PATH] [--listen ADDR] [--no-mdns]
+abacad [serve] [--config PATH] [--listen ADDR]
                [--tls-cert FILE --tls-key FILE] [-v]
 abacad version
 ```
 
-`ABACAD_CONFIG`, `ABACAD_LISTEN`, `ABACAD_ADMIN_TOKEN` and `ABACAD_MDNS` set
-the same things from the environment, for containers; flags win. See
-[Docker](#docker).
+`ABACAD_CONFIG`, `ABACAD_LISTEN` and `ABACAD_ADMIN_TOKEN` set the same things
+from the environment, for containers; flags win. See [Docker](#docker).
 
 With no arguments, `abacad` serves. `serve` is accepted for explicit compose
 files. For HTTPS/WSS (needed for browser clipboard access in most browsers),
@@ -146,41 +145,31 @@ VNC password. No new screen API to learn.
 
 Raw VNC ports are opt-in per device. The browser path only needs one HTTP port.
 
-## Health checks
+## Online status
 
-The hub does **not** port-scan devices. TigerVNC counts every connection that
-closes before authenticating as a security failure, and that counter does not
-decay: a 30-second TCP probe eventually blacklists the hub's IP permanently.
-There is no side-effect-free way to probe a VNC port.
+abacad never opens a connection to a device on its own. There is no scheduled
+check, no health command and no **Check** button: a device is marked **online**
+only after a real browser or agent session authenticates to it, and that state
+goes stale after 10 minutes. A device you have never opened shows **not seen**
+until you do.
 
-Each device chooses one health mode:
+This is deliberate. TigerVNC counts every connection that closes before
+authenticating as a security failure, and its counter does not decay: even a
+well-behaved probe is still a client connection that can eventually blacklist
+the hub. The only connection abacad makes is the one you or an agent asked for.
 
-| `health` | What it does |
-|---|---|
-| `session` (default) | Opens no connection. A device becomes online after a browser or agent session authenticates; the state goes stale after 10 minutes. |
-| `command` | Runs `health_command` on the hub every 60 seconds, with exponential backoff. Exit 0 means online. Prefer SSH/systemd or an agent report. |
-| `vnc` | One complete authenticated RFB handshake, at most every 5 minutes, with bounded failures. |
+If a server already answers `RFB 003.003` + `Too many security failures` because
+of something else on the network, restart the VNC server to clear its in-memory
+counter. Raising `BlacklistThreshold` alone does not clear an existing lockout.
+See [docs/incidents/2026-11-22-vnc-blacklist.md](docs/incidents/2026-11-22-vnc-blacklist.md)
+for the incident history.
 
-The command mode is the recommended way to watch a server that is already
-reachable over SSH. It runs on the hub host, so `ssh` and the key must be
-available there (and inside the container if you run abacad in Docker):
+## No LAN scanning
 
-```yaml
-health: command
-health_command: ssh -o BatchMode=yes debian 'systemctl is-active tigervncserver@:2'
-```
-
-In `vnc` mode the hub sends `RFB 003.008`, selects VncAuth or Apple DH,
-authenticates with the stored credential, reads ServerInit, and disconnects. It
-never opens a connection without starting the handshake. After two
-authentication failures it stops automatic checks for an hour; the manual
-**Check** button is also limited to one VNC probe every five minutes.
-
-If a server already answers `RFB 003.003` + `Too many security failures`,
-restart the VNC server to clear its in-memory counter. Raising
-`BlacklistThreshold` alone does not clear an existing lockout. See
-[docs/incidents/2026-11-22-vnc-blacklist.md](docs/incidents/2026-11-22-vnc-blacklist.md)
-for the full incident and verification.
+abacad does not browse, scan or advertise over mDNS. There is no `_rfb._tcp`
+query, no `_abacad._tcp` announcement, and no "On this LAN" list. The rail only
+lists devices you added by host:port. If you want the hub discoverable, put its
+URL wherever your tools already look — abacad will not announce itself.
 
 ## Docker
 
@@ -195,7 +184,7 @@ docker logs abacad    # prints the admin token
 ```
 
 Then open `http://<host>:8787`. `--network host` is strongly recommended on
-Linux: it keeps mDNS discovery, source IPs, and the dynamically allocated raw
+Linux: it keeps real client IPs and the dynamically allocated raw
 VNC ports (5901-5999) working. The compose file in this repo is the same setup:
 
 ```bash
@@ -212,7 +201,6 @@ from the environment. Flags still win over both.
 | `ABACAD_CONFIG` | `/config/config.yaml` | config file path in the container |
 | `ABACAD_LISTEN` | `0.0.0.0:8787` | listen address (the healthcheck follows its port) |
 | `ABACAD_ADMIN_TOKEN` | generated | admin token, at least 16 characters, never written to `config.yaml` |
-| `ABACAD_MDNS` | `true` | `false` disables discovery and advertising |
 
 The generated token is printed to `docker logs`. To pin one from your secret
 store instead:
@@ -243,13 +231,12 @@ purpose.
 
 Where host networking is unavailable (macOS/Windows Docker Desktop, or a host
 namespace you do not control), use `compose.bridge.yaml`. It publishes 8787 and
-the raw VNC range 5901-5999. mDNS does not cross a bridge, so discovery is off
-and devices are added by hand; a device that needs a raw port allocated after
-container creation requires `docker compose up -d --force-recreate`.
+the raw VNC range 5901-5999. Devices are added by hand; a device that needs a raw
+port allocated after container creation requires `docker compose up -d --force-recreate`.
 
 ### Healthcheck
 
-The image probes `GET /healthz` on `ABACAD_LISTEN`'s port every 30 seconds.
+The image calls `GET /healthz` on `ABACAD_LISTEN`'s port every 30 seconds.
 That probe is plain HTTP, so a TLS deployment (`--tls-cert`/`--tls-key`) should
 run with `--no-healthcheck`.
 
@@ -274,7 +261,6 @@ The thin path is implemented:
 - raw VNC listeners per device (`gateway` and `l4`)
 - Vite + React + React Router + Tailwind + shadcn frontend, built into `internal/web/dist` and embedded
 - noVNC browser viewer built on the upstream JavaScript library (`@novnc/novnc`)
-- mDNS discovery and advertising
 - One `serve` command (also the default); device management is entirely in the web UI
 - MCP `list_devices` over Streamable HTTP at `/mcp`
 - multi-arch container image on GHCR with environment-only configuration and a healthcheck
@@ -292,7 +278,7 @@ framebuffer) and the real macOS Screen Sharing banner/type list. macOS offers
 
 ```bash
 # terminal 1: the Go API/WebSocket server
-go run ./cmd/abacad serve --listen 127.0.0.1:8787 --no-mdns
+go run ./cmd/abacad serve --listen 127.0.0.1:8787
 
 # terminal 2: Vite with HMR, proxying /api, /ws and /mcp to :8787
 cd frontend

@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -17,68 +16,55 @@ import (
 	"abacad/internal/rfb"
 )
 
+// staleAfter is how long a session-derived "online" state stays credible
+// without a new authenticated session. After that the UI falls back to
+// "last seen" rather than pretending the device is still online.
+const staleAfter = 10 * time.Minute
+
 // View is a device plus its live state. Password is never serialized because
 // config.Device hides it; Token is only returned to an authenticated caller.
 type View struct {
 	config.Device
-	Online    bool      `json:"online"`
-	Known     bool      `json:"known"`
-	Banner    string    `json:"banner,omitempty"`
-	Detail    string    `json:"detail,omitempty"`
-	LastSeen  time.Time `json:"last_seen,omitempty"`
-	Warning   string    `json:"warning,omitempty"`
-	LastError string    `json:"last_error,omitempty"`
-	NextCheck time.Time `json:"next_check,omitempty"`
+	Online    bool       `json:"online"`
+	Known     bool       `json:"known"`
+	LastSeen  *time.Time `json:"last_seen,omitempty"`
+	LastError string     `json:"last_error,omitempty"`
 }
 
+// Status is the in-memory, session-derived reachability of one device. There is
+// no scheduled check and no probe: Online only becomes true after a real
+// browser or agent session authenticates to the device.
 type Status struct {
-	Online       bool      `json:"online"`
-	Known        bool      `json:"known"`
-	Banner       string    `json:"banner,omitempty"`
-	Detail       string    `json:"detail,omitempty"`
-	LastSeen     time.Time `json:"last_seen,omitempty"`
-	Warning      string    `json:"warning,omitempty"`
-	LastError    string    `json:"last_error,omitempty"`
-	Failures     int       `json:"failures,omitempty"`      // consecutive failed checks (network or auth)
-	AuthFailures int       `json:"auth_failures,omitempty"` // consecutive auth failures; these count on the device
-	LastCheck    time.Time `json:"last_check,omitempty"`
-	NextCheck    time.Time `json:"next_check,omitempty"`
-	Checking     bool      `json:"checking,omitempty"`
-
-	// Set only on the manual Probe response when the five-minute floor has not
-	// elapsed. It is not stored, so the card keeps its last real result.
-	Throttled       bool   `json:"throttled,omitempty"`
-	ThrottleMessage string `json:"throttle_message,omitempty"`
+	Online    bool      `json:"online"`
+	Known     bool      `json:"known"`
+	LastSeen  time.Time `json:"last_seen,omitempty"`
+	LastError string    `json:"last_error,omitempty"`
 }
 
 // AddRequest is the input to Add.
 type AddRequest struct {
-	Name          string `json:"name"`
-	Host          string `json:"host"`
-	Port          int    `json:"port"`
-	Username      string `json:"username"`
-	Auth          string `json:"auth"`
-	Password      string `json:"password"`
-	Platform      string `json:"platform"`
-	Mode          string `json:"mode"`
-	Expose        bool   `json:"expose"`
-	Health        string `json:"health"`
-	HealthCommand string `json:"health_command"`
+	Name     string `json:"name"`
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Username string `json:"username"`
+	Auth     string `json:"auth"`
+	Password string `json:"password"`
+	Platform string `json:"platform"`
+	Mode     string `json:"mode"`
+	Expose   bool   `json:"expose"`
 }
 
 // UpdateRequest is a sparse update; nil fields are left alone.
 type UpdateRequest struct {
-	Name          *string `json:"name"`
-	Host          *string `json:"host"`
-	Port          *int    `json:"port"`
-	Username      *string `json:"username"`
-	Auth          *string `json:"auth"`
-	Password      *string `json:"password"`
-	Platform      *string `json:"platform"`
-	Mode          *string `json:"mode"`
-	Expose        *bool   `json:"expose"`
-	Health        *string `json:"health"`
-	HealthCommand *string `json:"health_command"`
+	Name     *string `json:"name"`
+	Host     *string `json:"host"`
+	Port     *int    `json:"port"`
+	Username *string `json:"username"`
+	Auth     *string `json:"auth"`
+	Password *string `json:"password"`
+	Platform *string `json:"platform"`
+	Mode     *string `json:"mode"`
+	Expose   *bool   `json:"expose"`
 }
 
 type Inventory struct {
@@ -105,7 +91,8 @@ func (in *Inventory) Devices() []View {
 	for _, d := range in.cfg.Devices {
 		out = append(out, viewOf(d, in.status[d.ID]))
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	// Keep the order the user configured: the rail is stable across polls and
+	// does not reshuffle when a device changes state.
 	return out
 }
 
@@ -121,22 +108,27 @@ func (in *Inventory) Device(id string) (View, bool) {
 }
 
 func viewOf(d config.Device, s Status) View {
+	online := s.Online
+	if online && (s.LastSeen.IsZero() || time.Since(s.LastSeen) > staleAfter) {
+		online = false
+	}
+	var lastSeen *time.Time
+	if !s.LastSeen.IsZero() {
+		t := s.LastSeen
+		lastSeen = &t
+	}
 	return View{
 		Device:    d,
-		Online:    s.Online,
+		Online:    online,
 		Known:     s.Known,
-		Banner:    s.Banner,
-		Detail:    s.Detail,
-		LastSeen:  s.LastSeen,
-		Warning:   s.Warning,
+		LastSeen:  lastSeen,
 		LastError: s.LastError,
-		NextCheck: s.NextCheck,
 	}
 }
 
-// Add validates, optionally allocates a raw-VNC port, checks the device once,
-// and saves. A failed check does not reject the device: the host may still be
-// booting, and the UI can show the error.
+// Add validates, optionally allocates a raw-VNC port, and saves. It never
+// connects to the device: the UI shows the new machine as "not seen" until a
+// real browser or agent session authenticates.
 func (in *Inventory) Add(ctx context.Context, req AddRequest) (View, error) {
 	mode := req.Mode
 	if mode == "" {
@@ -162,26 +154,22 @@ func (in *Inventory) Add(ctx context.Context, req AddRequest) (View, error) {
 		return View{}, err
 	}
 	d, err := in.cfg.AddDevice(config.Device{
-		Name:          req.Name,
-		Host:          req.Host,
-		Port:          req.Port,
-		Username:      req.Username,
-		Auth:          req.Auth,
-		Password:      req.Password,
-		Platform:      req.Platform,
-		Mode:          mode,
-		VNCPort:       port,
-		Health:        req.Health,
-		HealthCommand: req.HealthCommand,
+		Name:     req.Name,
+		Host:     req.Host,
+		Port:     req.Port,
+		Username: req.Username,
+		Auth:     req.Auth,
+		Password: req.Password,
+		Platform: req.Platform,
+		Mode:     mode,
+		VNCPort:  port,
 	})
 	if err != nil {
 		in.mu.Unlock()
 		return View{}, err
 	}
-	in.status[d.ID] = Status{LastError: "checking"}
 	in.mu.Unlock()
 
-	in.checkNow(ctx, d.ID)
 	if in.onChange != nil {
 		in.onChange()
 	}
@@ -223,7 +211,7 @@ func (in *Inventory) Update(ctx context.Context, id string, req UpdateRequest) (
 		port = p
 	}
 	connChanged := req.Host != nil || req.Port != nil || req.Password != nil ||
-		req.Auth != nil || req.Username != nil || req.Health != nil || req.HealthCommand != nil
+		req.Auth != nil || req.Username != nil
 	d, err := in.cfg.UpdateDevice(id, func(d *config.Device) error {
 		if req.Name != nil {
 			d.Name = *req.Name
@@ -249,26 +237,6 @@ func (in *Inventory) Update(ctx context.Context, id string, req UpdateRequest) (
 		if req.Mode != nil {
 			d.Mode = *req.Mode
 		}
-		if req.Health != nil {
-			d.Health = strings.TrimSpace(*req.Health)
-		}
-		if req.HealthCommand != nil {
-			d.HealthCommand = strings.TrimSpace(*req.HealthCommand)
-			if req.Health == nil && d.HealthCommand != "" && d.Health == config.HealthSession {
-				// A caller that supplies only a command clearly wants command
-				// health; do not leave it in passive mode by accident.
-				d.Health = config.HealthCommand
-			}
-		}
-		// A device without an explicit health mode falls back to the command
-		// when one is set, otherwise to passive session-derived state.
-		if d.Health == "" {
-			if d.HealthCommand != "" {
-				d.Health = config.HealthCommand
-			} else {
-				d.Health = config.HealthSession
-			}
-		}
 		if allocate {
 			d.VNCPort = port
 		}
@@ -284,25 +252,14 @@ func (in *Inventory) Update(ctx context.Context, id string, req UpdateRequest) (
 		in.mu.Unlock()
 		return View{}, err
 	}
-	if in.status == nil {
-		in.status = map[string]Status{}
-	}
 	if connChanged {
-		// New address or credential: allow an immediate check and clear the
-		// failure history so a corrected password is not stuck behind backoff.
-		st := in.status[id]
-		st.Failures = 0
-		st.AuthFailures = 0
-		st.LastCheck = time.Time{}
-		st.NextCheck = time.Time{}
-		st.Checking = false
-		in.status[id] = st
+		// A new address or credential invalidates the old reachability: the
+		// next observation has to come from a real session against the new
+		// endpoint.
+		delete(in.status, id)
 	}
 	in.mu.Unlock()
 
-	if connChanged {
-		in.checkNow(ctx, id)
-	}
 	if in.onChange != nil {
 		in.onChange()
 	}
@@ -324,17 +281,6 @@ func (in *Inventory) Remove(id string) error {
 	return nil
 }
 
-// Probe runs a user-initiated check. With a health command configured it runs
-// that command; otherwise it performs one complete authenticated RFB handshake,
-// rate-limited to one every five minutes. It never opens a bare TCP connection.
-func (in *Inventory) Probe(ctx context.Context, id string) Status {
-	return in.checkDevice(ctx, id, true)
-}
-
-func (in *Inventory) checkNow(ctx context.Context, id string) {
-	_ = in.checkDevice(ctx, id, true)
-}
-
 // MarkOnline records a successful authenticated session. It is called after the
 // upstream ServerInit, so it never claims a device is online just because TCP
 // accepted a connection.
@@ -347,8 +293,6 @@ func (in *Inventory) MarkOnline(id string) {
 	st.Known = true
 	st.LastSeen = now
 	st.LastError = ""
-	st.Failures = 0
-	st.AuthFailures = 0
 	in.status[id] = st
 }
 
@@ -372,17 +316,12 @@ func (in *Inventory) MarkOffline(id string, err error) {
 	if err == nil {
 		return
 	}
-	now := time.Now().UTC()
 	in.mu.Lock()
 	defer in.mu.Unlock()
 	st := in.status[id]
 	st.Online = false
 	st.Known = true
 	st.LastError = describeError(err)
-	if rfb.IsTooManySecurityFailures(err) {
-		st.AuthFailures = vncMaxAuthFailures
-		st.NextCheck = now.Add(vncFailureCooldown)
-	}
 	in.status[id] = st
 }
 

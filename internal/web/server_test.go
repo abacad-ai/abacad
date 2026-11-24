@@ -20,7 +20,6 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"abacad/internal/config"
-	"abacad/internal/discovery"
 	"abacad/internal/gateway"
 	"abacad/internal/inventory"
 	mcpserver "abacad/internal/mcp"
@@ -68,6 +67,52 @@ func TestLoginAndAuth(t *testing.T) {
 	}
 	if _, ok := out["devices"]; !ok {
 		t.Fatalf("unexpected response %v", out)
+	}
+}
+
+func TestConsoleRoute(t *testing.T) {
+	srv, _ := newTestServer(t, "")
+	defer srv.Close()
+
+	noRedirect := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	resp, err := noRedirect.Get(srv.URL + "/devices/mock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("signed-out /devices/mock = %d", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Location"); got != "/?next=/devices/mock" {
+		t.Fatalf("redirect = %q", got)
+	}
+
+	login, err := http.Post(srv.URL+"/api/login", "application/json", strings.NewReader(`{"token":"test-admin"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cookies := login.Cookies()
+	_ = login.Body.Close()
+	if len(cookies) == 0 {
+		t.Fatal("no session cookie")
+	}
+	req, _ := http.NewRequest("GET", srv.URL+"/devices/mock", nil)
+	req.AddCookie(cookies[0])
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusServiceUnavailable {
+		t.Skip("frontend not built")
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("signed-in /devices/mock = %d", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "text/html") {
+		t.Fatalf("content type = %q", ct)
 	}
 }
 
@@ -171,8 +216,6 @@ func newTestServer(t *testing.T, upstreamAddr string) (*httptest.Server, *invent
 	cfg.Listen = "127.0.0.1:0"
 	cfg.AdminToken = "test-admin"
 	cfg.CookieSecret = "test-cookie-secret"
-	mdnsOff := false
-	cfg.MDNS = &mdnsOff
 	cfg.Devices = []config.Device{}
 	if upstreamAddr != "" {
 		host, p, err := net.SplitHostPort(upstreamAddr)
@@ -193,9 +236,8 @@ func newTestServer(t *testing.T, upstreamAddr string) (*httptest.Server, *invent
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	gw := gateway.New(inv, log)
 	gw.Sync(inv.Devices())
-	disc := discovery.New(log)
 	mcpSrv := mcpserver.New(inv, "test")
-	s := New(inv, gw, disc, mcpSrv, log, "test")
+	s := New(inv, gw, mcpSrv, log, "test")
 	return httptest.NewServer(s.Handler()), inv
 }
 

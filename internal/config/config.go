@@ -14,7 +14,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -32,7 +31,6 @@ const (
 	EnvConfig     = "ABACAD_CONFIG"
 	EnvListen     = "ABACAD_LISTEN"
 	EnvAdminToken = "ABACAD_ADMIN_TOKEN"
-	EnvMDNS       = "ABACAD_MDNS"
 
 	// MinAdminTokenLen is the shortest admin token ApplyEnv accepts. The
 	// generated token is 64 hex characters; a hand-written one should at
@@ -49,41 +47,22 @@ const (
 	// On macOS this is what attaches to the logged-in console session; the VNC
 	// password path has no user identity and can land on the login window.
 	AuthARD = "ard"
-
-	// HealthSession is the default: no background connection to the device at
-	// all. A device becomes online when a real browser/agent session
-	// authenticates to it, and that state goes stale after a few minutes.
-	HealthSession = "session"
-	// HealthCommand runs a local command (typically ssh + systemctl) on the hub.
-	// It is the only side-effect-free way to ask a VNC server whether it is
-	// alive without touching its blacklist counter.
-	HealthCommand = "command"
-	// HealthVNC performs a complete, authenticated RFB handshake. It is opt-in
-	// and rate-limited to one every five minutes with bounded failures because
-	// it still counts as a client connection on the device.
-	HealthVNC = "vnc"
 )
 
 // Device is one VNC server the hub knows about.
 type Device struct {
-	ID       string `yaml:"id" json:"id"`
-	Name     string `yaml:"name" json:"name"`
-	Host     string `yaml:"host" json:"host"`
-	Port     int    `yaml:"port" json:"port"`
-	Username string `yaml:"username,omitempty" json:"username,omitempty"`
-	Auth     string `yaml:"auth,omitempty" json:"auth,omitempty"`
-	Password string `yaml:"password,omitempty" json:"-"`
-	Platform string `yaml:"platform,omitempty" json:"platform,omitempty"`
-	Mode     string `yaml:"mode,omitempty" json:"mode"`
-	VNCPort  int    `yaml:"vnc_port,omitempty" json:"vnc_port,omitempty"`
-	Token    string `yaml:"token,omitempty" json:"token,omitempty"`
-	// Health selects how the hub decides whether the device is online.
-	// "session" (default) never opens a connection; "command" runs
-	// HealthCommand on the hub; "vnc" performs an authenticated RFB handshake
-	// at most once every five minutes.
-	Health        string    `yaml:"health,omitempty" json:"health,omitempty"`
-	HealthCommand string    `yaml:"health_command,omitempty" json:"health_command,omitempty"`
-	CreatedAt     time.Time `yaml:"created_at,omitempty" json:"created_at,omitempty"`
+	ID        string    `yaml:"id" json:"id"`
+	Name      string    `yaml:"name" json:"name"`
+	Host      string    `yaml:"host" json:"host"`
+	Port      int       `yaml:"port" json:"port"`
+	Username  string    `yaml:"username,omitempty" json:"username,omitempty"`
+	Auth      string    `yaml:"auth,omitempty" json:"auth,omitempty"`
+	Password  string    `yaml:"password,omitempty" json:"-"`
+	Platform  string    `yaml:"platform,omitempty" json:"platform,omitempty"`
+	Mode      string    `yaml:"mode,omitempty" json:"mode"`
+	VNCPort   int       `yaml:"vnc_port,omitempty" json:"vnc_port,omitempty"`
+	Token     string    `yaml:"token,omitempty" json:"token,omitempty"`
+	CreatedAt time.Time `yaml:"created_at,omitempty" json:"created_at,omitempty"`
 }
 
 // Config is the whole persisted state of a hub.
@@ -91,7 +70,6 @@ type Config struct {
 	Listen       string   `yaml:"listen"`
 	AdminToken   string   `yaml:"admin_token"`
 	CookieSecret string   `yaml:"cookie_secret"`
-	MDNS         *bool    `yaml:"mdns,omitempty"`
 	VNCPortStart int      `yaml:"vnc_port_start"`
 	VNCPortEnd   int      `yaml:"vnc_port_end"`
 	Devices      []Device `yaml:"devices"`
@@ -144,10 +122,6 @@ func Load(path string) (*Config, error) {
 // Path is the file this config was loaded from.
 func (c *Config) Path() string { return c.path }
 
-// MDNSEnabled reports whether discovery is on. The default is on; an explicit
-// "mdns: false" in the file turns it off.
-func (c *Config) MDNSEnabled() bool { return c.MDNS == nil || *c.MDNS }
-
 // ApplyEnv applies the environment overrides used by container images.
 // getenv is os.Getenv in production; tests pass a map lookup.
 //
@@ -167,13 +141,6 @@ func (c *Config) ApplyEnv(getenv func(string) string) error {
 			return fmt.Errorf("%s must be at least %d characters", EnvAdminToken, MinAdminTokenLen)
 		}
 		c.AdminToken = v
-	}
-	if v := strings.TrimSpace(getenv(EnvMDNS)); v != "" {
-		on, err := strconv.ParseBool(v)
-		if err != nil {
-			return fmt.Errorf("%s: %w", EnvMDNS, err)
-		}
-		c.MDNS = &on
 	}
 	return nil
 }
@@ -213,8 +180,6 @@ func (c *Config) normalize() error {
 		d.Name = strings.TrimSpace(d.Name)
 		d.Host = strings.TrimSpace(d.Host)
 		d.Username = strings.TrimSpace(d.Username)
-		d.Health = strings.TrimSpace(d.Health)
-		d.HealthCommand = strings.TrimSpace(d.HealthCommand)
 		if d.Port == 0 {
 			d.Port = 5900
 		}
@@ -223,13 +188,6 @@ func (c *Config) normalize() error {
 		}
 		if d.Auth == "" {
 			d.Auth = AuthVNC
-		}
-		if d.Health == "" {
-			if d.HealthCommand != "" {
-				d.Health = HealthCommand
-			} else {
-				d.Health = HealthSession
-			}
 		}
 		if d.ID == "" {
 			d.ID = slug(d.Name)
@@ -277,20 +235,6 @@ func (c *Config) Validate() error {
 		}
 		if d.Auth == AuthARD && d.Username == "" {
 			return fmt.Errorf("device %q: macOS account name is required for auth %q", d.ID, d.Auth)
-		}
-		switch d.Health {
-		case "", HealthSession, HealthCommand, HealthVNC:
-		default:
-			return fmt.Errorf("device %q: invalid health %q", d.ID, d.Health)
-		}
-		if d.Health == HealthCommand && strings.TrimSpace(d.HealthCommand) == "" {
-			return fmt.Errorf("device %q: health_command is required for health %q", d.ID, d.Health)
-		}
-		if len(d.HealthCommand) > 4096 {
-			return fmt.Errorf("device %q: health_command is too long", d.ID)
-		}
-		if strings.ContainsRune(d.HealthCommand, 0) {
-			return fmt.Errorf("device %q: health_command contains a NUL byte", d.ID)
 		}
 		if d.VNCPort != 0 {
 			if d.VNCPort < c.VNCPortStart || d.VNCPort > c.VNCPortEnd {
@@ -342,8 +286,6 @@ func (c *Config) AddDevice(d Device) (Device, error) {
 	d.Name = strings.TrimSpace(d.Name)
 	d.Host = strings.TrimSpace(d.Host)
 	d.Username = strings.TrimSpace(d.Username)
-	d.Health = strings.TrimSpace(d.Health)
-	d.HealthCommand = strings.TrimSpace(d.HealthCommand)
 	if d.Name == "" {
 		return Device{}, errors.New("name is required")
 	}
@@ -358,13 +300,6 @@ func (c *Config) AddDevice(d Device) (Device, error) {
 	}
 	if d.Auth == "" {
 		d.Auth = AuthVNC
-	}
-	if d.Health == "" {
-		if d.HealthCommand != "" {
-			d.Health = HealthCommand
-		} else {
-			d.Health = HealthSession
-		}
 	}
 	if d.ID == "" {
 		d.ID = slug(d.Name)

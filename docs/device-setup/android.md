@@ -1,7 +1,7 @@
 # Android
 
 Use **droidVNC-NG** (F-Droid or Google Play). It is a standard VNC server with
-mDNS advertising and an optional built-in noVNC page.
+an optional built-in noVNC page.
 
 ## Set it up
 
@@ -11,9 +11,7 @@ mDNS advertising and an optional built-in noVNC page.
 4. Tap **Start**.
 5. Keep the device on the same Wi-Fi/LAN as the hub.
 
-The app advertises `_rfb._tcp` via Zeroconf, so the hub's **Discovered** section
-may offer it automatically. Otherwise click **Add device** in the hub and fill
-in:
+Click **Add device** in the hub and fill in:
 
 - **Name:** `pixel`
 - **Host:** the phone's LAN address, e.g. `192.168.1.50`

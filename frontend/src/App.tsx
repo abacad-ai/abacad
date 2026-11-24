@@ -10,6 +10,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Dashboard />} />
+        <Route path="/devices/:id" element={<Dashboard />} />
         <Route path="/vnc/:id" element={<Viewer />} />
         <Route path="*" element={<NotFound />} />
       </Routes>

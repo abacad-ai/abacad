@@ -1,6 +1,7 @@
 # abacad v2（薄版）：局域网 VNC 聚合网关
 
 > 状态：计划稿。
+> 2026-11-24 更新：mDNS 与主动探测已完全移除；下文保留当时的设计记录。
 > 一句话：**一个自托管的、只做局域网的 VNC 聚合站**。设备端用各平台现成的 VNC server，人不写客户端，agent 直接说 VNC。我们只做「目录 + 入口 + 认证 + 转发」。
 
 ---
@@ -480,7 +481,7 @@ agent 的 VNC 客户端                              hub / 设备
 ### 加一台设备
 
 1. 在设备上开原生 VNC server，设一个密码（macOS 系统设置、TigerVNC service、droidVNC-NG Start）。
-2. hub 页面「添加设备」：名字、`host:port`、密码；或从 mDNS 待认领列表点「添加」。
+2. hub 页面「添加设备」：名字、`host:port`、密码。不浏览 mDNS，没有待认领列表。
 3. hub 检查：TCP 连上、读完 RFB banner 判断在线；添加/编辑时再检查 security types，给出认证警告。
 4. 保存；分配一个 hub 端口（`5901`）和一个 token。
 
@@ -500,8 +501,8 @@ agent 的 VNC 客户端                              hub / 设备
 
 ### 状态与发现
 
-- 每 30s TCP + RFB banner probe；不握手，成本低。
-- mDNS 浏览 `_rfb._tcp`；droidVNC-NG 自带，macOS 可能广播，TigerVNC/x11vnc 用 avahi 发布。
+- 不主动探测；只在真实会话认证后标记在线（后续决定，见 `health` 移除）。mDNS 也完全移除。
+- 不浏览 `_rfb._tcp`；只广播 hub 自己的 `_abacad._tcp`。
 - hub 自己广播 `_abacad._tcp`，方便 agent/人发现。
 
 ---
@@ -514,7 +515,6 @@ cmd/abacad/
 internal/
   config/              # YAML + env
   inventory/           # 设备 CRUD、端口分配、健康检查
-  discovery/           # mDNS browse/advertise
   gateway/             # L7 RFB 握手 + 双向管道（核心，~500 行）
   wsproxy/             # noVNC WSS ⇄ TCP
   web/                 # 静态 UI + noVNC（go:embed）
@@ -532,7 +532,7 @@ docs/
   ai.md
 ```
 
-依赖：`coder/websocket`、`yaml.v3`、`zeroconf`、官方 MCP SDK（只为 `list_devices`）、noVNC 资源。核心**不需要 RFB 客户端库**。
+依赖：`coder/websocket`、`yaml.v3`、官方 MCP SDK（只为 `list_devices`）、noVNC 资源。核心**不需要 RFB 客户端库**。
 
 规模估计：
 
@@ -567,7 +567,7 @@ docs/
 - [ ] 静态 UI：设备卡片、添加、在线状态、内嵌 noVNC。
 - [ ] WSS 代理 + cookie 认证。
 - [ ] L7 握手网关：浏览器侧 None、agent 侧 VNC token、上游真实密码。
-- [ ] mDNS 发现 + 待认领。
+- [x] mDNS 完全移除：不广播、不发现、无待认领列表。
 - [x] 设备卡片的 warning（替代 CLI doctor）。
 - [ ] launchd / systemd 示例。
 
@@ -655,7 +655,7 @@ docs/
 - L7 RFB 握手网关：浏览器侧 `None`、agent 侧 VNC token、上游真实密码注入。
 - 每设备裸 VNC 监听（`gateway` / `l4`）；`direct` 仅目录。
 - noVNC 1.6.0 已 vendored 并嵌入二进制。
-- mDNS 浏览 `_rfb._tcp` + 广播 `_abacad._tcp`。
+- 只广播 `_abacad._tcp`；不浏览 `_rfb._tcp`。
 - MCP `list_devices`（官方 Go SDK，`POST /mcp` Streamable HTTP）。
 - 一个 `serve` 命令（也是默认命令）；设备管理全部在 Web UI。
 - 单二进制、YAML 配置 0600；前端 Vite + React + Tailwind + shadcn，构建产物嵌入二进制（运行时无 Node）。
@@ -671,10 +671,10 @@ docs/
 - **缩略图 / 录像 / OCR**：按 D14 不做；它们需要 RFB 客户端。
 - **多 agent 租约**：目前没有连接级互斥；两个 agent 可以同时连。
 - **MCP Streamable HTTP**：已改为 `/mcp`（会话 + JSON、Bearer admin token）；stdio 命令已移除。
-- **UI 编辑**：已接入 `PATCH /api/devices/{id}`；添加、编辑、删除、probe 都在网页里。
+- **UI 编辑**：已接入 `PATCH /api/devices/{id}`；添加、编辑、删除、打开都在网页里；没有 probe/Check。
 - **token 轮换**：还没有 UI/命令；admin token 与设备 token 目前都需要改配置后重启。
 - **真实设备矩阵**：x11vnc 已端到端验证；一台真实 macOS Screen Sharing 已验证 banner、security types（`RFB 003.889`，`[30 33 36 2 35]`）和 type 30 DH 参数（generator 5，4096-bit prime）。macOS 账户认证的完整控制待用真实账户做一次端到端确认；droidVNC-NG、Windows TigerVNC 待实测。
-- **mDNS 在 Docker bridge 下不通**：按 D11 用 host network 或手动添加。
+- **mDNS 已完全移除**：设备一律手动添加；Docker bridge/host 都不影响这一点。
 
 ### 与原计划的偏差
 

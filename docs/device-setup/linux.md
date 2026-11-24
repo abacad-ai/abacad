@@ -53,13 +53,14 @@ sudo systemctl enable --now tigervncserver@:2.service   # RFB port 5902
 ```
 
 TigerVNC counts every connection that closes before authenticating as a
-security failure. Its failure counter does not decay, so a 30-second TCP
-health probe from the hub eventually blacklists the hub's IP and rejects even
-correct clients with `Too many security failures`. Do not probe the port with
-`nc`, a load balancer, or a monitoring system.
+security failure. Its failure counter does not decay, so repeated probes from
+any tool eventually blacklist that IP and reject even correct clients with
+`Too many security failures`. Do not probe the port with `nc`, a load balancer,
+a monitoring system, or a health check.
 
-For the hub, prefer an SSH health command (see below) over `health: vnc`.
-To clear an existing lockout, restart the VNC server:
+abacad itself never probes: it only connects when you open a browser session or
+an agent connects to an exposed VNC port. To clear an existing lockout, restart
+the VNC server:
 
 ```bash
 sudo systemctl restart tigervncserver@:2.service
@@ -104,10 +105,9 @@ In the hub web UI, click **Add device**:
 - **Platform:** Linux
 - **Also open a raw VNC port for agents:** optional; leave it off for
   browser-only.
-- **Health check:** **Run a command on the hub**, for example
-  `ssh -o BatchMode=yes debian 'systemctl is-active tigervncserver@:2'`.
-  This avoids touching the VNC port at all.
 
-The card should turn **online**. If it stays offline, check that the VNC server
-is listening on the LAN interface, that the hub can run the health command
-non-interactively, and that the firewall allows the hub's IP.
+There is no health check to configure: abacad never probes the port. After
+saving, click **Open** once. The rail shows **online** when that session
+authenticates, and stays **not seen** until then. If it fails, check that the
+VNC server is listening on the LAN interface and that the firewall allows the
+hub's IP.

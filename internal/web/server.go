@@ -17,7 +17,6 @@ import (
 	"github.com/coder/websocket"
 
 	"abacad/internal/config"
-	"abacad/internal/discovery"
 	"abacad/internal/gateway"
 	"abacad/internal/inventory"
 	mcpserver "abacad/internal/mcp"
@@ -29,15 +28,14 @@ var assets embed.FS
 type Server struct {
 	inv     *inventory.Inventory
 	gw      *gateway.Gateway
-	disc    *discovery.Discovery
 	mcp     *mcpserver.Server
 	log     *slog.Logger
 	version string
 	dist    fs.FS
 }
 
-func New(inv *inventory.Inventory, gw *gateway.Gateway, disc *discovery.Discovery, mcp *mcpserver.Server, log *slog.Logger, version string) *Server {
-	return &Server{inv: inv, gw: gw, disc: disc, mcp: mcp, log: log, version: version}
+func New(inv *inventory.Inventory, gw *gateway.Gateway, mcp *mcpserver.Server, log *slog.Logger, version string) *Server {
+	return &Server{inv: inv, gw: gw, mcp: mcp, log: log, version: version}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -58,10 +56,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/devices", s.auth(s.addDevice))
 	mux.HandleFunc("PATCH /api/devices/{id}", s.auth(s.updateDevice))
 	mux.HandleFunc("DELETE /api/devices/{id}", s.auth(s.deleteDevice))
-	mux.HandleFunc("POST /api/devices/{id}/probe", s.auth(s.probeDevice))
-	mux.HandleFunc("GET /api/discovered", s.auth(s.discovered))
 
 	mux.HandleFunc("GET /vnc/{id}", s.view)
+	mux.HandleFunc("GET /devices/{id}", s.console)
 	mux.HandleFunc("GET /ws/vnc/{id}", s.websocket)
 
 	distFS, err := fs.Sub(assets, "dist")
@@ -89,6 +86,17 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) index(w http.ResponseWriter, r *http.Request) {
+	s.serveIndex(w)
+}
+
+// console serves the split-console SPA at /devices/{id}. The browser checks the
+// session again, but a redirect keeps a direct link from rendering a signed-out
+// shell first.
+func (s *Server) console(w http.ResponseWriter, r *http.Request) {
+	if !s.loggedIn(r) {
+		http.Redirect(w, r, "/?next="+r.URL.Path, http.StatusFound)
+		return
+	}
 	s.serveIndex(w)
 }
 
@@ -130,7 +138,6 @@ func (s *Server) info(w http.ResponseWriter, r *http.Request) {
 		"name":    "abacad",
 		"version": s.version,
 		"listen":  cfg.Listen,
-		"mdns":    cfg.MDNSEnabled(),
 		"devices": len(s.inv.Devices()),
 	})
 }
@@ -212,32 +219,6 @@ func (s *Server) deleteDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-}
-
-func (s *Server) probeDevice(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if _, ok := s.inv.Device(id); !ok {
-		writeErr(w, http.StatusNotFound, "device not found")
-		return
-	}
-	st := s.inv.Probe(r.Context(), id)
-	if st.Throttled {
-		writeErr(w, http.StatusTooManyRequests, st.ThrottleMessage)
-		return
-	}
-	if v, ok := s.inv.Device(id); ok {
-		writeJSON(w, http.StatusOK, map[string]any{"status": st, "device": v})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": st})
-}
-
-func (s *Server) discovered(w http.ResponseWriter, r *http.Request) {
-	if s.disc == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"devices": []any{}})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"devices": s.disc.Entries()})
 }
 
 func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {

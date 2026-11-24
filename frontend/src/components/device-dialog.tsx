@@ -1,3 +1,4 @@
+import { Lock } from "lucide-react"
 import { useEffect, useState, type FormEvent } from "react"
 
 import { Button } from "@/components/ui/button"
@@ -20,11 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { api } from "@/lib/api"
-import type { Device, DeviceMode, DevicePayload, HealthMode, SignIn } from "@/lib/types"
-
-export type DevicePrefill = Partial<
-  Pick<Device, "name" | "host" | "port" | "platform" | "auth" | "username">
->
+import type { Device, DeviceMode, DevicePayload, SignIn } from "@/lib/types"
 
 const platformOptions = [
   { value: "unknown", label: "Unknown" },
@@ -44,14 +41,12 @@ export function DeviceDialog({
   open,
   onOpenChange,
   device,
-  prefill,
   onSaved,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   device: Device | null
-  prefill?: DevicePrefill
-  onSaved: () => void
+  onSaved: (device: Device) => void
 }) {
   const editing = device !== null
   const [name, setName] = useState("")
@@ -63,31 +58,25 @@ export function DeviceDialog({
   const [platform, setPlatform] = useState("unknown")
   const [mode, setMode] = useState<DeviceMode>("gateway")
   const [expose, setExpose] = useState(false)
-  const [health, setHealth] = useState<HealthMode>("session")
-  const [healthCommand, setHealthCommand] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
 
   useEffect(() => {
     if (!open) return
-    setName(device?.name ?? prefill?.name ?? "")
-    setHost(device?.host ?? prefill?.host ?? "")
-    setPort(String(device?.port ?? prefill?.port ?? 5900))
+    setName(device?.name ?? "")
+    setHost(device?.host ?? "")
+    setPort(String(device?.port ?? 5900))
     setSignIn(
-      device?.auth ??
-        prefill?.auth ??
-        (device?.platform === "macos" || prefill?.platform === "macos" ? "ard" : "vnc"),
+      device?.auth ?? (device?.platform === "macos" ? "ard" : "vnc"),
     )
-    setUsername(device?.username ?? prefill?.username ?? "")
+    setUsername(device?.username ?? "")
     setPassword("")
-    setPlatform(device?.platform ?? prefill?.platform ?? "unknown")
+    setPlatform(device?.platform ?? "unknown")
     setMode(device?.mode ?? "gateway")
     setExpose(Boolean(device?.vnc_port))
-    setHealth(device?.health ?? (device?.health_command ? "command" : "session"))
-    setHealthCommand(device?.health_command ?? "")
     setBusy(false)
     setError("")
-  }, [open, device, prefill])
+  }, [open, device])
 
   const authChanged = editing && device?.auth !== signIn
   const passwordRequired = signIn === "ard" && (!editing || authChanged)
@@ -113,10 +102,6 @@ export function DeviceDialog({
       setError("Enter the password for the new sign-in method.")
       return
     }
-    if (health === "command" && healthCommand.trim() === "") {
-      setError("Enter a health command, or choose a different health check.")
-      return
-    }
 
     const payload: DevicePayload = {
       name: name.trim(),
@@ -127,19 +112,16 @@ export function DeviceDialog({
       platform: platform === "unknown" ? "" : platform,
       mode,
       expose,
-      health,
-      health_command: health === "command" ? healthCommand.trim() : "",
     }
     if (password !== "") payload.password = password
 
     setBusy(true)
     try {
-      if (editing && device) {
-        await api.updateDevice(device.id, payload)
-      } else {
-        await api.addDevice(payload)
-      }
-      onSaved()
+      const response =
+        editing && device
+          ? await api.updateDevice(device.id, payload)
+          : await api.addDevice(payload)
+      onSaved(response.device)
       onOpenChange(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the device.")
@@ -285,33 +267,13 @@ export function DeviceDialog({
             <span>Also open a raw VNC port for agents</span>
           </label>
 
-          <div className="space-y-1.5">
-            <Label>Health check</Label>
-            <Select value={health} onValueChange={(value) => setHealth(value as HealthMode)}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="session">On connect only (no probes)</SelectItem>
-                <SelectItem value="command">Run a command on the hub</SelectItem>
-                <SelectItem value="vnc">Authenticated VNC check (≥ 5 min)</SelectItem>
-              </SelectContent>
-            </Select>
-            {health === "command" ? (
-              <Input
-                value={healthCommand}
-                onChange={(event) => setHealthCommand(event.target.value)}
-                placeholder="ssh debian 'systemctl is-active tigervncserver@:2'"
-                autoComplete="off"
-              />
-            ) : null}
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              A bare TCP probe is never used: TigerVNC counts every connection that closes before
-              authenticating as a security failure and can blacklist the hub. Prefer an SSH/systemd
-              command. An authenticated VNC check completes the handshake, runs at most every five
-              minutes, and stops automatic retries after two authentication failures.
-            </p>
-          </div>
+          <p className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
+            <Lock className="mt-0.5 size-3.5 shrink-0" />
+            <span>
+              abacad never probes the device. It shows online only after a real browser or agent
+              session authenticates — open it once to confirm the address and password.
+            </span>
+          </p>
 
           <p className="rounded-lg bg-muted/60 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
             Gateway keeps the device password in the hub and gives agents a revocable token.

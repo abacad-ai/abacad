@@ -3,10 +3,10 @@
 #   docker compose up -d
 #   docker compose logs abacad | grep "admin token"
 #
-# Host networking matters here: mDNS discovery/advertising, real client IPs and
-# the dynamically allocated raw VNC ports (5901-5999) all depend on it. On
-# macOS and Windows, Docker Desktop's host networking is limited — run the
-# native binary there instead, or use compose.bridge.yaml.
+# Host networking matters here: real client IPs and the dynamically allocated
+# raw VNC ports (5901-5999) depend on it. On macOS and Windows, Docker Desktop's
+# host networking is limited — run the native binary there instead, or use
+# compose.bridge.yaml.
 services:
   abacad:
     image: ghcr.io/abacad-ai/abacad:latest
@@ -19,7 +19,6 @@ services:
       # A token from your secret store beats the generated one; it is never
       # written to config.yaml.
       # ABACAD_ADMIN_TOKEN: replace-with-at-least-16-characters
-      # ABACAD_MDNS: "false"
     volumes:
       - abacad-config:/config
     # To keep config.yaml on the host instead, bind-mount a directory owned by

@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"abacad/internal/config"
-	"abacad/internal/discovery"
 	"abacad/internal/gateway"
 	"abacad/internal/inventory"
 	mcpserver "abacad/internal/mcp"
@@ -57,7 +56,7 @@ func usage() {
 	fmt.Fprint(os.Stderr, `abacad — a small LAN VNC hub
 
 Usage:
-  abacad [serve] [--config PATH] [--listen ADDR] [--no-mdns]
+  abacad [serve] [--config PATH] [--listen ADDR]
                  [--tls-cert FILE --tls-key FILE] [-v]
   abacad version
 
@@ -65,7 +64,6 @@ Environment (overrides the config file, flags win over both):
   ABACAD_CONFIG      config file path
   ABACAD_LISTEN      listen address, e.g. 0.0.0.0:8787
   ABACAD_ADMIN_TOKEN admin token (at least 16 characters, never persisted)
-  ABACAD_MDNS        true/false; false disables discovery and advertising
 
 Everything else — adding, editing, and removing devices — is in the web UI.
 Agents use MCP at /mcp on the same hub.
@@ -76,7 +74,9 @@ func cmdServe(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	configPath := fs.String("config", os.Getenv(config.EnvConfig), "config file (default $"+config.EnvConfig+")")
 	listen := fs.String("listen", "", "listen address (overrides config)")
-	noMDNS := fs.Bool("no-mdns", false, "disable mDNS discovery/advertising")
+	// Flag compatibility only: abacad has no mDNS code left. Keeping the flag
+	// means an existing service file that still passes it starts cleanly.
+	_ = fs.Bool("no-mdns", false, "deprecated; mDNS is always off")
 	tlsCert := fs.String("tls-cert", "", "TLS certificate (PEM) for HTTPS/WSS")
 	tlsKey := fs.String("tls-key", "", "TLS private key (PEM)")
 	verbose := fs.Bool("v", false, "debug logging")
@@ -123,17 +123,9 @@ func cmdServe(args []string) error {
 	}
 	gw.Sync(inv.Devices())
 
-	var disc *discovery.Discovery
-	if cfg.MDNSEnabled() && !*noMDNS {
-		disc = discovery.New(log)
-		disc.Start(ctx, discovery.ListenPort(cfg.Listen), discovery.LocalHostname())
-	} else {
-		disc = discovery.New(log)
-	}
-
 	baseURL := scheme + "://" + displayAddr(cfg.Listen)
 	mcpSrv := mcpserver.New(inv, version)
-	handler := web.New(inv, gw, disc, mcpSrv, log, version).Handler()
+	handler := web.New(inv, gw, mcpSrv, log, version).Handler()
 	srv := &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
@@ -152,7 +144,6 @@ func cmdServe(args []string) error {
 		},
 	}
 
-	go inv.Run(ctx)
 	go func() {
 		log.Info("abacad ready", "url", baseURL, "mcp", baseURL+"/mcp", "devices", len(inv.Devices()))
 		fmt.Printf("\n  abacad is running\n  → %s\n  MCP: %s/mcp  (Authorization: Bearer <admin token>)\n  admin token: %s\n\n", baseURL, baseURL, cfg.AdminToken)
@@ -174,9 +165,6 @@ func cmdServe(args []string) error {
 	defer stop()
 	_ = srv.Shutdown(shutdownCtx)
 	gw.Close()
-	if disc != nil {
-		disc.Close()
-	}
 	return nil
 }
 

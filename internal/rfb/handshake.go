@@ -39,7 +39,7 @@ type Options struct {
 	Timeout        time.Duration
 	// OnReady runs once the upstream device has authenticated and sent
 	// ServerInit. It is how the inventory learns a device is genuinely online
-	// without opening a separate health-check connection.
+	// without a separate probe or health-check connection.
 	OnReady func()
 }
 

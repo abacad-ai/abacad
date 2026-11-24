@@ -2,7 +2,6 @@ import type {
   DevicePayload,
   DeviceResponse,
   DevicesResponse,
-  DiscoveredResponse,
   HubInfo,
   SessionResponse,
 } from "@/lib/types"
@@ -55,7 +54,6 @@ export const api = {
   logout: () => request<{ ok: boolean }>("/api/logout", { method: "POST" }),
   info: () => request<HubInfo>("/api/info"),
   devices: () => request<DevicesResponse>("/api/devices"),
-  discovered: () => request<DiscoveredResponse>("/api/discovered"),
   addDevice: (payload: DevicePayload) =>
     request<DeviceResponse>("/api/devices", {
       method: "POST",
@@ -70,9 +68,4 @@ export const api = {
     request<{ ok: boolean }>(`/api/devices/${encodeURIComponent(id)}`, {
       method: "DELETE",
     }),
-  probe: (id: string) =>
-    request<{ device: DeviceResponse["device"] }>(
-      `/api/devices/${encodeURIComponent(id)}/probe`,
-      { method: "POST" },
-    ),
 }

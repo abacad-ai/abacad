@@ -27,9 +27,7 @@ device VNC server  ──RFB──▶  hub  ──HTTPS/WSS──▶ browser
 | No TLS on hub → device | Many VNC servers do not speak TLS | Keep that leg on a trusted segment; use VeNCrypt/TLS where available; use a VPN for untrusted links |
 | Password at rest | v0.1 stores device passwords in `~/.config/abacad/config.yaml` | File is `0600`; full-disk encryption; a later version can use the OS keychain |
 | Hub compromise | The hub can reach every device and holds their passwords | Patch the host, run as a non-root user, don't co-host unrelated services, back up the config securely |
-| mDNS spoofing | Discovery is unauthenticated | A discovered device is only a hint; it must be added and must authenticate before use |
-| Health command | `health: command` runs a shell command from the config as the hub user | The config is `0600` and already holds device passwords; treat it as a root-equivalent secret. Prefer a fixed `ssh host 'systemctl is-active …'` command, not a dynamic script. |
-| VNC blacklist | Some servers (notably TigerVNC) blacklist a source IP after repeated unauthenticated connections and never decay the counter | The hub never probes a VNC port without authenticating. Use `health: command` where possible; authenticated `health: vnc` checks are limited to one every five minutes and pause after two auth failures. |
+| VNC blacklist | Some servers (notably TigerVNC) blacklist a source IP after repeated unauthenticated connections and never decay the counter | The hub never connects on its own; only a real browser or agent session touches the device. Do not point external probes or load balancers at port 5900. |
 
 ## Browser sessions
 
@@ -65,7 +63,7 @@ listener immediately.
 - [ ] Hub config is `0600` and on an encrypted disk.
 - [ ] Admin token is stored in a password manager, not a shell history.
 - [ ] Raw VNC ports are opt-in per device; most devices can be browser-only.
-- [ ] Devices use `health: command` or pass a real authenticated session; no external script is port-scanning 5900.
+- [ ] No process port-scans 5900; the hub connects only for a real browser or agent session.
 - [ ] Hub is updated; no unrelated services share the host.
 - [ ] You have decided how remote access works (VPN), and it is not a raw VNC
       port on the internet.

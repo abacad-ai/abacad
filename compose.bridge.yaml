@@ -4,8 +4,6 @@
 #   docker compose -f compose.bridge.yaml up -d
 #
 # Trade-offs, all of which host networking avoids:
-#   - mDNS does not cross a bridge, so discovery is off and devices must be
-#     added by hand (host + port).
 #   - Raw VNC ports are published as a fixed range chosen at container
 #     creation; devices that get a port later are unreachable until the
 #     container is recreated. Browser access only needs 8787.
@@ -21,7 +19,6 @@ services:
     environment:
       ABACAD_CONFIG: /config/config.yaml
       ABACAD_LISTEN: 0.0.0.0:8787
-      ABACAD_MDNS: "false"
     volumes:
       - abacad-config:/config
 

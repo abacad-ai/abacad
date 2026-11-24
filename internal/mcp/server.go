@@ -97,9 +97,6 @@ type deviceOut struct {
 	DirectHost string `json:"direct_host,omitempty"`
 	DirectPort int    `json:"direct_port,omitempty"`
 	BrowserURL string `json:"browser_url,omitempty"`
-	Banner     string `json:"banner,omitempty"`
-	Detail     string `json:"detail,omitempty"`
-	Warning    string `json:"warning,omitempty"`
 	LastError  string `json:"last_error,omitempty"`
 }
 
@@ -131,9 +128,6 @@ func (s *Server) listDevices(ctx context.Context, host, baseURL string) (*mcp.Ca
 			Mode:      d.Mode,
 			SignIn:    d.Auth,
 			Username:  d.Username,
-			Banner:    d.Banner,
-			Detail:    d.Detail,
-			Warning:   d.Warning,
 			LastError: d.LastError,
 		}
 		if d.Mode != config.ModeDirect {

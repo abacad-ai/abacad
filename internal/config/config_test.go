@@ -128,37 +128,6 @@ func TestARDAuthDefaultsAndValidation(t *testing.T) {
 	}
 }
 
-func TestHealthDefaultsAndValidation(t *testing.T) {
-	path := testPath(t)
-	c, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	d, err := c.AddDevice(Device{Name: "Passive", Host: "10.0.0.2"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if d.Health != HealthSession {
-		t.Fatalf("default health = %q", d.Health)
-	}
-	cmd, err := c.AddDevice(Device{
-		Name: "Command", Host: "10.0.0.3",
-		HealthCommand: "ssh debian 'systemctl is-active tigervncserver@:2'",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cmd.Health != HealthCommand {
-		t.Fatalf("command health = %q", cmd.Health)
-	}
-	if _, err := c.AddDevice(Device{Name: "Bad", Host: "10.0.0.4", Health: "poll"}); err == nil {
-		t.Fatal("expected an invalid health mode to be rejected")
-	}
-	if _, err := c.AddDevice(Device{Name: "Empty", Host: "10.0.0.5", Health: HealthCommand}); err == nil {
-		t.Fatal("expected a missing health command to be rejected")
-	}
-}
-
 func TestApplyEnvOverridesWithoutPersisting(t *testing.T) {
 	path := testPath(t)
 	c, err := Load(path)
@@ -170,7 +139,6 @@ func TestApplyEnvOverridesWithoutPersisting(t *testing.T) {
 	env := map[string]string{
 		EnvListen:     "127.0.0.1:9000",
 		EnvAdminToken: "0123456789abcdef",
-		EnvMDNS:       "false",
 	}
 	if err := c.ApplyEnv(func(k string) string { return env[k] }); err != nil {
 		t.Fatal(err)
@@ -181,10 +149,6 @@ func TestApplyEnvOverridesWithoutPersisting(t *testing.T) {
 	if c.AdminToken != "0123456789abcdef" {
 		t.Fatalf("admin token = %q", c.AdminToken)
 	}
-	if c.MDNSEnabled() {
-		t.Fatal("mDNS still enabled")
-	}
-
 	reloaded, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
@@ -206,7 +170,6 @@ func TestApplyEnvRejectsBadValues(t *testing.T) {
 	cases := []map[string]string{
 		{EnvListen: "not-an-address"},
 		{EnvAdminToken: "short"},
-		{EnvMDNS: "maybe"},
 	}
 	for _, env := range cases {
 		if err := c.ApplyEnv(func(k string) string { return env[k] }); err == nil {
@@ -225,7 +188,7 @@ func TestApplyEnvIgnoresEmpty(t *testing.T) {
 	if err := c.ApplyEnv(func(string) string { return "  " }); err != nil {
 		t.Fatal(err)
 	}
-	if c.Listen != before.Listen || c.AdminToken != before.AdminToken || c.MDNSEnabled() != before.MDNSEnabled() {
+	if c.Listen != before.Listen || c.AdminToken != before.AdminToken {
 		t.Fatal("empty environment changed the config")
 	}
 }

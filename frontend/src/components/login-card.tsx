@@ -17,7 +17,7 @@ export function LoginCard({
   const [token, setToken] = useState("")
 
   return (
-    <Card className="mx-auto mt-16 w-full max-w-md border-border/80 bg-card/90 shadow-xl shadow-foreground/5 backdrop-blur">
+    <Card className="mx-auto w-full max-w-[400px] border-border/80 bg-card/90 shadow-xl shadow-foreground/5 backdrop-blur">
       <CardHeader className="gap-2">
         <div className="mb-1 grid size-11 place-items-center rounded-xl bg-accent text-accent-foreground">
           <KeyRound className="size-5" />
