@@ -53,7 +53,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `abacad — a small LAN VNC hub
+	fmt.Fprint(os.Stderr, `abacad — a small self-hosted VNC hub
 
 Usage:
   abacad [serve] [--config PATH] [--listen ADDR]

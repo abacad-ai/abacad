@@ -71,7 +71,7 @@ func (s *Server) server(host, baseURL string) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{Name: "abacad", Version: s.version}, nil)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: "list_devices",
-		Description: "List VNC devices on this LAN and the standard VNC endpoint to use. " +
+		Description: "List the VNC devices configured in this hub and the standard VNC endpoint to use. " +
 			"Connect with any VNC client to vnc_host:vnc_port and use token as the VNC password. " +
 			"Devices without a vnc_port are browser-only; open browser_url instead.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {

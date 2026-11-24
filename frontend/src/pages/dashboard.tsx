@@ -66,7 +66,7 @@ function LoginScreen({
       </main>
       <footer className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-5 text-[11px] text-muted-foreground/70 sm:px-10">
         <span>{version ? `abacad v${version}` : "abacad"}</span>
-        <span>LAN only · no cloud · no relay</span>
+        <span>Self-hosted · no cloud · no relay</span>
       </footer>
     </div>
   )

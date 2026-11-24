@@ -1,9 +1,9 @@
 // Package config loads and saves the single abacad configuration file.
 //
-// The file is deliberately human-readable YAML: a LAN hub is a small tool, and
-// a database would be more machinery than the job needs. Passwords live in the
-// same file for v0.1 (mode 0600); moving them to the OS keychain is a later,
-// local change that does not affect the wire protocol.
+// The file is deliberately human-readable YAML: a self-hosted hub is a small
+// tool, and a database would be more machinery than the job needs. Passwords
+// live in the same file for v0.1 (mode 0600); moving them to the OS keychain is
+// a later, local change that does not affect the wire protocol.
 package config
 
 import (

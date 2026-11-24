@@ -1,8 +1,8 @@
 # abacad
 
-A small, self-hosted **LAN VNC hub**.
+A small, self-hosted **VNC hub**.
 
-Your machines already have VNC servers. abacad gives them one quiet place: a browser page for you, a standard VNC endpoint for an agent, and a single entry point for your LAN. No client to install on each device, no cloud, no relay, no public exposure.
+Your machines already have VNC servers. abacad gives them one quiet place: a browser page for you, a standard VNC endpoint for an agent, and one entry point for any VNC server the hub can reach. No client to install on each device, no cloud, no relay, no public forwarding.
 
 ```
   macOS Screen Sharing ─┐
@@ -18,14 +18,14 @@ In the default `gateway` mode the hub terminates only the RFB handshake (so the 
   attaches to the logged-in user's console session. The legacy VNC password has
   no user identity and can land on the login window.
 - **One binary.** Go + an embedded Vite/React frontend. Node is a build-time dependency only; the running hub needs no Node, database, or CDN.
-- **LAN only.** Remote access is your network layer's job (VPN/firewall); abacad does not implement relays or port forwarding.
+- **No relay, no public forwarding.** abacad is not a hosted service. You run the hub and own the network path — a VPN, a tunnel, your own firewall. The hub connects directly to the addresses you add, which is faster and safer than forwarding traffic through a relay.
 - **Standard AI interface.** An MCP tool lists devices and returns `vnc_host`, `vnc_port`, `token`. The agent connects with any VNC client.
 
 Design and decision log: [docs/v2-rewrite-plan.md](docs/v2-rewrite-plan.md).
 
 ## Quick start
 
-Requirements: Go 1.27+ and a machine that stays on your LAN (a Mac mini, a NAS, a Raspberry Pi). Node 24 is needed only to build the frontend, not to run the hub.
+Requirements: Go 1.27+ and a machine you control (a Mac mini, a NAS, a Raspberry Pi). Node 24 is needed only to build the frontend, not to run the hub.
 
 ```bash
 make build          # npm ci + vite build + go build
@@ -53,7 +53,8 @@ On first run it creates `~/.config/abacad/config.yaml` and prints the URL and an
 
 Open the URL in a browser, paste the token, and click **Add device**. Fill in
 the device's name, host, VNC port (usually 5900), and either the VNC password or
-a macOS account. Leave
+a macOS account. The host can be any address the hub can reach: a private IP, a
+VPN address, a DNS name, or a forwarded local port. Leave
 **Also open a raw VNC port for agents** unchecked for browser-only access, or
 check it to give an agent a standard VNC endpoint.
 
@@ -165,12 +166,12 @@ counter. Raising `BlacklistThreshold` alone does not clear an existing lockout.
 See [docs/incidents/2026-11-22-vnc-blacklist.md](docs/incidents/2026-11-22-vnc-blacklist.md)
 for the incident history.
 
-## No LAN scanning
+## No discovery
 
 abacad does not browse, scan or advertise over mDNS. There is no `_rfb._tcp`
-query, no `_abacad._tcp` announcement, and no "On this LAN" list. The rail only
-lists devices you added by host:port. If you want the hub discoverable, put its
-URL wherever your tools already look — abacad will not announce itself.
+query, no `_abacad._tcp` announcement, and no discovered-devices list. The rail
+only lists devices you added by host:port. If you want the hub discoverable, put
+its URL wherever your tools already look — abacad will not announce itself.
 
 ## Docker
 
@@ -246,7 +247,7 @@ limited.
 
 ## Security model
 
-- **LAN only.** Bind to a LAN interface with `--listen`. Do not expose the raw VNC ports to the internet; VNC's classic 8-character DES password is not internet-grade.
+- **No public forwarding.** Bind the hub to the interface you choose and put it behind the network controls you trust. Do not expose the raw VNC ports to the internet; VNC's classic 8-character DES password is not internet-grade.
 - **Device passwords stay in the hub** in `gateway` mode. The config file is written `0600`. A later version can move secrets to the OS keychain without changing the protocol.
 - **Per-device tokens** are 8 characters because RFB's VNC authentication only carries 8 bytes. They are rotatable by editing the config, and the gateway can rate-limit failed attempts.
 - **Browser sessions** use an HttpOnly, SameSite=Lax cookie derived from a random cookie secret.

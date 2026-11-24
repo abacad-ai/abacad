@@ -27,7 +27,7 @@ Do not create an any-source rule; do not forward 5900 on the router.
 In the hub web UI, click **Add device**:
 
 - **Name:** `windows-pc`
-- **Host:** the machine's LAN address, e.g. `192.168.1.40`
+- **Host:** the machine's IP address, e.g. `192.168.1.40`
 - **Port:** `5900`
 - **VNC password:** the TigerVNC password
 - **Platform:** Windows

@@ -9,12 +9,12 @@ an optional built-in noVNC page.
 2. Set a password and a port (default **5900**).
 3. Enable the **AccessibilityService** if you want remote input.
 4. Tap **Start**.
-5. Keep the device on the same Wi-Fi/LAN as the hub.
+5. Keep the device reachable from the hub.
 
 Click **Add device** in the hub and fill in:
 
 - **Name:** `pixel`
-- **Host:** the phone's LAN address, e.g. `192.168.1.50`
+- **Host:** the phone's IP address, e.g. `192.168.1.50`
 - **Port:** `5900` (or the custom port you set)
 - **VNC password:** the droidVNC-NG password
 - **Platform:** Android

@@ -6,7 +6,7 @@ import (
 )
 
 // failLimiter is a small in-memory guard for raw VNC token attempts. It is not
-// a security boundary (an attacker can rotate source addresses on a LAN), but it
+// a security boundary (an attacker can rotate source addresses), but it
 // stops a single client from hammering an 8-character token and keeps the logs
 // readable.
 type failLimiter struct {

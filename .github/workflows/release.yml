@@ -56,7 +56,7 @@ jobs:
             type=raw,value=edge,enable=${{ github.ref_type == 'branch' }}
           labels: |
             org.opencontainers.image.title=abacad
-            org.opencontainers.image.description=A small self-hosted LAN VNC hub.
+            org.opencontainers.image.description=A small self-hosted VNC hub.
 
       - id: build
         uses: docker/build-push-action@v6

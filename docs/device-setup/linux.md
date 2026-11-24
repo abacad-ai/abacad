@@ -92,14 +92,14 @@ Only the hub should reach 5900:
 sudo ufw allow from 192.168.1.10 to any port 5900 proto tcp
 ```
 
-(Use the hub's LAN IP. Do not open 5900 to the internet.)
+(Use the hub's IP. Do not open 5900 to the internet.)
 
 ## Add it to the hub
 
 In the hub web UI, click **Add device**:
 
 - **Name:** `linux-box`
-- **Host:** the machine's LAN address, e.g. `192.168.1.30`
+- **Host:** the machine's IP address, e.g. `192.168.1.30`
 - **Port:** `5900`
 - **VNC password:** the password from the server above
 - **Platform:** Linux
@@ -109,5 +109,5 @@ In the hub web UI, click **Add device**:
 There is no health check to configure: abacad never probes the port. After
 saving, click **Open** once. The rail shows **online** when that session
 authenticates, and stays **not seen** until then. If it fails, check that the
-VNC server is listening on the LAN interface and that the firewall allows the
-hub's IP.
+VNC server is listening on an interface the hub can reach and that the firewall
+allows the hub's IP.

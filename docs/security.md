@@ -1,6 +1,6 @@
 # Security
 
-abacad is a LAN tool. This document is deliberately short: it names the trust
+abacad is self-hosted. This document is deliberately short: it names the trust
 boundary, the weak points, and the operations that keep the weak points from
 mattering.
 
@@ -11,20 +11,23 @@ device VNC server  ──RFB──▶  hub  ──HTTPS/WSS──▶ browser
                                └──RFB/TCP────▶ agent
 ```
 
-- The hub is the only host that needs to reach every device. Put devices on a
-  private segment and allow `5900/tcp` only from the hub's IP.
-- The hub is the only ingress. Do not expose its raw VNC ports to the internet;
-  if you need remote access, use a VPN or an authenticated tunnel you control.
-- abacad does not implement public exposure, relaying, or NAT traversal. That is
-  a network-layer decision, not a feature of this hub.
+- The hub is the only host that needs to reach every device. Scope each device's
+  `5900/tcp` to the hub's IP at the firewall.
+- The hub is the only ingress. abacad does not implement public forwarding,
+  relaying or NAT traversal. How the hub is reached — a VPN, an authenticated
+  tunnel, a reverse proxy — is your network decision, and it should be
+  deliberate.
+- The hub connects to any address you add. Making that path fast and private is
+  the network's job; that direct path is also what keeps a relay out of the
+  middle.
 
 ## What is weak
 
 | Weak point | Why | Mitigation |
 |---|---|---|
-| Classic VNC auth | 8-character password, DES challenge; not strong by modern standards | LAN only; firewall to the hub IP; trusted Wi-Fi/VLAN; prefer VeNCrypt where the device supports it |
-| 8-character device token | RFB VNC auth carries only 8 bytes | Random alphabet, rotatable; gateway rate-limits failed handshakes; treat it as a LAN capability, not an internet secret |
-| No TLS on hub → device | Many VNC servers do not speak TLS | Keep that leg on a trusted segment; use VeNCrypt/TLS where available; use a VPN for untrusted links |
+| Classic VNC auth | 8-character password, DES challenge; not strong by modern standards | Trusted path; firewall to the hub IP; a VPN for untrusted links; prefer VeNCrypt where the device supports it |
+| 8-character device token | RFB VNC auth carries only 8 bytes | Random alphabet, rotatable; gateway rate-limits failed handshakes; treat it as a capability for your network path, not an internet secret |
+| No TLS on hub → device | Many VNC servers do not speak TLS | Keep that leg on a trusted path; use VeNCrypt/TLS where available; use a VPN for untrusted links |
 | Password at rest | v0.1 stores device passwords in `~/.config/abacad/config.yaml` | File is `0600`; full-disk encryption; a later version can use the OS keychain |
 | Hub compromise | The hub can reach every device and holds their passwords | Patch the host, run as a non-root user, don't co-host unrelated services, back up the config securely |
 | VNC blacklist | Some servers (notably TigerVNC) blacklist a source IP after repeated unauthenticated connections and never decay the counter | The hub never connects on its own; only a real browser or agent session touches the device. Do not point external probes or load balancers at port 5900. |
@@ -58,15 +61,16 @@ listener immediately.
 
 ## Operational checklist
 
-- [ ] Hub listens on a LAN address, not a public one.
+- [ ] Hub listens on the address you chose, and that address sits behind the
+      network controls you intend (VPN, firewall, reverse proxy).
 - [ ] Device VNC ports accept connections only from the hub IP.
 - [ ] Hub config is `0600` and on an encrypted disk.
 - [ ] Admin token is stored in a password manager, not a shell history.
 - [ ] Raw VNC ports are opt-in per device; most devices can be browser-only.
 - [ ] No process port-scans 5900; the hub connects only for a real browser or agent session.
 - [ ] Hub is updated; no unrelated services share the host.
-- [ ] You have decided how remote access works (VPN), and it is not a raw VNC
-      port on the internet.
+- [ ] You have decided how remote access works (a VPN or an authenticated
+      tunnel), and it is not a raw VNC port on the internet.
 
 ## If something leaks
 

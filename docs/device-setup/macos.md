@@ -29,7 +29,7 @@ The server listens on TCP **5900**.
 In the hub web UI, click **Add device**:
 
 - **Name:** `Mac mini`
-- **Host:** the Mac's LAN address, e.g. `192.168.1.92`
+- **Host:** the Mac's IP address, e.g. `192.168.1.92`
 - **Port:** `5900`
 - **Sign-in:** **macOS account**
 - **macOS username:** the short name (`whoami`), not the display name
@@ -109,8 +109,8 @@ display is off**.
 
 For a lock screen you never want to fight, System Settings → **Lock Screen** →
 **Require password after screen saver begins or display is turned off** → Never.
-That is a security trade-off; only do it on a machine you already trust on the
-LAN.
+That is a security trade-off; only do it on a machine you already trust and
+control access to.
 
 ## Screen Sharing vs Remote Management
 
