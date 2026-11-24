@@ -2,7 +2,7 @@ import { ArrowLeft } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 
-import { VncStage } from "@/components/vnc-stage"
+import { VncFrame } from "@/components/vnc-frame"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { ApiError, api } from "@/lib/api"
@@ -84,24 +84,22 @@ export default function Viewer() {
     )
   }
 
+  // A window of its own: the same noVNC application, filling the tab. The way
+  // back floats over the top right, clear of noVNC's control bar.
   return (
-    <div className="h-screen">
-      <VncStage
-        device={device}
-        leading={
-          <Button
-            asChild
-            size="sm"
-            variant="ghost"
-            className="ml-0.5 mr-1 text-neutral-400 hover:bg-white/10 hover:text-white"
-          >
-            <Link to={`/devices/${encodeURIComponent(id)}`}>
-              <ArrowLeft />
-              Console
-            </Link>
-          </Button>
-        }
-      />
+    <div className="relative h-dvh w-full">
+      <VncFrame device={device} />
+      <Button
+        asChild
+        variant="outline"
+        size="sm"
+        className="absolute top-3 right-3 z-10 border-white/15 bg-black/60 text-white/80 shadow-lg backdrop-blur hover:bg-black/80 hover:text-white"
+      >
+        <Link to={`/devices/${encodeURIComponent(id)}`}>
+          <ArrowLeft />
+          Console
+        </Link>
+      </Button>
     </div>
   )
 }

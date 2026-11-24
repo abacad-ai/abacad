@@ -1,4 +1,4 @@
-import { MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react"
+import { ExternalLink, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react"
 import { Link } from "react-router-dom"
 
 import { Button } from "@/components/ui/button"
@@ -94,7 +94,15 @@ function RailItem({
             <MoreHorizontal className="size-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-[148px]">
+        <DropdownMenuContent align="end" className="w-[168px]">
+          {device.mode === "direct" ? null : (
+            <DropdownMenuItem asChild>
+              <Link to={`/vnc/${encodeURIComponent(device.id)}`} target="_blank" rel="noreferrer">
+                <ExternalLink />
+                Open in new tab
+              </Link>
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onSelect={onEdit}>
             <Pencil />
             Edit

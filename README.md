@@ -262,7 +262,8 @@ The thin path is implemented:
 - L7 RFB handshake gateway (browser `None`, agent token, upstream VNC password or macOS account via Apple DH type 30)
 - raw VNC listeners per device (`gateway` and `l4`)
 - Vite + React + React Router + Tailwind + shadcn frontend, built into `internal/web/dist` and embedded
-- noVNC browser viewer built on the upstream JavaScript library (`@novnc/novnc`)
+- noVNC viewer: the upstream application (1.7.0) vendored under
+  `frontend/public/novnc`, served at `/novnc` and loaded in an iframe
 - One `serve` command (also the default); device management is entirely in the web UI
 - MCP `list_devices` over Streamable HTTP at `/mcp`
 - multi-arch container image on GHCR with environment-only configuration and a healthcheck
@@ -306,7 +307,10 @@ ABACAD_LIVE_VNC=127.0.0.1:5901 ABACAD_LIVE_TOKEN=Abcd1234 \
 ```
 
 The frontend lives in `frontend/` (Vite, React, React Router, Tailwind, shadcn/ui).
-The viewer uses the noVNC JavaScript library straight from npm (`@novnc/novnc`,
-MPL 2.0) rather than the vendored noVNC application: `frontend/src/lib/vnc.ts`
-wraps its `RFB` object, the page owns the canvas and the toolbar, and `npm run build`
-bundles it into `internal/web/dist`. Bump the dependency like any other.
+The screen is noVNC's own application, vendored at `frontend/public/novnc` (1.7.0,
+MPL-2.0 core + BSD app UI) and loaded in an iframe — the same split Proxmox VE
+uses. npm cannot supply that half: `@novnc/novnc` publishes only `core/`, so the
+control bar and its stylesheet have to travel as files. Keys, clipboard,
+fullscreen, scaling and reconnect are noVNC's; the rail, login and device API are
+ours. See [docs/vendored-novnc.md](docs/vendored-novnc.md) for the file list and
+the upgrade steps.

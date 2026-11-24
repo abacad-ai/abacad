@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"mime"
 	"net/http"
 	"strings"
 	"time"
@@ -72,6 +73,21 @@ func (s *Server) Handler() http.Handler {
 	if err == nil {
 		mux.Handle("GET /assets/", http.StripPrefix("/assets/", immutable(http.FileServer(http.FS(distAssets)))))
 	}
+	// noVNC ships its viewer as an application, not a library, so the whole app
+	// is vendored under frontend/public/novnc and embedded with the rest of the
+	// build. The screen stays an iframe around it — the same split Proxmox VE
+	// uses — instead of a second copy of its control bar in React.
+	if novncFS, err := fs.Sub(distFS, "novnc"); err == nil {
+		if _, statErr := fs.Stat(novncFS, "vnc.html"); statErr == nil {
+			toViewer := func(w http.ResponseWriter, r *http.Request) {
+				http.Redirect(w, r, "/novnc/vnc.html", http.StatusFound)
+			}
+			mux.HandleFunc("GET /novnc", toViewer)
+			mux.HandleFunc("GET /novnc/{$}", toViewer)
+			mux.Handle("GET /novnc/", http.StripPrefix("/novnc/", noCache(http.FileServerFS(novncFS))))
+		}
+	}
+
 	mux.HandleFunc("GET /favicon.svg", func(w http.ResponseWriter, r *http.Request) {
 		b, err := fs.ReadFile(distFS, "favicon.svg")
 		if err != nil {
@@ -302,4 +318,29 @@ func immutable(next http.Handler) http.Handler {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		next.ServeHTTP(w, r)
 	})
+}
+
+// noCache makes the browser revalidate: the vendored noVNC tree is not
+// fingerprinted, so a cached copy must be allowed to go stale.
+func noCache(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// The release image is a bare Alpine with no mime.types, so the extensions the
+// vendored noVNC tree needs beyond Go's built-in table have to be pinned. The
+// security headers set nosniff, which turns a wrong guess into a broken font,
+// icon or sound instead of a cosmetic one.
+func init() {
+	for ext, typ := range map[string]string{
+		".ico":  "image/x-icon",
+		".woff": "font/woff",
+		".ttf":  "font/ttf",
+		".oga":  "audio/ogg",
+		".mp3":  "audio/mpeg",
+	} {
+		_ = mime.AddExtensionType(ext, typ)
+	}
 }

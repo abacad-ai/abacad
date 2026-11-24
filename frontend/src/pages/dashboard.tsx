@@ -7,7 +7,7 @@ import { ConsoleRail } from "@/components/console-rail"
 import { DeviceDialog } from "@/components/device-dialog"
 import { LoginCard } from "@/components/login-card"
 import { Button } from "@/components/ui/button"
-import { VncStage } from "@/components/vnc-stage"
+import { VncFrame } from "@/components/vnc-frame"
 import { ApiError, api } from "@/lib/api"
 import { copyText } from "@/lib/clipboard"
 import { deviceStatus, statusLabel } from "@/lib/device"
@@ -309,7 +309,7 @@ export default function Dashboard() {
           onEdit={() => openEdit(selected)}
         />
       ) : (
-        <VncStage key={selected.id} device={selected} />
+        <VncFrame key={selected.id} className="min-h-0 flex-1" device={selected} />
       )
   } else if (devices.length === 0) {
     if (hubError) {
