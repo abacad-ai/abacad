@@ -98,3 +98,28 @@ An agent that only has MCP tool calls, with no shell and no VNC client, would
 need a separate adapter that exposes screenshot/click. That adapter would be an
 RFB client, and it is the one thing this version intentionally does not put in
 the core.
+
+## Without MCP: the `/skill` page
+
+Not every agent speaks MCP. Open **Skill for agents** in the hub (or go to
+`/skill`) and the page generates a `SKILL.md` — a self-contained agent skill that
+needs no server-side integration:
+
+- **Fixed list** (default) bakes the machine table, the `host:port` endpoints and
+  the per-device tokens into the file. Nothing else has to be configured, and the
+  agent does not need any access to the hub API. The file is a secret: it holds
+  the VNC tokens.
+- **Live API** points the agent at `POST /api/login` and `GET /api/devices` and
+  keeps the credential in the `ABACAD_TOKEN` environment variable. The file holds
+  no secret, but that token is the hub's admin token, which controls every
+  machine.
+
+The hub address field defaults to the page's own origin; set it if the agent
+reaches the hub under a different name. Save the file as
+`<agent>/skills/abacad/SKILL.md` (for example `~/.claude/skills/abacad/` or
+`~/.dsh/skills/abacad/`).
+
+The page is only a generator: `/skill` serves the same SPA and the same session
+cookie as the rest of the UI, and it adds no new endpoint. The REST API itself
+authenticates with the browser cookie, not with a Bearer token — only `/mcp`
+accepts `Authorization: Bearer <admin token>`.

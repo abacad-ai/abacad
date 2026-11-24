@@ -1,4 +1,4 @@
-import { ExternalLink, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react"
+import { Bot, ExternalLink, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react"
 import { Link } from "react-router-dom"
 
 import { Button } from "@/components/ui/button"
@@ -120,12 +120,14 @@ function RailItem({
 export function ConsoleRail({
   devices,
   selectedId,
+  skillActive,
   onAdd,
   onEdit,
   onRemove,
 }: {
   devices: Device[]
   selectedId?: string
+  skillActive?: boolean
   onAdd: () => void
   onEdit: (device: Device) => void
   onRemove: (device: Device) => void
@@ -139,9 +141,16 @@ export function ConsoleRail({
           </span>
           <span className="text-[15px] font-semibold tracking-tight">abacad</span>
         </Link>
-        <Button variant="ghost" size="icon-sm" className="lg:hidden" onClick={onAdd} aria-label="Add device">
-          <Plus />
-        </Button>
+        <div className="flex items-center gap-1 lg:hidden">
+          <Button asChild variant="ghost" size="icon-sm" aria-label="Agent skill">
+            <Link to="/skill">
+              <Bot />
+            </Link>
+          </Button>
+          <Button variant="ghost" size="icon-sm" onClick={onAdd} aria-label="Add device">
+            <Plus />
+          </Button>
+        </div>
       </div>
 
       <div className="min-h-0 min-w-0 flex-1 overflow-visible lg:overflow-y-auto">
@@ -161,7 +170,22 @@ export function ConsoleRail({
         </nav>
       </div>
 
-      <div className="hidden shrink-0 px-3 pb-4 lg:block">
+      <div className="hidden shrink-0 flex-col gap-1 px-3 pb-4 lg:flex">
+        <Button
+          asChild
+          variant="ghost"
+          className={cn(
+            "h-8 w-full justify-start gap-2 px-2.5 text-[11.5px] font-normal",
+            skillActive
+              ? "bg-[#e7f1ec] text-foreground shadow-[inset_2px_0_0_var(--primary)] hover:bg-[#e7f1ec]"
+              : "text-muted-foreground hover:bg-[#f1ebdf] hover:text-foreground",
+          )}
+        >
+          <Link to="/skill" aria-current={skillActive ? "page" : undefined}>
+            <Bot className="size-3.5" />
+            Skill for agents
+          </Link>
+        </Button>
         <Button
           variant="outline"
           className="h-9 w-full justify-center gap-1.5 border-dashed border-border/90 bg-transparent text-[11.5px] font-normal text-muted-foreground shadow-none hover:bg-[#f1ebdf] hover:text-foreground"

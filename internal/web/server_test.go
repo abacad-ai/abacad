@@ -116,6 +116,54 @@ func TestConsoleRoute(t *testing.T) {
 	}
 }
 
+// TestSkillRoute covers the agent hand-off page: it is the same SPA behind the
+// same session cookie, just at a different path.
+func TestSkillRoute(t *testing.T) {
+	srv, _ := newTestServer(t, "")
+	defer srv.Close()
+
+	noRedirect := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	resp, err := noRedirect.Get(srv.URL + "/skill")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("signed-out /skill = %d", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Location"); got != "/?next=/skill" {
+		t.Fatalf("redirect = %q", got)
+	}
+
+	login, err := http.Post(srv.URL+"/api/login", "application/json", strings.NewReader(`{"token":"test-admin"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cookies := login.Cookies()
+	_ = login.Body.Close()
+	if len(cookies) == 0 {
+		t.Fatal("no session cookie")
+	}
+	req, _ := http.NewRequest("GET", srv.URL+"/skill", nil)
+	req.AddCookie(cookies[0])
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusServiceUnavailable {
+		t.Skip("frontend not built")
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("signed-in /skill = %d", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "text/html") {
+		t.Fatalf("content type = %q", ct)
+	}
+}
+
 func TestWebSocketBrowserPath(t *testing.T) {
 	addr, port, stop := startMockVNC(t)
 	defer stop()

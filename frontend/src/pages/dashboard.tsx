@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { ConsoleRail } from "@/components/console-rail"
 import { DeviceDialog } from "@/components/device-dialog"
 import { LoginCard } from "@/components/login-card"
+import { SkillPanel } from "@/components/skill-panel"
 import { Button } from "@/components/ui/button"
 import { VncFrame } from "@/components/vnc-frame"
 import { ApiError, api } from "@/lib/api"
@@ -153,7 +154,7 @@ async function copy(value: string, message: string) {
   else toast.error("Could not copy")
 }
 
-export default function Dashboard() {
+export default function Dashboard({ view = "devices" }: { view?: "devices" | "skill" }) {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
@@ -300,7 +301,9 @@ export default function Dashboard() {
   }
 
   let main: ReactNode
-  if (selected) {
+  if (view === "skill") {
+    main = <SkillPanel devices={devices} />
+  } else if (selected) {
     main =
       selected.mode === "direct" ? (
         <DirectMachine
@@ -348,7 +351,8 @@ export default function Dashboard() {
     <div className="flex h-dvh min-w-0 flex-col lg:grid lg:h-screen lg:grid-cols-[288px_minmax(0,1fr)] lg:overflow-hidden">
       <ConsoleRail
         devices={devices}
-        selectedId={selected?.id}
+        selectedId={view === "skill" ? undefined : selected?.id}
+        skillActive={view === "skill"}
         onAdd={() => openAdd()}
         onEdit={(device) => openEdit(device)}
         onRemove={(device) => void handleRemove(device)}

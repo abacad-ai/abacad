@@ -48,6 +48,10 @@ Each device gets an 8-character token. It is the VNC password an agent uses when
 connecting to the hub's raw port. The real device password never leaves the hub
 in `gateway` mode.
 
+The `/skill` page can bake those tokens into a `SKILL.md` for an agent. That file
+is as sensitive as the config: keep it out of git, and regenerate it after
+rotating a token.
+
 On macOS, the hub can authenticate with the **macOS account** (Apple DH, RFB
 type 30) instead of a legacy VNC password. That stores a more capable
 credential: the account password, not an 8-character VNC password. Prefer a

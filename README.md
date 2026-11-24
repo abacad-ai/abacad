@@ -20,6 +20,9 @@ In the default `gateway` mode the hub terminates only the RFB handshake (so the 
 - **One binary.** Go + an embedded Vite/React frontend. Node is a build-time dependency only; the running hub needs no Node, database, or CDN.
 - **No relay, no public forwarding.** abacad is not a hosted service. You run the hub and own the network path — a VPN, a tunnel, your own firewall. The hub connects directly to the addresses you add, which is faster and safer than forwarding traffic through a relay.
 - **Standard AI interface.** An MCP tool lists devices and returns `vnc_host`, `vnc_port`, `token`. The agent connects with any VNC client.
+- **No MCP? A skill instead.** The **Skill** page at `/skill` generates a ready-made
+  `SKILL.md` for an agent: the endpoints and tokens baked in, plus the rules that
+  keep the hub healthy. No server-side integration.
 
 Design and decision log: [docs/v2-rewrite-plan.md](docs/v2-rewrite-plan.md).
 
@@ -266,6 +269,7 @@ The thin path is implemented:
   `frontend/public/novnc`, served at `/novnc` and loaded in an iframe
 - One `serve` command (also the default); device management is entirely in the web UI
 - MCP `list_devices` over Streamable HTTP at `/mcp`
+- `/skill` page that hands an agent a ready-made `SKILL.md` (fixed endpoints, or live API)
 - multi-arch container image on GHCR with environment-only configuration and a healthcheck
 - tests for RFB handshake, gateway WebSocket path, config, inventory
 

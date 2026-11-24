@@ -11,6 +11,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/devices/:id" element={<Dashboard />} />
+        <Route path="/skill" element={<Dashboard view="skill" />} />
         <Route path="/vnc/:id" element={<Viewer />} />
         <Route path="*" element={<NotFound />} />
       </Routes>

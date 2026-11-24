@@ -60,6 +60,8 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /vnc/{id}", s.view)
 	mux.HandleFunc("GET /devices/{id}", s.console)
+	// /skill is the agent hand-off page: same SPA, same session cookie.
+	mux.HandleFunc("GET /skill", s.console)
 	mux.HandleFunc("GET /ws/vnc/{id}", s.websocket)
 
 	distFS, err := fs.Sub(assets, "dist")
