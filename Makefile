@@ -21,7 +21,7 @@ vet:
 	go vet ./...
 
 fmt:
-	gofmt -w $$(find . -name '*.go' -not -path './internal/web/assets/*' -not -path './frontend/*')
+	gofmt -w $$(find . -name '*.go' -not -path './frontend/*')
 
 run:
 	go run ./cmd/abacad serve --listen 127.0.0.1:8787 --no-mdns

@@ -4,7 +4,7 @@ Vite + React + TypeScript + React Router + Tailwind CSS + shadcn/ui.
 
 ```bash
 npm ci
-npm run dev     # http://127.0.0.1:5173, proxies /api, /novnc, /ws, /mcp to :8787
+npm run dev     # http://127.0.0.1:5173, proxies /api, /ws, /mcp to :8787
 npm run build   # writes ../internal/web/dist, embedded by the Go binary
 ```
 

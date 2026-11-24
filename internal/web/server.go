@@ -23,7 +23,7 @@ import (
 	mcpserver "abacad/internal/mcp"
 )
 
-//go:embed all:dist all:assets/novnc
+//go:embed all:dist
 var assets embed.FS
 
 type Server struct {
@@ -69,23 +69,12 @@ func (s *Server) Handler() http.Handler {
 		panic("embedded frontend: " + err.Error())
 	}
 	s.dist = distFS
-	novncFS, err := fs.Sub(assets, "assets/novnc")
-	if err != nil {
-		panic("embedded noVNC: " + err.Error())
-	}
 
 	// Vite emits hashed files under dist/assets; they can be cached forever.
 	distAssets, err := fs.Sub(distFS, "assets")
 	if err == nil {
 		mux.Handle("GET /assets/", http.StripPrefix("/assets/", immutable(http.FileServer(http.FS(distAssets)))))
 	}
-	mux.HandleFunc("GET /novnc/{$}", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/novnc/vnc.html", http.StatusFound)
-	})
-	mux.Handle("GET /novnc/", http.StripPrefix("/novnc/", noCache(http.FileServer(http.FS(novncFS)))))
-	mux.HandleFunc("GET /novnc", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/novnc/vnc.html", http.StatusFound)
-	})
 	mux.HandleFunc("GET /favicon.svg", func(w http.ResponseWriter, r *http.Request) {
 		b, err := fs.ReadFile(distFS, "favicon.svg")
 		if err != nil {
@@ -330,13 +319,6 @@ func securityHeaders(next http.Handler) http.Handler {
 func immutable(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		next.ServeHTTP(w, r)
-	})
-}
-
-func noCache(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-cache")
 		next.ServeHTTP(w, r)
 	})
 }

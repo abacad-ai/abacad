@@ -17,7 +17,7 @@ In the default `gateway` mode the hub terminates only the RFB handshake (so the 
   choose **macOS account** sign-in: the hub speaks Apple DH (type 30), which
   attaches to the logged-in user's console session. The legacy VNC password has
   no user identity and can land on the login window.
-- **One binary.** Go + an embedded Vite/React frontend + embedded noVNC. Node is a build-time dependency only; the running hub needs no Node, database, or CDN.
+- **One binary.** Go + an embedded Vite/React frontend. Node is a build-time dependency only; the running hub needs no Node, database, or CDN.
 - **LAN only.** Remote access is your network layer's job (VPN/firewall); abacad does not implement relays or port forwarding.
 - **Standard AI interface.** An MCP tool lists devices and returns `vnc_host`, `vnc_port`, `token`. The agent connects with any VNC client.
 
@@ -273,7 +273,7 @@ The thin path is implemented:
 - L7 RFB handshake gateway (browser `None`, agent token, upstream VNC password or macOS account via Apple DH type 30)
 - raw VNC listeners per device (`gateway` and `l4`)
 - Vite + React + React Router + Tailwind + shadcn frontend, built into `internal/web/dist` and embedded
-- noVNC browser viewer with vendored assets
+- noVNC browser viewer built on the upstream JavaScript library (`@novnc/novnc`)
 - mDNS discovery and advertising
 - One `serve` command (also the default); device management is entirely in the web UI
 - MCP `list_devices` over Streamable HTTP at `/mcp`
@@ -291,10 +291,10 @@ framebuffer) and the real macOS Screen Sharing banner/type list. macOS offers
 ## Development
 
 ```bash
-# terminal 1: the Go API/WebSocket/noVNC server
+# terminal 1: the Go API/WebSocket server
 go run ./cmd/abacad serve --listen 127.0.0.1:8787 --no-mdns
 
-# terminal 2: Vite with HMR, proxying /api, /novnc, /ws and /mcp to :8787
+# terminal 2: Vite with HMR, proxying /api, /ws and /mcp to :8787
 cd frontend
 npm ci
 npm run dev
@@ -318,4 +318,7 @@ ABACAD_LIVE_VNC=127.0.0.1:5901 ABACAD_LIVE_TOKEN=Abcd1234 \
 ```
 
 The frontend lives in `frontend/` (Vite, React, React Router, Tailwind, shadcn/ui).
-noVNC is vendored under `internal/web/assets/novnc` (v1.6.0, MPL 2.0; see its `LICENSE.txt`).
+The viewer uses the noVNC JavaScript library straight from npm (`@novnc/novnc`,
+MPL 2.0) rather than the vendored noVNC application: `frontend/src/lib/vnc.ts`
+wraps its `RFB` object, the page owns the canvas and the toolbar, and `npm run build`
+bundles it into `internal/web/dist`. Bump the dependency like any other.
