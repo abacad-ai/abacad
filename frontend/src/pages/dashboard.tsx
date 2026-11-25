@@ -1,10 +1,18 @@
 import { ArrowLeft, Copy, Monitor, Plus, Server } from "lucide-react"
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react"
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { toast } from "sonner"
 
 import { BrandMark } from "@/components/brand-mark"
 import { ConsoleRail } from "@/components/console-rail"
+import { DeviceKeys } from "@/components/device-keys"
 import { DeviceDialog } from "@/components/device-dialog"
 import { LoginCard } from "@/components/login-card"
 import { SkillPanel } from "@/components/skill-panel"
@@ -185,6 +193,8 @@ export default function Dashboard({ view = "devices" }: { view?: "devices" | "sk
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Device | null>(null)
   const [removing, setRemoving] = useState<Device | null>(null)
+  // The screen's iframe, so the device buttons can reach the noVNC app inside.
+  const frameRef = useRef<HTMLIFrameElement>(null)
 
   const load = useCallback(async (quiet = false) => {
     try {
@@ -329,7 +339,14 @@ export default function Dashboard({ view = "devices" }: { view?: "devices" | "sk
           onEdit={() => openEdit(selected)}
         />
       ) : (
-        <VncFrame key={selected.id} className="min-h-0 flex-1" device={selected} />
+        <VncFrame
+          key={selected.id}
+          className="min-h-0 flex-1"
+          device={selected}
+          frameRef={frameRef}
+        >
+          {selected.platform === "android" && <DeviceKeys frame={frameRef} />}
+        </VncFrame>
       )
   } else if (devices.length === 0) {
     if (hubError) {

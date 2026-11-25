@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, type ReactNode, type Ref } from "react"
 
 import type { Device } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -30,21 +30,29 @@ export function VncFrame({
   device,
   nonce = 0,
   className,
+  frameRef,
+  children,
 }: {
   device: Device
   nonce?: number
   className?: string
+  /** The iframe itself, for overlays that need to reach into the noVNC app. */
+  frameRef?: Ref<HTMLIFrameElement>
+  /** Painted above the screen — the device's own buttons, for one. */
+  children?: ReactNode
 }) {
   const src = useMemo(() => vncAppUrl(device.id, nonce), [device.id, nonce])
 
   return (
     <div className={cn("relative h-full w-full bg-screen", className)}>
       <iframe
+        ref={frameRef}
         src={src}
         title={`${device.name} screen`}
         className="absolute inset-0 h-full w-full border-0"
         allow="clipboard-read; clipboard-write; fullscreen"
       />
+      {children}
     </div>
   )
 }

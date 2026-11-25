@@ -1,7 +1,8 @@
 import { ArrowLeft } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 
+import { DeviceKeys } from "@/components/device-keys"
 import { VncFrame } from "@/components/vnc-frame"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -15,6 +16,7 @@ export default function Viewer() {
   const navigate = useNavigate()
 
   const [device, setDevice] = useState<Device | null>(null)
+  const frameRef = useRef<HTMLIFrameElement>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState("")
 
@@ -88,7 +90,9 @@ export default function Viewer() {
   // back floats over the top right, clear of noVNC's control bar.
   return (
     <div className="relative h-dvh w-full">
-      <VncFrame device={device} />
+      <VncFrame device={device} frameRef={frameRef}>
+        {device.platform === "android" && <DeviceKeys frame={frameRef} />}
+      </VncFrame>
       <Button
         asChild
         variant="outline"
