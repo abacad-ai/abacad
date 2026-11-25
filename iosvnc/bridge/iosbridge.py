@@ -19,6 +19,7 @@ framebuffer pixels to that range.
 """
 
 import asyncio
+import collections
 import io
 import os
 import queue
@@ -52,6 +53,24 @@ AUTH_SETTLE = 0.5
 TAP_DWELL = 0.08
 JPEG_QUALITY = 70
 MAX_FPS = 20
+# Input is a pointer state, not a tape. A touch report that has been waiting
+# longer than this is dropped instead of delivered: replaying a tap that the user
+# made 30 s ago just taps whatever is on screen now. Reported from the field
+# over Wi-Fi, where a stalled tunnel held every event and flushed the lot.
+MAX_INPUT_AGE = 1.5
+# One touch report waiting this long on the tunnel's flow-control window means
+# the link is not carrying input at all; end the session so the supervisor can
+# rebuild it instead of leaving the viewer poking a dead pipe.
+HID_SEND_TIMEOUT = 6.0
+SLOW_SEND = 0.3
+MAX_PENDING = 256
+# A stalled XPC channel does not raise: flow control just stops granting
+# window, so every request waits, silently, for as long as the device takes to
+# come back. One cheap HID round trip every few seconds is what turns that into
+# a restart, and it has to be a request the device answers -- a still screen
+# sends no video, so frames cannot stand in for liveness.
+LIVENESS_INTERVAL = 5.0
+LIVENESS_TIMEOUT = 4.0
 # Output width in pixels. 707 is 0.6 of an iPhone 15 Pro's 1179: UI text stays
 # legible in a browser tab and a frame costs ~100 KB instead of ~220 KB.
 OUTPUT_WIDTH = 707
@@ -322,6 +341,7 @@ async def main() -> int:
     async def receive_loop() -> None:
         while True:
             packet = await transport.recv()
+            last_packet[0] = time.monotonic()
             pump.feed_packet(packet)
             # The userspace stack can return buffered packets without yielding,
             # which starves the input coroutine and turns taps into long presses.
@@ -409,41 +429,120 @@ async def main() -> int:
                 await asyncio.sleep(15)
 
     contact_started = [0.0]
+    contact = [False]
+    x_last, y_last = [32768], [32768]
+    last_packet = [time.monotonic()]
+    pending: collections.deque = collections.deque()
+    wake = asyncio.Event()
 
-    async def command_loop() -> None:
+    async def send(state: int, x: int, y: int) -> None:
+        """Send one touch report, with a deadline that means "the tunnel is gone".
+
+        send_report does not wait for a reply, but it does wait for flow-control
+        credit, so a stalled tunnel blocks here rather than in a kernel buffer.
+        """
+        started = time.monotonic()
+        try:
+            await asyncio.wait_for(
+                uhs.send_touchscreen(state, x, y, service_id), HID_SEND_TIMEOUT
+            )
+        except asyncio.TimeoutError:
+            raise RuntimeError(
+                f"touch report blocked for {HID_SEND_TIMEOUT:.0f}s; "
+                f"last video packet was {time.monotonic() - last_packet[0]:.0f}s ago"
+            ) from None
+        took = time.monotonic() - started
+        if took > SLOW_SEND:
+            log(
+                f"slow touch send: {took * 1000:.0f} ms, "
+                f"last video packet {time.monotonic() - last_packet[0]:.1f}s ago"
+            )
+
+    async def dispatch(cmd: dict) -> None:
+        op = cmd.get("op")
+        x = max(0, min(65535, int(cmd.get("x", 0))))
+        y = max(0, min(65535, int(cmd.get("y", 0))))
+        if op == "tap":
+            await send(TOUCHSCREEN_STATE_CONTACT, x, y)
+            contact[0] = True
+            await asyncio.sleep(TAP_DWELL)
+            await send(TOUCHSCREEN_STATE_RELEASE, x, y)
+            contact[0] = False
+        elif op in ("down", "move"):
+            # Both mean "contact at this position". A move whose down was
+            # dropped as stale becomes the down.
+            await send(TOUCHSCREEN_STATE_CONTACT, x, y)
+            if not contact[0]:
+                contact_started[0] = time.monotonic()
+            contact[0] = True
+        elif op == "up":
+            # A contact shorter than a tap is ignored by iOS, and every viewer
+            # sends down/up as fast as it can, so enforce the dwell here.
+            held = time.monotonic() - contact_started[0]
+            if 0 <= held < TAP_DWELL:
+                await asyncio.sleep(TAP_DWELL - held)
+            await send(TOUCHSCREEN_STATE_RELEASE, x, y)
+            contact[0] = False
+
+    async def liveness() -> None:
+        while True:
+            await asyncio.sleep(LIVENESS_INTERVAL)
+            try:
+                await asyncio.wait_for(uhs.list_connected_services(), LIVENESS_TIMEOUT)
+            except asyncio.TimeoutError:
+                raise RuntimeError(
+                    f"the tunnel stopped answering HID requests for {LIVENESS_TIMEOUT:.0f}s"
+                ) from None
+
+    async def command_reader() -> None:
+        """Keep the queue current even while a send is blocked."""
         while True:
             line = await asyncio.to_thread(sys.stdin.readline)
             if not line:
+                pending.append((time.monotonic(), None))
+                wake.set()
                 return
             try:
                 cmd = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            op = cmd.get("op")
-            x = max(0, min(65535, int(cmd.get("x", 0))))
-            y = max(0, min(65535, int(cmd.get("y", 0))))
-            if op == "down":
-                contact_started[0] = time.monotonic()
-                await uhs.send_touchscreen(TOUCHSCREEN_STATE_CONTACT, x, y, service_id)
-            elif op == "move":
-                await uhs.send_touchscreen(TOUCHSCREEN_STATE_CONTACT, x, y, service_id)
-            elif op == "up":
-                # A contact shorter than a tap is ignored by iOS, and every
-                # viewer sends down/up as fast as it can, so enforce the dwell
-                # here instead of hoping each client does.
-                held = time.monotonic() - contact_started[0]
-                if 0 <= held < TAP_DWELL:
-                    await asyncio.sleep(TAP_DWELL - held)
-                await uhs.send_touchscreen(TOUCHSCREEN_STATE_RELEASE, x, y, service_id)
-            elif op == "tap":
-                await uhs.send_touchscreen(TOUCHSCREEN_STATE_CONTACT, x, y, service_id)
-                await asyncio.sleep(TAP_DWELL)
-                await uhs.send_touchscreen(TOUCHSCREEN_STATE_RELEASE, x, y, service_id)
+            if len(pending) >= MAX_PENDING:
+                pending.popleft()
+            pending.append((time.monotonic(), cmd))
+            wake.set()
+
+    async def command_sender() -> None:
+        while True:
+            await wake.wait()
+            wake.clear()
+            while pending:
+                queued_at, cmd = pending.popleft()
+                if cmd is None:
+                    return
+                age = time.monotonic() - queued_at
+                if age > MAX_INPUT_AGE and cmd.get("op") != "up":
+                    dropped = 1
+                    while pending and time.monotonic() - pending[0][0] > MAX_INPUT_AGE:
+                        _, nxt = pending.popleft()
+                        if nxt is None:
+                            return
+                        dropped += 1
+                    if contact[0]:
+                        # Do not leave a finger on the glass.
+                        await send(TOUCHSCREEN_STATE_RELEASE, x_last[0], y_last[0])
+                        contact[0] = False
+                    log(f"dropped {dropped} input event(s) up to {age:.1f}s old")
+                    continue
+                x_last[0] = max(0, min(65535, int(cmd.get("x", 0))))
+                y_last[0] = max(0, min(65535, int(cmd.get("y", 0))))
+                await dispatch(cmd)
 
     tasks = [
         asyncio.create_task(receive_loop()),
         asyncio.create_task(heartbeat()),
-        asyncio.create_task(command_loop()),
+        asyncio.create_task(command_reader()),
+        asyncio.create_task(command_sender()),
+        asyncio.create_task(liveness()),
         asyncio.create_task(rtcp_loop()),
         asyncio.create_task(keep_awake()),
     ]

@@ -42,6 +42,14 @@ fixed here.
 
 **Not done yet: keyboard input.** Tapping and dragging work; typing does not.
 
+**Input is a pointer state, not a tape.** A stalled tunnel does not raise: XPC
+flow control simply stops granting window, so every touch report waits in the
+bridge and the whole backlog is delivered at once when the link returns -- a tap
+made 30 s ago then lands on whatever is on screen now. Three rules prevent it: a
+queued event older than 1.5 s is dropped (releasing a finger that is down), a
+report that waits 6 s on flow control ends the session, and a 5 s HID round trip
+does the same, so a stall costs a restart instead of a replay.
+
 **A dead session is never shown as live.** A frozen frame and a still screen are
 indistinguishable, so the Go side treats the bridge as the source of truth:
 when it ends, `Wait` returns an error, every RFB connection is closed, and new
