@@ -1,0 +1,83 @@
+# abacad.ai
+
+The public site: a static Astro 7 app with a custom landing page at `/` and
+Starlight documentation at `/docs/`. It is deployed as plain files; there is no
+server-side code and no dependency on the hub.
+
+## Commands
+
+```bash
+cd site
+npm ci
+npm run dev       # http://localhost:4321
+npm run build     # writes dist/ and checks every internal link and anchor
+npm run preview   # serve the built files
+npm run check     # astro check (types, content schema)
+npm run og        # regenerate public/og.png and public/og-zh.png
+```
+
+Node 24 is required. The site is independent of the Go binary.
+
+## Structure
+
+```text
+src/pages/index.astro            English landing
+src/pages/zh/index.astro         Chinese landing
+src/content/landing.ts           all landing copy, both languages
+src/layouts/Landing.astro        head, nav, sections, footer, copy button
+src/components/landing/          brand mark, console illustration, flow diagram
+src/content/docs/docs/           English docs → /docs/**
+src/content/docs/zh/docs/        Chinese docs → /zh/docs/**
+src/content/docs/404?            Starlight's 404
+src/components/Head.astro        TechArticle + BreadcrumbList for docs
+src/sidebar.mjs                  sidebar labels and translations
+src/styles/tokens.css            the porcelain tokens (one source)
+src/styles/landing.css           the marketing page
+src/styles/docs.css              Starlight token overrides
+public/                          favicons, OG cards, robots.txt, _headers
+```
+
+### Content rules
+
+- Every landing string lives in `src/content/landing.ts`; the `zh` object is typed
+  against `en`, so a missing field fails the build.
+- Docs links are root-absolute and locale-specific: `/docs/...` in English,
+  `/zh/docs/...` in Chinese. `scripts/check-links.mjs` resolves both paths and
+  checks the target file and anchor after every build.
+- A new docs page needs an entry in `src/sidebar.mjs` if it should appear in the
+  sidebar. `translations` keys are BCP-47 language tags (`zh-CN`), not locale
+  keys (`zh`).
+- The hub has one theme. The docs force the light scheme and hide Starlight's
+  theme selector; do not add a dark mode just to the site.
+- Do not put the marketing site into the Go binary. The hub's `/` is its login
+  page; this site is a separate deliverable.
+
+## SEO
+
+The build emits:
+
+- `sitemap-index.xml` and `sitemap-0.xml` with every page
+- canonical, `hreflang` (`en`, `zh-CN`, `x-default`), Open Graph and Twitter tags
+- `SoftwareApplication` + `FAQPage` JSON-LD on the landing pages
+- `TechArticle` + `BreadcrumbList` JSON-LD on every docs page
+- `llms.txt`, `llms-small.txt`, `llms-full.txt` via `starlight-llms-txt`
+- static Pagefind search (no server)
+- `robots.txt` and `_headers` (Cloudflare Pages format; Caddy ignores the latter)
+
+The OG cards are committed. Regenerate them with `npm run og` after changing the
+hero or the brand mark.
+
+## Deploy
+
+The build output is `dist/`. Any static host works.
+
+The production setup is a Caddy container on the origin. The build is synced to
+`/data/site` inside Caddy's data mount; Caddy serves `abacad.ai`, redirects
+`www` and `next` to the apex, and returns `410` for the retired relay paths.
+`_headers` only applies on Cloudflare Pages; with Caddy, the cache and security
+headers live in the Caddyfile (and `_headers` is blocked from being served).
+
+The previous hosted relay at the apex has been retired. Its `/login`, `/pair`,
+`/devices`, and random `*.abacad.ai` pages are not part of this site and do not
+get redirects. The SSH jump host is a separate service and is unaffected by the
+web cutover.

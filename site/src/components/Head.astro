@@ -1,0 +1,81 @@
+---
+import Default from "@astrojs/starlight/components/Head.astro";
+
+// Starlight's Head renders the canonical, hreflang, and social tags it already
+// knows about. We add one TechArticle and one BreadcrumbList per docs page so a
+// search engine sees a dated, structured document rather than loose prose.
+const route = Astro.locals.starlightRoute;
+const entry = route.entry;
+const title = entry?.data.title ?? route.siteTitle;
+const description = entry?.data.description ?? "";
+const isZh = route.lang === "zh-CN";
+const origin = "https://abacad.ai";
+const canonical = new URL(Astro.url.pathname, origin).href;
+const docsHome = `${origin}${isZh ? "/zh" : ""}/docs/`;
+const siteHome = `${origin}${isZh ? "/zh/" : "/"}`;
+const ogImage = `${origin}${isZh ? "/og-zh.png" : "/og.png"}`;
+
+const article = entry
+  ? {
+      "@context": "https://schema.org",
+      "@type": "TechArticle",
+      headline: title,
+      description,
+      inLanguage: route.lang,
+      url: canonical,
+      mainEntityOfPage: canonical,
+      isPartOf: {
+        "@type": "WebSite",
+        name: "abacad docs",
+        url: docsHome,
+      },
+      publisher: {
+        "@type": "Organization",
+        name: "abacad",
+        url: "https://abacad.ai/",
+      },
+    }
+  : null;
+
+const breadcrumb = entry
+  ? {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        {
+          "@type": "ListItem",
+          position: 1,
+          name: "abacad",
+          item: siteHome,
+        },
+        {
+          "@type": "ListItem",
+          position: 2,
+          name: isZh ? "文档" : "Docs",
+          item: docsHome,
+        },
+        ...(canonical === docsHome
+          ? []
+          : [
+              {
+                "@type": "ListItem",
+                position: 3,
+                name: title,
+                item: canonical,
+              },
+            ]),
+      ],
+    }
+  : null;
+---
+
+<Default />
+
+<meta property="og:image" content={ogImage} />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="abacad — a self-hosted VNC hub" />
+<meta name="twitter:image" content={ogImage} />
+
+{article && <script type="application/ld+json" set:html={JSON.stringify(article)} />}
+{breadcrumb && <script type="application/ld+json" set:html={JSON.stringify(breadcrumb)} />}

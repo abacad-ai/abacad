@@ -43,3 +43,22 @@ jobs:
           build-args: VERSION=ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - name: Install
+        working-directory: site
+        run: npm ci
+      - name: Type-check
+        working-directory: site
+        run: npm run check
+      - name: Build and check links
+        working-directory: site
+        run: npm run build

@@ -1,0 +1,20 @@
+---
+interface Props {
+  href?: string;
+  class?: string;
+  showWordmark?: boolean;
+}
+
+const { href = "/", class: className = "", showWordmark = true } = Astro.props;
+---
+
+<a class:list={["brand", className]} href={href} aria-label="abacad home">
+  <svg viewBox="0 0 100 100" class="brand-mark" aria-hidden="true">
+    <path
+      fill="#fd605e"
+      d="M23 8H55A15 15 0 0 1 70 23V25H45A20 20 0 0 0 25 45V70H23A15 15 0 0 1 8 55V23A15 15 0 0 1 23 8Z"
+    />
+    <rect x="30" y="30" width="62" height="62" rx="15" fill="#13a7f5" />
+  </svg>
+  {showWordmark && <span class="brand-word">abacad</span>}
+</a>

@@ -1,0 +1,161 @@
+---
+import "@fontsource-variable/geist";
+import "@fontsource-variable/geist-mono";
+
+import Brand from "../components/landing/Brand.astro";
+import "../styles/tokens.css";
+import "../styles/landing.css";
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>404 — abacad</title>
+    <meta name="theme-color" content="#f6f7f8" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <style>
+      .nf-page {
+        display: flex;
+        min-height: 100vh;
+        flex-direction: column;
+      }
+
+      .nf-header {
+        border-bottom: 1px solid var(--line);
+      }
+
+      .nf-header .container {
+        display: flex;
+        min-height: 64px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+      }
+
+      .nf-langs {
+        display: flex;
+        gap: 14px;
+        font-family: var(--font-mono);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .nf-langs a:hover {
+        color: var(--brand-ink);
+      }
+
+      .nf-main {
+        display: grid;
+        flex: 1;
+        place-items: center;
+        padding: 80px 0;
+      }
+
+      .nf-card {
+        display: grid;
+        grid-template-columns: 170px minmax(0, 1fr);
+        gap: 44px;
+        align-items: start;
+        max-width: 760px;
+      }
+
+      .nf-code {
+        font-family: var(--font-mono);
+        font-size: clamp(64px, 9vw, 112px);
+        font-weight: 500;
+        line-height: 0.82;
+        letter-spacing: -0.07em;
+        color: var(--ink);
+      }
+
+      .nf-copy h1 {
+        margin: 0;
+        font-size: clamp(24px, 3vw, 34px);
+        line-height: 1.1;
+        letter-spacing: -0.04em;
+      }
+
+      .nf-copy p {
+        margin: 14px 0 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.65;
+      }
+
+      .nf-copy p + p {
+        margin-top: 8px;
+      }
+
+      .nf-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 26px;
+      }
+
+      .nf-bottom {
+        border-top: 1px solid var(--line);
+        padding: 16px 0 22px;
+        font-family: var(--font-mono);
+        font-size: 9px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--faint);
+      }
+
+      @media (max-width: 660px) {
+        .nf-card {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 24px;
+        }
+
+        .nf-main {
+          padding: 56px 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="nf-page">
+      <header class="nf-header">
+        <div class="container">
+          <Brand href="/" />
+          <nav class="nf-langs" aria-label="Language">
+            <a href="/" lang="en">EN</a>
+            <a href="/zh/" lang="zh-CN">中文</a>
+          </nav>
+        </div>
+      </header>
+
+      <main class="nf-main">
+        <div class="container">
+          <div class="nf-card">
+            <div class="nf-code" aria-hidden="true">404</div>
+            <div class="nf-copy">
+              <h1>This page does not exist.</h1>
+              <p>
+                Check the URL, or start from the console. The docs cover installation, every
+                platform, MCP, and the security model.
+              </p>
+              <p lang="zh-CN">这个页面不存在。检查一下地址，或者从文档开始。</p>
+              <div class="nf-links">
+                <a class="btn btn-ink" href="/">Back to abacad.ai</a>
+                <a class="btn btn-ghost" href="/docs/">Read the docs</a>
+                <a class="btn btn-ghost" href="/zh/docs/" lang="zh-CN">中文文档</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <footer class="nf-bottom">
+        <div class="container">abacad.ai · no cloud · no relay · no account</div>
+      </footer>
+    </div>
+  </body>
+</html>

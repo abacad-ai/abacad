@@ -1,0 +1,209 @@
+/* Starlight reads its own design tokens. Map them onto porcelain, and force the
+   light scheme: the hub has one theme, and the docs should not invent a second
+   one. */
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+:root,
+:root[data-theme="light"],
+:root[data-theme="dark"] {
+  color-scheme: light;
+
+  --sl-font: var(--font-sans);
+  --sl-font-system: var(--font-sans);
+  --sl-font-mono: var(--font-mono);
+  --sl-content-width: 48rem;
+  --sl-sidebar-width: 17rem;
+  --sl-text-base: 0.9375rem;
+  --sl-text-lg: 1.0625rem;
+  --sl-text-xl: 1.25rem;
+  --sl-text-2xl: 1.5rem;
+  --sl-text-3xl: 1.875rem;
+
+  --sl-color-white: #15171a;
+  --sl-color-black: #ffffff;
+  --sl-color-gray-1: #15171a;
+  --sl-color-gray-2: #2b2e33;
+  --sl-color-gray-3: #63686f;
+  --sl-color-gray-4: #9aa0a7;
+  --sl-color-gray-5: #d7dade;
+  --sl-color-gray-6: #eceef0;
+  --sl-color-gray-7: #f6f7f8;
+
+  --sl-color-bg: #f6f7f8;
+  --sl-color-bg-nav: #f6f7f8;
+  --sl-color-bg-sidebar: #f6f7f8;
+  --sl-color-bg-inline-code: #f0f1f3;
+  --sl-color-bg-accent: #e9f5fe;
+  --sl-color-text: #15171a;
+  --sl-color-text-accent: #0b70ac;
+  --sl-color-text-invert: #ffffff;
+  --sl-color-hairline: #e5e7ea;
+  --sl-color-hairline-light: #eceef0;
+  --sl-color-hairline-shade: #e5e7ea;
+
+  --sl-color-accent-low: #e9f5fe;
+  --sl-color-accent: #13a7f5;
+  --sl-color-accent-high: #0b70ac;
+
+  --sl-shadow-sm: 0 1px 2px rgb(21 23 26 / 0.04);
+  --sl-shadow-md: 0 1px 2px rgb(21 23 26 / 0.05), 0 10px 24px -18px rgb(21 23 26 / 0.28);
+  --sl-shadow-lg: 0 1px 2px rgb(21 23 26 / 0.04), 0 24px 48px -28px rgb(21 23 26 / 0.34);
+}
+
+body {
+  letter-spacing: -0.011em;
+}
+
+.site-title {
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
+
+/* The hub has one theme, so there is nothing to switch. */
+starlight-theme-select {
+  display: none;
+}
+
+/* Starlight paints the current page with the accent colour and ink text. The
+   brand uses blue for "you are here", not as a filled block: a hairline mark on
+   a grey surface, the same as the app's selected rail row. */
+a[aria-current="page"] {
+  background-color: var(--sl-color-bg-inline-code) !important;
+  color: var(--sl-color-text) !important;
+  box-shadow: inset 2px 0 0 var(--sl-color-accent);
+  border-radius: 4px;
+}
+
+/* Keep the docs logo at the same optical weight as the app's chrome. */
+.site-title img {
+  max-height: 1.75rem;
+}
+
+/* A quieter header than Starlight's default. */
+header.header {
+  border-bottom: 1px solid var(--sl-color-hairline);
+}
+
+/* Code is the screen: keep it dark even on paper, with the same palette as the
+   product's viewer. */
+.expressive-code {
+  --ec-codeBg: #0f1113;
+  --ec-codeFg: #e3e6e9;
+  --ec-codeFontSize: 0.8125rem;
+  --ec-codeLineHeight: 1.75;
+  --ec-frm-edBg: #0f1113;
+  --ec-frm-trmBg: #0f1113;
+  --ec-frm-trmTtbBg: #1a1e22;
+  --ec-frm-trmTtbFg: #8b929a;
+  --ec-frm-trmTtbDotsFg: #3a4046;
+  --ec-frm-trmTtbDotsOpa: 1;
+  --ec-frm-edActTabBg: #1a1e22;
+  --ec-frm-edActTabFg: #e3e6e9;
+  --ec-frm-edTabBg: #121518;
+  --ec-frm-edTabFg: #8b929a;
+}
+
+.sl-markdown-content :not(pre) > code {
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 4px;
+  background: var(--sl-color-bg-inline-code);
+  color: var(--sl-color-text);
+  font-size: 0.85em;
+}
+
+.sl-markdown-content table {
+  font-size: 0.875rem;
+}
+
+.sl-markdown-content th {
+  background: var(--sl-color-bg-inline-code);
+  font-weight: 500;
+}
+
+.sl-markdown-content a:not(:where(.not-content *)) {
+  text-underline-offset: 3px;
+}
+
+/* The docs home is a chooser, not an essay. */
+.platform-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.75rem;
+  margin: 1.5rem 0;
+}
+
+.platform-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 10px;
+  background: var(--sl-color-black);
+  text-decoration: none;
+  transition: border-color 120ms ease;
+}
+
+.platform-card:hover {
+  border-color: var(--sl-color-gray-5);
+}
+
+.platform-card strong {
+  color: var(--sl-color-text);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.platform-card span {
+  color: var(--sl-color-gray-3);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.platform-card code {
+  font-size: 0.72rem;
+}
+
+/* A compact "at a glance" strip on the docs home. */
+.glance {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-auto-rows: 1fr;
+  align-items: stretch;
+  gap: 1px;
+  margin: 1.5rem 0;
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--sl-color-hairline);
+}
+
+.glance > div {
+  height: 100%;
+  margin: 0 !important;
+  padding: 0.9rem 1rem;
+  background: var(--sl-color-bg);
+}
+
+.glance dt {
+  margin: 0;
+  color: var(--sl-color-gray-4);
+  font-family: var(--sl-font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.glance dd {
+  margin: 0.25rem 0 0;
+  color: var(--sl-color-text);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+@media (max-width: 50rem) {
+  :root {
+    --sl-content-width: 100%;
+  }
+}
