@@ -24,7 +24,8 @@ In the default `gateway` mode the hub terminates only the RFB handshake (so the 
   `SKILL.md` for an agent: the endpoints and tokens baked in, plus the rules that
   keep the hub healthy. No server-side integration.
 
-Design and decision log: [docs/v2-rewrite-plan.md](docs/v2-rewrite-plan.md).
+Design and decision log: [docs/v2-rewrite-plan.md](docs/v2-rewrite-plan.md) ·
+visual system: [brand/theme.md](brand/theme.md).
 
 ## Quick start
 
@@ -280,6 +281,37 @@ framebuffer) and the real macOS Screen Sharing banner/type list. macOS offers
 `RFB 003.889` with Apple DH (type 30), which the hub now performs; choose
 **macOS account** sign-in rather than the legacy VNC password. See
 [docs/device-setup/macos.md](docs/device-setup/macos.md) and decision D15.
+
+## Design
+
+The interface is **porcelain**: paper, ink and three greys, with the logo's two
+colours used almost nowhere else.
+
+| Token | Value | Where |
+| --- | --- | --- |
+| Paper / surface | `#F6F7F8` / `#FFFFFF` | page, card, selected row |
+| Ink | `#15171A` | text, headings, **every primary button** |
+| Line / secondary / faint | `#E5E7EA` / `#63686F` / `#9AA0A7` | hairlines, captions, placeholders |
+| Accent — "you are here" | `#13A7F5` (text `#0B70AC`) | a live dot, the focus ring, the next step, links |
+| Signal — bad news | `#FD605E` (text `#BF3A37`) | a failed session, an error, Remove |
+
+Blue appears once per screen at most; coral never decorates; the only place the
+two logo colours meet is the mark itself. Type is **Geist** for the UI and the
+wordmark and **Geist Mono** for addresses, versions and all-caps micro labels —
+there is no second display face. Every separation is a 1px hairline, depth is two
+shadow levels, and there are no gradients or glass.
+
+Tokens live only in [`frontend/src/index.css`](frontend/src/index.css);
+components use `bg-card`, `border-border`, `text-muted-foreground`, `bg-brand`
+and friends. `npm run lint` fails on a raw colour in a component — the mark
+([`brand-mark.tsx`](frontend/src/components/brand-mark.tsx)) is the one
+exception, because its two fills are the logo, not the theme.
+
+The full system — roles, type scale, states, the do/don't list — is
+[brand/theme.md](brand/theme.md), with the sheet at
+[brand/theme.png](brand/theme.png). The vendored noVNC viewer deliberately keeps
+its own UI: its control bar is a third-party application, not our chrome
+([docs/vendored-novnc.md](docs/vendored-novnc.md)).
 
 ## Development
 

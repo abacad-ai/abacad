@@ -6,7 +6,7 @@ import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon
 const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
-      theme="system"
+      theme="light"
       className="toaster group"
       icons={{
         success: (
@@ -30,12 +30,14 @@ const Toaster = ({ ...props }: ToasterProps) => {
           "--normal-bg": "var(--popover)",
           "--normal-text": "var(--popover-foreground)",
           "--normal-border": "var(--border)",
-          "--border-radius": "var(--radius)",
+          "--border-radius": "10px",
         } as React.CSSProperties
       }
       toastOptions={{
         classNames: {
           toast: "cn-toast",
+          // richColors stays off — the signal colour is the icon, not a tinted toast.
+          error: "[&_[data-icon]]:text-destructive",
         },
       }}
       {...props}

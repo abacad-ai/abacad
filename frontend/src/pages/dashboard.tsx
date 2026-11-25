@@ -8,33 +8,45 @@ import { ConsoleRail } from "@/components/console-rail"
 import { DeviceDialog } from "@/components/device-dialog"
 import { LoginCard } from "@/components/login-card"
 import { SkillPanel } from "@/components/skill-panel"
+import { StatusDot } from "@/components/status-dot"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { VncFrame } from "@/components/vnc-frame"
 import { ApiError, api } from "@/lib/api"
 import { copyText } from "@/lib/clipboard"
 import { deviceStatus, statusLabel } from "@/lib/device"
 import type { Device, HubInfo } from "@/lib/types"
-import { cn } from "@/lib/utils"
 
 type AuthState = "loading" | "locked" | "in"
 
 function Brand() {
   return (
     <Link to="/" className="flex items-center gap-2.5" aria-label="abacad home">
-      <BrandMark className="size-8 shrink-0" />
-      <span className="text-[15px] font-semibold tracking-tight">abacad</span>
+      <BrandMark className="size-7 shrink-0" />
+      <span className="text-[15px] font-semibold tracking-[-0.035em]">abacad</span>
     </Link>
   )
 }
 
+// The mark stands still in the chrome; while the hub is being reached it is the
+// only thing on the page, so it is allowed to breathe.
 function Splash({ label }: { label: string }) {
   return (
     <div className="grid min-h-screen place-items-center bg-background px-6">
-      <div className="flex flex-col items-center gap-4">
-        <span className="grid size-11 animate-pulse place-items-center rounded-xl bg-primary text-lg font-semibold text-primary-foreground shadow-sm">
-          a
-        </span>
-        <p className="text-xs text-muted-foreground">{label}</p>
+      <div className="flex flex-col items-center gap-6">
+        <BrandMark className="size-10 animate-pulse [animation-duration:2.4s]" />
+        <p className="font-mono text-[10px] tracking-[0.16em] text-muted-foreground uppercase">
+          {label}
+        </p>
       </div>
     </div>
   )
@@ -56,17 +68,24 @@ function LoginScreen({
       <header className="px-6 py-6 sm:px-10">
         <Brand />
       </header>
-      <main className="flex flex-1 items-center justify-center px-5 pb-16">
-        <div className="w-full max-w-[400px]">
-          <p className="mb-7 text-center font-display text-[26px] text-primary italic">
-            one quiet place.
+      <main className="flex flex-1 items-center justify-center px-5 pb-12">
+        <div className="w-full max-w-[380px]">
+          <p className="mb-3.5 flex items-center gap-2 font-mono text-[10px] tracking-[0.16em] text-muted-foreground uppercase">
+            <span className="h-px w-5 bg-border" />
+            self-hosted VNC hub
+          </p>
+          <h1 className="text-[26px] leading-[1.05] font-semibold tracking-[-0.04em] sm:text-[30px]">
+            One quiet place.
+          </h1>
+          <p className="mt-2.5 text-[13px] leading-relaxed text-muted-foreground">
+            Every screen on your LAN, behind one token.
           </p>
           <LoginCard busy={busy} error={error} onSubmit={onSubmit} />
         </div>
       </main>
-      <footer className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-5 text-[11px] text-muted-foreground/70 sm:px-10">
+      <footer className="mx-auto flex w-full max-w-6xl flex-col gap-1.5 px-6 py-5 font-mono text-[9.5px] tracking-[0.14em] text-muted-foreground uppercase sm:flex-row sm:items-center sm:justify-between sm:px-10">
         <span>{version ? `abacad v${version}` : "abacad"}</span>
-        <span>Self-hosted · no cloud · no relay</span>
+        <span>no cloud · no relay · no account</span>
       </footer>
     </div>
   )
@@ -83,19 +102,21 @@ function Centered({ children }: { children: ReactNode }) {
 function EmptyMain({ onAdd }: { onAdd: () => void }) {
   return (
     <Centered>
-      <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-accent text-accent-foreground">
-        <Server className="size-5" />
+      <span className="mx-auto grid size-11 place-items-center rounded-xl border border-border bg-card text-muted-foreground shadow-card">
+        <Server className="size-4.5" />
       </span>
-      <h1 className="mt-4 text-[26px] font-semibold tracking-tight">No machines yet</h1>
-      <p className="mx-auto mt-2 max-w-sm text-[13px] leading-relaxed text-muted-foreground">
+      <h1 className="mt-5 text-[24px] leading-tight font-semibold tracking-[-0.035em]">
+        No machines yet
+      </h1>
+      <p className="mx-auto mt-2 max-w-[38ch] text-[13px] leading-relaxed text-muted-foreground">
         Turn on Screen Sharing or a VNC server on a machine, then add its address. Nothing installs
         on the device.
       </p>
-      <Button className="mt-5 h-9 px-3.5 text-[12.5px]" onClick={onAdd}>
-        <Plus />
+      <Button className="mt-6 h-9 px-3 text-[12.5px]" onClick={onAdd}>
+        <Plus className="size-3.5" />
         Add your first device
       </Button>
-      <p className="mx-auto mt-6 max-w-sm text-[11px] leading-relaxed text-muted-foreground/80">
+      <p className="mx-auto mt-7 max-w-sm text-[11.5px] leading-relaxed text-muted-foreground">
         abacad does not scan your network. Add the machine&apos;s address by hand.
       </p>
     </Centered>
@@ -109,24 +130,21 @@ function DirectMachine({ device, onEdit }: { device: Device; onEdit: () => void 
   const status = deviceStatus(device)
   return (
     <Centered>
-      <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-accent text-accent-foreground">
-        <Monitor className="size-5" />
+      <span className="mx-auto grid size-11 place-items-center rounded-xl border border-border bg-card text-muted-foreground shadow-card">
+        <Monitor className="size-4.5" />
       </span>
-      <h1 className="mt-4 text-[24px] font-semibold tracking-tight">{device.name}</h1>
-      <p className="mt-2 flex items-center justify-center gap-1.5 text-[11.5px] text-muted-foreground">
-        <span
-          className={cn(
-            "size-1.5 rounded-full",
-            status === "online" ? "bg-[#1f9d7f]" : status === "attention" ? "bg-[#b4752a]" : "bg-[#b3b4aa]",
-          )}
-        />
-        {statusLabel(status)} · catalog only
+      <h1 className="mt-5 text-[24px] font-semibold tracking-[-0.035em]">{device.name}</h1>
+      <p className="mt-2 flex items-center justify-center gap-2 text-[11.5px] text-muted-foreground">
+        <StatusDot device={device} halo />
+        {statusLabel(status)}
+        <span className="text-faint">·</span>
+        catalog only
       </p>
-      <p className="mx-auto mt-3 max-w-sm text-[13px] leading-relaxed text-muted-foreground">
+      <p className="mx-auto mt-3 max-w-[40ch] text-[13px] leading-relaxed text-muted-foreground">
         The hub carries no traffic for this machine. Point a VNC client or an agent at the address
         below.
       </p>
-      <div className="mx-auto mt-5 flex w-full max-w-[320px] items-center gap-1 rounded-xl border border-border bg-card py-1 pr-1 pl-3">
+      <div className="mx-auto mt-6 flex w-full max-w-[320px] items-center gap-1 rounded-lg border border-input bg-card py-1 pr-1 pl-3 shadow-card">
         <span className="min-w-0 flex-1 truncate text-left font-mono text-[11.5px] text-foreground/80">
           {address}
         </span>
@@ -166,6 +184,7 @@ export default function Dashboard({ view = "devices" }: { view?: "devices" | "sk
   const [loginError, setLoginError] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Device | null>(null)
+  const [removing, setRemoving] = useState<Device | null>(null)
 
   const load = useCallback(async (quiet = false) => {
     try {
@@ -263,7 +282,6 @@ export default function Dashboard({ view = "devices" }: { view?: "devices" | "sk
   }
 
   async function handleRemove(device: Device) {
-    if (!window.confirm(`Remove ${device.name}? The VNC server itself is not touched.`)) return
     try {
       await api.removeDevice(device.id)
       toast.success(`${device.name} removed`)
@@ -317,11 +335,11 @@ export default function Dashboard({ view = "devices" }: { view?: "devices" | "sk
     if (hubError) {
       main = (
         <Centered>
-          <h1 className="text-[22px] font-semibold tracking-tight">Can’t reach the hub</h1>
+          <h1 className="text-[24px] font-semibold tracking-[-0.035em]">Can’t reach the hub</h1>
           <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
             The page is signed in, but the device list did not load. The hub may be restarting.
           </p>
-          <Button className="mt-5" variant="outline" onClick={() => void load()}>
+          <Button className="mt-6" variant="outline" onClick={() => void load()}>
             Try again
           </Button>
         </Centered>
@@ -332,11 +350,11 @@ export default function Dashboard({ view = "devices" }: { view?: "devices" | "sk
   } else {
     main = (
       <Centered>
-        <h1 className="text-[22px] font-semibold tracking-tight">Machine not found</h1>
+        <h1 className="text-[24px] font-semibold tracking-[-0.035em]">Machine not found</h1>
         <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
           It may have been removed, or the link is stale.
         </p>
-        <Button asChild variant="outline" className="mt-5">
+        <Button asChild variant="outline" className="mt-6">
           <Link to="/">
             <ArrowLeft className="size-3.5" />
             Back to devices
@@ -354,7 +372,7 @@ export default function Dashboard({ view = "devices" }: { view?: "devices" | "sk
         skillActive={view === "skill"}
         onAdd={() => openAdd()}
         onEdit={(device) => openEdit(device)}
-        onRemove={(device) => void handleRemove(device)}
+        onRemove={(device) => setRemoving(device)}
       />
       <main className="flex min-h-0 min-w-0 flex-1 flex-col lg:h-screen lg:overflow-hidden">
         {main}
@@ -366,6 +384,37 @@ export default function Dashboard({ view = "devices" }: { view?: "devices" | "sk
         device={editing}
         onSaved={(saved) => void handleSaved(saved)}
       />
+
+      {/* The one destructive action in the hub. Radix keeps it modal until the
+          human picks a side; the machine's own VNC server is never touched. */}
+      <AlertDialog
+        open={removing !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemoving(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {removing?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The hub forgets the address, the sign-in and the agent token. The VNC server on the
+              machine keeps running.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="h-9 px-3 text-[12.5px]">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="h-9 bg-destructive px-3.5 text-[12.5px] text-white hover:bg-destructive/90"
+              onClick={() => {
+                const device = removing
+                if (device) void handleRemove(device)
+              }}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

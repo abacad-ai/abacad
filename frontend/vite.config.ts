@@ -6,6 +6,10 @@ import { defineConfig } from "vite"
 
 const distDir = fileURLToPath(new URL("../internal/web/dist", import.meta.url))
 
+// The hub owns the API, so `npm run dev` points the proxy at a running one.
+// ABACAD_DEV_API lets the design work sit against a fixture instead.
+const apiTarget = process.env.ABACAD_DEV_API ?? "http://127.0.0.1:8787"
+
 export default defineConfig({
   plugins: [
     react(),
@@ -32,10 +36,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://127.0.0.1:8787",
-      "/mcp": "http://127.0.0.1:8787",
+      "/api": apiTarget,
+      "/mcp": apiTarget,
       "/ws": {
-        target: "ws://127.0.0.1:8787",
+        target: apiTarget.replace(/^http/, "ws"),
         ws: true,
       },
     },

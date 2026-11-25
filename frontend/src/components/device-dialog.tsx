@@ -141,7 +141,7 @@ export function DeviceDialog({
         </DialogHeader>
 
         <form className="space-y-4" onSubmit={submit} autoComplete="off">
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <Label htmlFor="device-name">Name</Label>
             <Input
               id="device-name"
@@ -153,7 +153,7 @@ export function DeviceDialog({
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_7rem]">
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <Label htmlFor="device-host">Host</Label>
               <Input
                 id="device-host"
@@ -163,7 +163,7 @@ export function DeviceDialog({
                 required
               />
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <Label htmlFor="device-port">Port</Label>
               <Input
                 id="device-port"
@@ -176,7 +176,7 @@ export function DeviceDialog({
             </div>
           </div>
 
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <Label>Sign-in</Label>
             <Select value={signIn} onValueChange={(value) => setSignIn(value as SignIn)}>
               <SelectTrigger className="w-full">
@@ -190,7 +190,7 @@ export function DeviceDialog({
           </div>
 
           {signIn === "ard" ? (
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <Label htmlFor="device-username">macOS username</Label>
               <Input
                 id="device-username"
@@ -200,11 +200,11 @@ export function DeviceDialog({
                 autoComplete="off"
                 required
               />
-              <p className="text-xs text-muted-foreground">The short name, as printed by <code className="font-mono">whoami</code>.</p>
+              <p className="text-[11.5px] text-muted-foreground">The short name, as printed by <code className="font-mono text-[11px] text-foreground/75">whoami</code>.</p>
             </div>
           ) : null}
 
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <Label htmlFor="device-password">
               {signIn === "ard" ? "macOS account password" : "VNC password"}
             </Label>
@@ -220,7 +220,7 @@ export function DeviceDialog({
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <Label>Platform</Label>
               <Select
                 value={platform}
@@ -241,7 +241,7 @@ export function DeviceDialog({
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <Label>Mode</Label>
               <Select value={mode} onValueChange={(value) => setMode(value as DeviceMode)}>
                 <SelectTrigger className="w-full">
@@ -258,7 +258,7 @@ export function DeviceDialog({
             </div>
           </div>
 
-          <label className="flex items-start gap-2.5 text-sm">
+          <label className="flex items-start gap-2.5 text-[12.5px] text-foreground/85">
             <Checkbox
               checked={expose}
               onCheckedChange={(value) => setExpose(value === true)}
@@ -267,15 +267,15 @@ export function DeviceDialog({
             <span>Also open a raw VNC port for agents</span>
           </label>
 
-          <p className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
-            <Lock className="mt-0.5 size-3.5 shrink-0" />
+          <p className="flex items-start gap-2 text-[11.5px] leading-relaxed text-muted-foreground">
+            <Lock className="mt-0.5 size-3.5 shrink-0 text-faint" />
             <span>
               abacad never probes the device. It shows online only after a real browser or agent
               session authenticates — open it once to confirm the address and password.
             </span>
           </p>
 
-          <p className="rounded-lg bg-muted/60 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+          <p className="rounded-lg border border-border bg-muted/60 px-3 py-2.5 text-[11.5px] leading-relaxed text-muted-foreground">
             Gateway keeps the device password in the hub and gives agents a revocable token.
             On macOS, <strong className="text-foreground">macOS account</strong> signs in as the
             logged-in user; the legacy VNC password has no user identity and can show only the
@@ -283,16 +283,16 @@ export function DeviceDialog({
           </p>
 
           {error ? (
-            <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <p role="alert" className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-[12px] text-destructive">
               {error}
             </p>
           ) : null}
 
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+          <DialogFooter className="pt-4">
+            <Button type="button" variant="ghost" className="h-9 px-3 text-[12.5px]" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={busy}>
+            <Button type="submit" className="h-9 px-3.5 text-[12.5px]" disabled={busy}>
               {busy ? "Saving…" : editing ? "Save changes" : "Add device"}
             </Button>
           </DialogFooter>

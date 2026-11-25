@@ -70,17 +70,17 @@ export function SkillPanel({ devices }: { devices: Device[] }) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto bg-background">
       <div className="mx-auto w-full max-w-3xl px-5 py-9 sm:px-8 lg:py-12">
-        <p className="flex items-center gap-1.5 text-[11px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
-          <Bot className="size-3.5" />
+        <p className="flex items-center gap-2 font-mono text-[10px] tracking-[0.16em] text-muted-foreground uppercase">
+          <Bot className="size-3" />
           For agents
         </p>
-        <h1 className="mt-3 text-[26px] leading-tight font-semibold tracking-tight">
+        <h1 className="mt-3 text-[26px] leading-tight font-semibold tracking-[-0.04em]">
           Hand a machine to an agent
         </h1>
-        <p className="mt-2 max-w-[62ch] text-[13px] leading-relaxed text-muted-foreground">
+        <p className="mt-2.5 max-w-[62ch] text-[13px] leading-relaxed text-muted-foreground">
           This is a ready-made agent skill: the machine list, the endpoints and the rules that keep
           the hub healthy. Save it as{" "}
-          <code className="rounded bg-[#f1ebdf] px-1 py-0.5 font-mono text-[11.5px]">
+          <code className="rounded-[4px] border border-border bg-card px-1 py-px font-mono text-[11px] text-foreground/80">
             SKILL.md
           </code>{" "}
           in your agent&apos;s skills folder. No MCP server and no new protocol — every machine is a
@@ -88,27 +88,27 @@ export function SkillPanel({ devices }: { devices: Device[] }) {
         </p>
 
         {ready.length === 0 ? (
-          <div className="mt-6 flex gap-3 rounded-xl border border-[#e3d6b8] bg-[#fdf7e7] px-4 py-3">
-            <KeyRound className="mt-0.5 size-4 shrink-0 text-[#b4752a]" />
-            <p className="text-[12.5px] leading-relaxed text-[#6b5a35]">
+          <div className="mt-6 flex gap-3 rounded-xl border border-brand/25 bg-brand-soft px-4 py-3">
+            <KeyRound className="mt-0.5 size-3.5 shrink-0 text-brand-ink" />
+            <p className="text-[12.5px] leading-relaxed text-foreground/80">
               No machine has a raw VNC port yet, so there is nothing an agent can connect to. Edit a
-              machine and check <strong>Also open a raw VNC port for agents</strong> — that is what
-              creates the endpoint.
+              machine and check <strong className="font-medium text-foreground">Also open a raw VNC port for agents</strong>{" "}
+              — that is what creates the endpoint.
             </p>
           </div>
         ) : (
-          <p className="mt-4 text-[12px] text-muted-foreground">
+          <p className="mt-4 font-mono text-[10.5px] tracking-[0.04em] text-muted-foreground">
             {ready.length === devices.length
               ? `${ready.length} machine${ready.length === 1 ? "" : "s"} ready`
               : `${ready.length} of ${devices.length} machines ready`}
-            <span className="text-muted-foreground/60"> · </span>
-            <span className="font-mono text-[11px]">{normalizeHub(hub)}</span>
+            <span className="text-faint"> · </span>
+            {normalizeHub(hub)}
           </p>
         )}
 
-        <div className="mt-5 overflow-hidden rounded-2xl border border-border bg-card shadow-[0_1px_2px_rgba(24,24,20,0.04)]">
-          <div className="flex flex-wrap items-center gap-2 border-b border-border/70 px-3 py-2.5">
-            <div className="flex rounded-[10px] bg-[#f1ebdf] p-0.5">
+        <div className="mt-5 overflow-hidden rounded-xl border border-border bg-card shadow-card">
+          <div className="flex flex-wrap items-center gap-2 border-b border-border px-2.5 py-2.5">
+            <div className="flex rounded-lg bg-muted p-0.5">
               {VARIANTS.map((option) => (
                 <button
                   key={option.id}
@@ -116,9 +116,9 @@ export function SkillPanel({ devices }: { devices: Device[] }) {
                   onClick={() => setVariant(option.id)}
                   aria-pressed={variant === option.id}
                   className={cn(
-                    "h-6.5 rounded-lg px-2.5 text-[11.5px] font-medium transition-colors",
+                    "h-6 rounded-md px-2.5 text-[11.5px] font-medium transition-colors",
                     variant === option.id
-                      ? "bg-card text-foreground shadow-sm"
+                      ? "bg-card text-foreground shadow-pill"
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
@@ -131,7 +131,7 @@ export function SkillPanel({ devices }: { devices: Device[] }) {
               onChange={(event) => setHub(event.target.value)}
               spellCheck={false}
               aria-label="Hub address"
-              className="h-7 min-w-[160px] flex-1 rounded-lg border border-border bg-background px-2.5 font-mono text-[11.5px] text-foreground/85 outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+              className="h-7 min-w-[160px] flex-1 rounded-md border border-input bg-background px-2.5 font-mono text-[11px] text-foreground/80 outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40"
             />
             <Button size="sm" variant="outline" onClick={() => void copy()}>
               <Copy className="size-3.5" />
@@ -143,15 +143,15 @@ export function SkillPanel({ devices }: { devices: Device[] }) {
             </Button>
           </div>
 
-          <pre className="h-[46vh] min-h-[280px] overflow-x-hidden overflow-y-auto bg-[#fbfaf6] px-4 py-3.5 font-mono text-[11px] leading-[1.75] break-words whitespace-pre-wrap text-[#4b4d46] [scrollbar-width:thin]">
+          <pre className="h-[46vh] min-h-[280px] overflow-x-hidden overflow-y-auto bg-background px-4 py-4 font-mono text-[11px] leading-[1.75] break-words whitespace-pre-wrap text-foreground/75">
             {markdown}
           </pre>
 
-          <div className="flex items-start gap-2 border-t border-border/70 px-4 py-2.5">
+          <div className="flex items-start gap-2.5 border-t border-border px-4 py-3">
             {variant === "baked" ? (
-              <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-[#b4752a]" />
+              <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-faint" />
             ) : (
-              <KeyRound className="mt-0.5 size-3.5 shrink-0 text-[#b4752a]" />
+              <KeyRound className="mt-0.5 size-3.5 shrink-0 text-faint" />
             )}
             <p className="text-[11px] leading-relaxed text-muted-foreground">
               {variant === "baked" ? (
@@ -169,8 +169,8 @@ export function SkillPanel({ devices }: { devices: Device[] }) {
               ) : (
                 <>
                   The live variant authenticates with the hub&apos;s admin token from{" "}
-                  <code className="font-mono">ABACAD_TOKEN</code> — that token controls every
-                  machine on the hub. The file itself holds no secret.
+                  <code className="font-mono text-foreground/75">ABACAD_TOKEN</code> — that token
+                  controls every machine on the hub. The file itself holds no secret.
                 </>
               )}
             </p>
@@ -179,10 +179,10 @@ export function SkillPanel({ devices }: { devices: Device[] }) {
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div className="rounded-xl border border-border bg-card px-4 py-3">
-            <p className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+            <p className="font-mono text-[9.5px] tracking-[0.14em] text-muted-foreground uppercase">
               Where it goes
             </p>
-            <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
+            <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
               One folder per skill:
               <br />
               <code className="font-mono text-[11px] text-foreground/80">
@@ -195,10 +195,10 @@ export function SkillPanel({ devices }: { devices: Device[] }) {
             </p>
           </div>
           <div className="rounded-xl border border-border bg-card px-4 py-3">
-            <p className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+            <p className="font-mono text-[9.5px] tracking-[0.14em] text-muted-foreground uppercase">
               {active.label}
             </p>
-            <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">{active.hint}</p>
+            <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">{active.hint}</p>
           </div>
         </div>
       </div>

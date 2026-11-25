@@ -15,7 +15,7 @@ export default function App() {
         <Route path="/vnc/:id" element={<Viewer />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
-      <Toaster position="bottom-right" richColors />
+      <Toaster position="bottom-right" />
     </BrowserRouter>
   )
 }

@@ -61,7 +61,7 @@ export default function Viewer() {
 
   if (loading) {
     return (
-      <div className="grid min-h-screen place-items-center bg-neutral-950 text-sm text-neutral-300">
+      <div className="grid min-h-screen place-items-center bg-screen font-mono text-[10px] tracking-[0.16em] text-white/40 uppercase">
         Connecting…
       </div>
     )
@@ -69,7 +69,7 @@ export default function Viewer() {
 
   if (loadError || !device) {
     return (
-      <div className="grid min-h-screen place-items-center p-6">
+      <div className="grid min-h-screen place-items-center bg-background p-6">
         <Card className="max-w-md items-center gap-3 p-6 text-center">
           <p className="text-base font-medium">Can’t open this device</p>
           <p className="text-sm text-muted-foreground">{loadError}</p>
@@ -93,7 +93,7 @@ export default function Viewer() {
         asChild
         variant="outline"
         size="sm"
-        className="absolute top-3 right-3 z-10 border-white/15 bg-black/60 text-white/80 shadow-lg backdrop-blur hover:bg-black/80 hover:text-white"
+        className="absolute top-3 right-3 z-10 h-8 gap-1.5 border-white/15 bg-ink-raised/90 px-3 text-[12px] text-white/85 hover:bg-ink-raised hover:text-white"
       >
         <Link to={`/devices/${encodeURIComponent(id)}`}>
           <ArrowLeft />

@@ -38,7 +38,7 @@ export function VncFrame({
   const src = useMemo(() => vncAppUrl(device.id, nonce), [device.id, nonce])
 
   return (
-    <div className={cn("relative h-full w-full bg-[#313131]", className)}>
+    <div className={cn("relative h-full w-full bg-screen", className)}>
       <iframe
         src={src}
         title={`${device.name} screen`}

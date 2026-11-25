@@ -2,6 +2,7 @@ import { Bot, ExternalLink, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-
 import { Link } from "react-router-dom"
 
 import { BrandMark } from "@/components/brand-mark"
+import { StatusDot } from "@/components/status-dot"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -14,22 +15,6 @@ import { PlatformIcon } from "@/lib/platform"
 import type { Device } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
-function StatusDot({ device, className }: { device: Device; className?: string }) {
-  const status = deviceStatus(device)
-  return (
-    <span
-      className={cn(
-        "size-1.5 shrink-0 rounded-full",
-        status === "online" && "bg-[#1f9d7f] shadow-[0_0_0_3px_rgba(31,157,127,0.12)]",
-        status === "attention" && "bg-[#b4752a]",
-        status === "stale" && "bg-[#b3b4aa]",
-        status === "unknown" && "border border-[#b3b4aa]",
-        className,
-      )}
-    />
-  )
-}
-
 function RailItem({
   device,
   selected,
@@ -41,25 +26,28 @@ function RailItem({
   onEdit: () => void
   onRemove: () => void
 }) {
-  const status = deviceStatus(device)
   return (
     <div
       className={cn(
-        "group relative flex min-w-[172px] items-center rounded-[10px] transition-colors lg:min-w-0",
-        selected ? "bg-[#e7f1ec] shadow-[inset_2px_0_0_var(--primary)]" : "hover:bg-[#f1ebdf]",
+        "group relative flex min-w-[176px] items-center rounded-[10px] transition-colors lg:min-w-0",
+        selected
+          ? "bg-card text-foreground shadow-card ring-1 ring-border"
+          : "hover:bg-foreground/[0.04]",
       )}
     >
       <Link
         to={`/devices/${encodeURIComponent(device.id)}`}
         aria-current={selected ? "page" : undefined}
-        title={`${device.name} — ${device.mode === "direct" ? "catalog only" : statusLabel(status)}`}
-        className="flex min-w-0 flex-1 items-center gap-2.5 py-2.5 pr-8 pl-2.5 lg:pl-2"
+        title={`${device.name} — ${device.mode === "direct" ? "catalog only" : statusLabel(deviceStatus(device))}`}
+        className="flex min-w-0 flex-1 items-center gap-2.5 py-2 pr-8 pl-2.5"
       >
-        <StatusDot device={device} />
+        <StatusDot device={device} halo />
         <span
           className={cn(
-            "grid size-6 shrink-0 place-items-center rounded-md bg-[#ece6da] text-muted-foreground",
-            selected && "bg-[#d3e8df] text-[#0d4a42]",
+            "grid size-6 shrink-0 place-items-center rounded-[6px]",
+            selected
+              ? "bg-foreground text-background"
+              : "bg-foreground/[0.055] text-muted-foreground",
           )}
         >
           <PlatformIcon platform={device.platform} className="size-3.5" />
@@ -67,13 +55,13 @@ function RailItem({
         <span className="min-w-0 flex-1">
           <span
             className={cn(
-              "block truncate text-[12.5px] leading-tight font-medium text-[#4b4d46]",
-              selected && "text-foreground",
+              "block truncate text-[12.5px] leading-tight font-medium",
+              selected ? "text-foreground" : "text-foreground/80",
             )}
           >
             {device.name}
           </span>
-          <span className="mt-0.5 block truncate font-mono text-[9.5px] text-muted-foreground/80">
+          <span className="mt-1 block truncate font-mono text-[10px] text-muted-foreground">
             {device.host}
           </span>
         </span>
@@ -134,11 +122,11 @@ export function ConsoleRail({
   onRemove: (device: Device) => void
 }) {
   return (
-    <aside className="flex w-full min-w-0 shrink-0 flex-col border-b border-border/80 bg-[#f8f4eb] lg:h-screen lg:w-[288px] lg:border-r lg:border-b-0">
+    <aside className="flex w-full min-w-0 shrink-0 flex-col border-b border-border bg-sidebar lg:h-screen lg:w-[288px] lg:border-r lg:border-b-0">
       <div className="flex h-16 shrink-0 items-center justify-between px-4 lg:px-3.5">
         <Link to="/" className="flex items-center gap-2.5" aria-label="abacad home">
-          <BrandMark className="size-8 shrink-0" />
-          <span className="text-[15px] font-semibold tracking-tight">abacad</span>
+          <BrandMark className="size-7 shrink-0" />
+          <span className="text-[15px] font-semibold tracking-[-0.035em]">abacad</span>
         </Link>
         <div className="flex items-center gap-1 lg:hidden">
           <Button asChild variant="ghost" size="icon-sm" aria-label="Agent skill">
@@ -155,8 +143,11 @@ export function ConsoleRail({
       <div className="min-h-0 min-w-0 flex-1 overflow-visible lg:overflow-y-auto">
         <nav
           aria-label="Machines"
-          className="flex w-full min-w-0 gap-1.5 overflow-x-auto px-3 pb-3 lg:flex-col lg:gap-0.5 lg:overflow-visible lg:pb-4"
+          className="flex w-full min-w-0 gap-1.5 overflow-x-auto px-3 pb-3 lg:flex-col lg:gap-1 lg:overflow-visible lg:pb-4"
         >
+          {devices.length === 0 ? (
+            <p className="px-2.5 py-2 text-[11.5px] text-muted-foreground">None configured</p>
+          ) : null}
           {devices.map((device) => (
             <RailItem
               key={device.id}
@@ -169,15 +160,15 @@ export function ConsoleRail({
         </nav>
       </div>
 
-      <div className="hidden shrink-0 flex-col gap-1 px-3 pb-4 lg:flex">
+      <div className="hidden shrink-0 flex-col gap-1.5 px-3 pb-4 lg:flex">
         <Button
           asChild
           variant="ghost"
           className={cn(
-            "h-8 w-full justify-start gap-2 px-2.5 text-[11.5px] font-normal",
+            "h-8 w-full justify-start gap-2 px-2 text-[12px] font-normal",
             skillActive
-              ? "bg-[#e7f1ec] text-foreground shadow-[inset_2px_0_0_var(--primary)] hover:bg-[#e7f1ec]"
-              : "text-muted-foreground hover:bg-[#f1ebdf] hover:text-foreground",
+              ? "bg-card text-foreground shadow-card ring-1 ring-border hover:bg-card"
+              : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
           )}
         >
           <Link to="/skill" aria-current={skillActive ? "page" : undefined}>
@@ -187,7 +178,7 @@ export function ConsoleRail({
         </Button>
         <Button
           variant="outline"
-          className="h-9 w-full justify-center gap-1.5 border-dashed border-border/90 bg-transparent text-[11.5px] font-normal text-muted-foreground shadow-none hover:bg-[#f1ebdf] hover:text-foreground"
+          className="h-9 w-full justify-center gap-1.5 text-[12px] font-normal text-muted-foreground hover:text-foreground"
           onClick={onAdd}
         >
           <Plus className="size-3.5" />

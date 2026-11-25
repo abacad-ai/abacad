@@ -21,6 +21,8 @@ brand/
 │   ├── icon-rounded-1024.png   网页 / 文档用（22.5% 圆角）
 │   └── icon-maskable-1024.png  PWA maskable，图形收在 80% 安全圆内
 ├── lockup@2x.png / @3x.png     字标组合（透明底，Geist 600，字距 −0.035em）
+├── theme.md / theme.html       站点主题规范（颜色、字体、规矩）
+├── theme.png                  主题规范图
 ├── brand.png / brand.html      这张规范图
 ├── app-header.png              标志在登录页头部的实拍（内联组件）
 └── archive/                    前三版提案（round / v2 / 03），留档
@@ -40,6 +42,17 @@ brand/
 
 - **空气 5 是几何不是审美。** 错位 22 减去空气 5 = 17，就是那个 L 的宽度；空气一变，L 就不成立了（压到 3 以下，L 会胖成第二块方砖）。
 - **16px 必须换切版。** 主标的 5 单位在 16px 下只有 0.8px，会糊成一块；`favicon.svg` 把空气加到 8，缝还剩 1.3px。
+
+## 主题
+
+站点用的不是标志那两色，而是从它长出来的一套「纸 / 墨 / 一点蓝」：**颜色和字体都在
+[theme.md](theme.md) 里，只有一份来源**，实现在 `frontend/src/index.css`。
+蓝 = 你在这里（在线、焦点、提示），珊瑚 = 坏消息（失败、销毁）；其余全是黑白灰。
+旧的衬线斜体标题已退休，界面和字标共用 Geist。
+
+![主题](theme.png)
+
+（`theme.html` 是这张图的源文件；浏览器打开即可。）
 
 ## 安装
 

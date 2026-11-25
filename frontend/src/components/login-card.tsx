@@ -1,9 +1,9 @@
-import { KeyRound } from "lucide-react"
 import { useState } from "react"
 
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 
 export function LoginCard({
   busy,
@@ -17,39 +17,48 @@ export function LoginCard({
   const [token, setToken] = useState("")
 
   return (
-    <Card className="mx-auto w-full max-w-[400px] border-border/80 bg-card/90 shadow-xl shadow-foreground/5 backdrop-blur">
-      <CardHeader className="gap-2">
-        <div className="mb-1 grid size-11 place-items-center rounded-xl bg-accent text-accent-foreground">
-          <KeyRound className="size-5" />
-        </div>
-        <CardTitle className="text-xl">Sign in</CardTitle>
-        <CardDescription>
-          Paste the admin token from <code className="font-mono text-xs">~/.config/abacad/config.yaml</code>.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <Card className="mt-7 gap-0 rounded-2xl p-0">
+      <CardContent className="p-5">
         <form
-          className="flex flex-col gap-3"
+          className="flex flex-col gap-4"
           onSubmit={(event) => {
             event.preventDefault()
             onSubmit(token)
           }}
         >
-          <Input
-            autoFocus
-            type="password"
-            autoComplete="current-password"
-            placeholder="admin token"
-            value={token}
-            onChange={(event) => setToken(event.target.value)}
-            className="h-10 bg-background/70"
-            required
-          />
-          <Button type="submit" className="h-10" disabled={busy || token.trim() === ""}>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="admin-token" className="text-[12px] font-medium text-foreground">
+              Admin token
+            </Label>
+            <Input
+              id="admin-token"
+              autoFocus
+              type="password"
+              autoComplete="current-password"
+              placeholder="paste your admin token"
+              value={token}
+              onChange={(event) => setToken(event.target.value)}
+              className="h-10 bg-background font-mono text-[12.5px]"
+              required
+            />
+            <p className="text-[11.5px] leading-relaxed text-muted-foreground">
+              From{" "}
+              <code className="rounded-[4px] border border-border bg-background px-1 py-px font-mono text-[11px] text-foreground/75">
+                ~/.config/abacad/config.yaml
+              </code>{" "}
+              on the machine running the hub.
+            </p>
+          </div>
+
+          <Button type="submit" className="h-10 w-full text-[12.5px]" disabled={busy || token.trim() === ""}>
             {busy ? "Unlocking…" : "Unlock"}
           </Button>
+
           {error ? (
-            <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <p
+              role="alert"
+              className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-[12px] text-destructive"
+            >
               {error}
             </p>
           ) : null}
