@@ -162,15 +162,21 @@ func runServe(args []string) {
 		if python == "" {
 			python = "python3"
 		}
-		hc, err := helper.Start(context.Background(), python, *helperScript, *helperUDID, 75*time.Second)
-		if err != nil {
+		sup := helper.NewSupervisor(helper.Config{
+			Python: python,
+			Script: *helperScript,
+			UDID:   *helperUDID,
+			Logf:   log.Printf,
+		})
+		if err := sup.Start(context.Background()); err != nil {
 			fail(err)
 		}
-		defer hc.Close()
-		src, runner = hc, helperRunner{c: hc}
-		nativeW, nativeH := hc.Size()
+		defer sup.Close()
+		src, runner = sup, sup
+		nativeW, nativeH := sup.Size()
 		outW, outH := rfbserver.OutputSize(nativeW, nativeH, *scale)
-		in = hc.NewInput(outW, outH)
+		sup.SetOutputSize(outW, outH)
+		in = sup
 		log.Printf("bridge %s: %dx%d -> %dx%d", *helperScript, nativeW, nativeH, outW, outH)
 	} else {
 		device := openDevice(*udid)
@@ -249,6 +255,13 @@ func runServe(args []string) {
 		conn, err := ln.Accept()
 		if err != nil {
 			break
+		}
+		// A viewer that connects while the device session is down gets a closed
+		// socket, not a stale frame pretending to be live.
+		if r, ok := src.(interface{ Ready() bool }); ok && !r.Ready() {
+			log.Printf("viewer %s refused: device session is not running", conn.RemoteAddr())
+			_ = conn.Close()
+			continue
 		}
 		wg.Add(1)
 		go func() {
@@ -358,15 +371,6 @@ func frameHash(img image.Image) string {
 		h.Write(row)
 	}
 	return hex.EncodeToString(h.Sum(nil))
-}
-
-// helperRunner keeps the RFB server alive for as long as the bridge process is;
-// the frames themselves arrive on the client's own read loop.
-type helperRunner struct{ c *helper.Client }
-
-func (r helperRunner) Run(ctx context.Context) {
-	<-ctx.Done()
-	r.c.Close()
 }
 
 func writePNG(path string, img image.Image) error {

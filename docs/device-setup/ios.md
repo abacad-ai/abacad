@@ -51,7 +51,9 @@ per-device raw VNC ports are gone.
 - **25–40 fps**, ~78 KB per frame at 592×1280. The device only encodes when the
   screen changes, so a still screen costs almost nothing.
 - **The device must stay connected over USB.** Pulling the cable ends the
-  session; the bridge does not reconnect on its own yet.
+  session; it comes back by itself within a few seconds of the device being
+  reachable again, and viewers are disconnected the moment it goes away instead
+  of being left with a frozen picture.
 - **Protected video renders black**, as it does in any screen recording.
 - It drives the device through **Developer Mode**, so treat the Mac as a
   privileged host: keep the RFB port on the LAN and always set a password.

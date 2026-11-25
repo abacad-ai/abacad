@@ -38,8 +38,23 @@ fixed here.
 | Keep-awake | a `PreventUserIdleSystemSleep` assertion on the device, renewed every 2 min |
 | Streaming lifetime | RTCP receiver reports every second — without them the device reaps the video session after ~25 s |
 | Loss handling | RTP sequence gaps drop the corrupt access unit and request a fresh IDR |
+| Session lifetime | supervised: the bridge is restarted after a dropped tunnel, a crash or a wedged process, and viewers are disconnected the moment it is gone |
 
 **Not done yet: keyboard input.** Tapping and dragging work; typing does not.
+
+**A dead session is never shown as live.** A frozen frame and a still screen are
+indistinguishable, so the Go side treats the bridge as the source of truth:
+when it ends, `Wait` returns an error, every RFB connection is closed, and new
+ones are refused until a fresh session produces a frame. Two failures are
+covered — the process exits (pipe EOF) and the process wedges (no frames and no
+log line for 15 s, killed by a watchdog). A quiet screen is not a wedge: a still
+screen sends no frames, but the bridge logs a stats line every two seconds, so
+the heartbeat keeps running.
+
+The Python side exits with `os._exit` on any fatal error rather than unwinding:
+its shutdown joins VideoToolbox threads, and a bridge that lingers after a
+dropped tunnel keeps its stdout open — which is exactly how a viewer ends up
+staring at yesterday's screenshot while the status says connected.
 
 ## Requirements
 
@@ -75,7 +90,7 @@ the legacy path in this tree.
 ## Tests
 
 ```bash
-go test ./...        # RFB wire format, capture policy, input mapping, doctor
+go test ./...        # RFB wire format, session supervision, input mapping, doctor
 ```
 
 The device transport itself needs hardware; `bridge/iosbridge.py` is exercised by

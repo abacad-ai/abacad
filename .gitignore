@@ -32,3 +32,5 @@ config.yaml
 # browser automation artifacts
 .playwright-cli/
 iosvnc/iosvnc
+# scratch probes used while bringing the iOS bridge up (see iosvnc/README.md)
+iosvnc/.scratch/

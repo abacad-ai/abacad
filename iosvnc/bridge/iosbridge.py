@@ -20,12 +20,14 @@ framebuffer pixels to that range.
 
 import asyncio
 import io
+import os
 import queue
 import threading
 import json
 import struct
 import sys
 import time
+import traceback
 
 from PIL import Image
 
@@ -394,12 +396,32 @@ async def main() -> int:
     for t in pending:
         t.cancel()
     for t in done:
-        t.result()
+        exc = t.exception()
+        if exc is not None:
+            log(f"fatal: {type(exc).__name__}: {exc}")
+            raise exc
     return 0
 
 
 if __name__ == "__main__":
+    # Deliberately not asyncio.run(): its shutdown joins the default executor,
+    # and the decoder's VideoToolbox threads can block that join for minutes.
+    # Our stdout is the parent's liveness signal, so a bridge that lingers after
+    # a dropped tunnel keeps the Go side serving a frozen screenshot -- the
+    # "connected but nothing works" state. Exit hard instead: the pipe closes at
+    # once and the supervisor starts a fresh session.
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    rc = 1
     try:
-        sys.exit(asyncio.run(main()))
+        rc = loop.run_until_complete(main())
     except KeyboardInterrupt:
-        sys.exit(0)
+        rc = 0
+    except BaseException:
+        traceback.print_exc()
+    sys.stderr.flush()
+    try:
+        sys.stdout.buffer.flush()
+    except Exception:
+        pass
+    os._exit(rc or 0)
