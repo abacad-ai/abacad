@@ -244,9 +244,12 @@ docker compose pull && docker compose up -d
 docker run --rm ghcr.io/abacad-ai/abacad:latest version
 ```
 
-The `/config` volume is left alone, so devices and tokens survive. Tags are
-`latest`, `2`, `2.0`, `2.0.0`; pin a version if you would rather upgrade on
-purpose.
+The `/config` volume is left alone, so devices survive. Tags are `latest`, `3`,
+`3.0`, `3.0.0`; pin a version if you would rather upgrade on purpose.
+
+3.0 dropped raw VNC ports and per-device tokens: every device is reached over
+the hub's WebSocket, and the admin token is the only secret. An old config file
+still loads; the dropped fields go away on the next save.
 
 ### Bridge networking
 
