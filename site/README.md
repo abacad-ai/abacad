@@ -35,6 +35,7 @@ src/styles/tokens.css            the porcelain tokens (one source)
 src/styles/landing.css           the marketing page
 src/styles/docs.css              Starlight token overrides
 public/                          favicons, OG cards, robots.txt, _headers
+public/screens/                  sanitized product screenshots (login, Add device, Skill)
 ```
 
 ### Content rules
@@ -66,6 +67,12 @@ The build emits:
 
 The OG cards are committed. Regenerate them with `npm run og` after changing the
 hero or the brand mark.
+
+The screenshots are from a real hub, with device names, addresses, and the hub
+URL replaced by examples. They are referenced from the docs with
+`/screens/*.webp`; the docs stylesheet caps them at 640px so the UI text stays
+legible. If the console changes, recapture and replace the files; do not add a
+screenshot that contains an admin token, a real hostname, or a private IP.
 
 ## Deploy
 

@@ -44,9 +44,13 @@ token 是 64 个十六进制字符。网页登录、API、MCP 和每台设备的
 在浏览器里打开日志里的 URL，粘贴管理员 token。控制台会停在设备栏。如果你在另一台机器
 上，确保 hub 的端口可达 —— VPN 或 SSH 隧道就够了，不需要暴露到公网。
 
+![abacad 的登录界面](/screens/login.webp)
+
 ## 3. 添加设备
 
 点 **添加设备**，填：
+
+![abacad 控制台里的 Add device 对话框](/screens/add-device.webp)
 
 - **名称** —— 你在设备栏里认得出的名字，比如 `Mac mini`。
 - **Host** —— **hub** 能访问到的地址：局域网 IP、VPN 地址、DNS 名，或者转发到本地的端口。

@@ -49,9 +49,13 @@ Open the printed URL in a browser and paste the admin token. The console opens o
 device rail. If you are on another machine, make sure the hub's port is reachable — a
 VPN or an SSH tunnel is enough; you do not need to expose it to the internet.
 
+![The abacad login screen](/screens/login.webp)
+
 ## 3. Add a device
 
 Click **Add device** and fill in:
+
+![The Add device dialog in the abacad console](/screens/add-device.webp)
 
 - **Name** — what you will recognise in the rail, e.g. `Mac mini`.
 - **Host** — any address the **hub** can reach: a LAN IP, a VPN address, a DNS name, or a

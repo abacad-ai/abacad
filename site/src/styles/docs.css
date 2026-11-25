@@ -207,3 +207,16 @@ header.header {
     --sl-content-width: 100%;
   }
 }
+
+
+/* Product screenshots are illustrative, not full-bleed. Keep them at a size
+   where the UI text is still legible, and give them the same hairline as a card
+   so they do not float on the paper. */
+.sl-markdown-content img[src^="/screens/"] {
+  max-width: min(100%, 640px);
+  height: auto;
+  margin: 1.25rem 0;
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 10px;
+  box-shadow: var(--sl-shadow-sm);
+}

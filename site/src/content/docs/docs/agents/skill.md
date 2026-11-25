@@ -9,6 +9,8 @@ healthy. There is no server-side component and nothing to install on the hub.
 
 ## Generate it
 
+![The Skill page](/screens/skill.webp)
+
 1. Open the console and sign in.
 2. Open **Skill** in the navigation rail.
 3. Check the hub address. It defaults to the address in your browser, which is usually
