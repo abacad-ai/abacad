@@ -580,6 +580,10 @@ html[lang="zh-CN"] .hero h1 {
     font-size: 15.5px;
   }
 
+  html[lang="zh-CN"] .hero-lead {
+    text-wrap: balance;
+  }
+
   .shelf {
     margin-top: 40px;
     padding: 22px 18px 20px;
