@@ -6,7 +6,6 @@ import (
 	"net"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,30 +23,19 @@ func testInventory(t *testing.T) *Inventory {
 
 func TestAddUpdateRemove(t *testing.T) {
 	inv := testInventory(t)
-	var changes atomic.Int32
-	inv.OnChange(func() { changes.Add(1) })
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	v, err := inv.Add(ctx, AddRequest{
 		Name: "Mock", Host: "127.0.0.1", Port: 5900, Password: "pw",
-		Expose: true, Platform: "linux",
+		Platform: "linux",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if v.Online || v.Known {
 		t.Fatalf("new device must stay unseen until a session: %+v", v)
-	}
-	if v.VNCPort < 5901 || v.VNCPort > 5999 {
-		t.Fatalf("vnc port = %d", v.VNCPort)
-	}
-	if v.Token == "" {
-		t.Fatal("token is empty")
-	}
-	if changes.Load() != 1 {
-		t.Fatalf("onChange calls = %d, want 1", changes.Load())
 	}
 
 	// Only a real authenticated session makes a device online.
@@ -76,23 +64,11 @@ func TestAddUpdateRemove(t *testing.T) {
 		t.Fatalf("new endpoint must reset status: %+v", v)
 	}
 
-	expose := false
-	v, err = inv.Update(ctx, v.ID, UpdateRequest{Expose: &expose})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if v.VNCPort != 0 {
-		t.Fatalf("vnc port after release = %d", v.VNCPort)
-	}
-
 	if err := inv.Remove(v.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := inv.Device(v.ID); ok {
 		t.Fatal("device survived remove")
-	}
-	if changes.Load() != 5 {
-		t.Fatalf("onChange calls = %d, want 5", changes.Load())
 	}
 }
 
@@ -207,35 +183,5 @@ func TestMarkOfflineAndSessionError(t *testing.T) {
 	}
 	if !strings.Contains(v.LastError, "viewer closed") {
 		t.Fatalf("last error = %q", v.LastError)
-	}
-}
-
-func TestDirectModeHasNoAgentPort(t *testing.T) {
-	inv := testInventory(t)
-	v, err := inv.Add(context.Background(), AddRequest{
-		Name: "Catalog", Host: "192.168.1.30", Port: 5900,
-		Mode: config.ModeDirect, Expose: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if v.VNCPort != 0 {
-		t.Fatalf("direct mode allocated port %d", v.VNCPort)
-	}
-}
-
-func TestExposeAllocatesUniquePorts(t *testing.T) {
-	inv := testInventory(t)
-	ctx := context.Background()
-	first, err := inv.Add(ctx, AddRequest{Name: "One", Host: "192.168.1.31", Expose: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := inv.Add(ctx, AddRequest{Name: "Two", Host: "192.168.1.32", Expose: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first.VNCPort == 0 || second.VNCPort == 0 || first.VNCPort == second.VNCPort {
-		t.Fatalf("ports = %d, %d", first.VNCPort, second.VNCPort)
 	}
 }

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -45,12 +46,6 @@ func TestAddRemoveDevice(t *testing.T) {
 	if d.ID != "mac-mini" {
 		t.Fatalf("id = %q", d.ID)
 	}
-	if len(d.Token) != 8 {
-		t.Fatalf("token = %q", d.Token)
-	}
-	if d.VNCPort != 0 {
-		t.Fatalf("vnc port = %d", d.VNCPort)
-	}
 
 	again, err := Load(path)
 	if err != nil {
@@ -86,20 +81,6 @@ func TestDuplicateIDGetsSuffix(t *testing.T) {
 	}
 	if d.ID != "phone-2" {
 		t.Fatalf("id = %q", d.ID)
-	}
-}
-
-func TestRandomDeviceToken(t *testing.T) {
-	seen := map[string]bool{}
-	for i := 0; i < 100; i++ {
-		tok := RandomDeviceToken()
-		if len(tok) != 8 {
-			t.Fatalf("token length = %d", len(tok))
-		}
-		if seen[tok] {
-			t.Fatalf("duplicate token %q", tok)
-		}
-		seen[tok] = true
 	}
 }
 
@@ -190,5 +171,36 @@ func TestApplyEnvIgnoresEmpty(t *testing.T) {
 	}
 	if c.Listen != before.Listen || c.AdminToken != before.AdminToken {
 		t.Fatal("empty environment changed the config")
+	}
+}
+
+// Configs written before raw VNC ports were removed still carry vnc_port,
+// token and the port range. They must load, and the next save drops them.
+func TestLoadIgnoresRemovedRawPortFields(t *testing.T) {
+	path := testPath(t)
+	legacy := "listen: 0.0.0.0:8787\nadmin_token: 0123456789abcdef0123\ncookie_secret: s\n" +
+		"vnc_port_start: 5901\nvnc_port_end: 5999\ndevices:\n" +
+		"  - id: s10\n    name: S10\n    host: 172.16.1.43\n    port: 5900\n    vnc_port: 5901\n    token: Abcd1234\n"
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Devices) != 1 || c.Devices[0].ID != "s10" {
+		t.Fatalf("devices = %+v", c.Devices)
+	}
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, gone := range []string{"vnc_port", "token: Abcd1234"} {
+		if strings.Contains(string(b), gone) {
+			t.Fatalf("saved config still has %q:\n%s", gone, b)
+		}
 	}
 }

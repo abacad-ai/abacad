@@ -2,7 +2,6 @@ import { Lock } from "lucide-react"
 import { useEffect, useState, type FormEvent } from "react"
 
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -57,7 +56,6 @@ export function DeviceDialog({
   const [password, setPassword] = useState("")
   const [platform, setPlatform] = useState("unknown")
   const [mode, setMode] = useState<DeviceMode>("gateway")
-  const [expose, setExpose] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
 
@@ -73,7 +71,6 @@ export function DeviceDialog({
     setPassword("")
     setPlatform(device?.platform ?? "unknown")
     setMode(device?.mode ?? "gateway")
-    setExpose(Boolean(device?.vnc_port))
     setBusy(false)
     setError("")
   }, [open, device])
@@ -111,7 +108,6 @@ export function DeviceDialog({
       username: username.trim(),
       platform: platform === "unknown" ? "" : platform,
       mode,
-      expose,
     }
     if (password !== "") payload.password = password
 
@@ -258,15 +254,6 @@ export function DeviceDialog({
             </div>
           </div>
 
-          <label className="flex items-start gap-2.5 text-[12.5px] text-foreground/85">
-            <Checkbox
-              checked={expose}
-              onCheckedChange={(value) => setExpose(value === true)}
-              className="mt-0.5"
-            />
-            <span>Also open a raw VNC port for agents</span>
-          </label>
-
           <p className="flex items-start gap-2 text-[11.5px] leading-relaxed text-muted-foreground">
             <Lock className="mt-0.5 size-3.5 shrink-0 text-faint" />
             <span>
@@ -276,7 +263,7 @@ export function DeviceDialog({
           </p>
 
           <p className="rounded-lg border border-border bg-muted/60 px-3 py-2.5 text-[11.5px] leading-relaxed text-muted-foreground">
-            Gateway keeps the device password in the hub and gives agents a revocable token.
+            Gateway keeps the device password in the hub; browsers and agents only need the admin token.
             On macOS, <strong className="text-foreground">macOS account</strong> signs in as the
             logged-in user; the legacy VNC password has no user identity and can show only the
             login window.

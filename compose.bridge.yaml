@@ -3,10 +3,9 @@
 #
 #   docker compose -f compose.bridge.yaml up -d
 #
-# Trade-offs, all of which host networking avoids:
-#   - Raw VNC ports are published as a fixed range chosen at container
-#     creation; devices that get a port later are unreachable until the
-#     container is recreated. Browser access only needs 8787.
+# Everything — the web UI, the API and every device's VNC WebSocket — goes
+# through the one HTTP port. The trade-off against host networking is that the
+# hub sees Docker's NAT address instead of the real client IP.
 services:
   abacad:
     image: ghcr.io/abacad-ai/abacad:latest
@@ -14,8 +13,6 @@ services:
     restart: unless-stopped
     ports:
       - "8787:8787"
-      # Optional: raw VNC for agents. Remove if you only use the browser.
-      - "5901-5999:5901-5999"
     environment:
       ABACAD_CONFIG: /config/config.yaml
       ABACAD_LISTEN: 0.0.0.0:8787

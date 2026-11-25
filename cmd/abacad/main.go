@@ -112,7 +112,6 @@ func cmdServe(args []string) error {
 
 	inv := inventory.New(cfg)
 	gw := gateway.New(inv, log)
-	inv.OnChange(func() { gw.Sync(inv.Devices()) })
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -121,8 +120,6 @@ func cmdServe(args []string) error {
 	if err != nil {
 		return err
 	}
-	gw.Sync(inv.Devices())
-
 	baseURL := scheme + "://" + displayAddr(cfg.Listen)
 	mcpSrv := mcpserver.New(inv, version)
 	handler := web.New(inv, gw, mcpSrv, log, version).Handler()
@@ -164,7 +161,6 @@ func cmdServe(args []string) error {
 	shutdownCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
 	defer stop()
 	_ = srv.Shutdown(shutdownCtx)
-	gw.Close()
 	return nil
 }
 

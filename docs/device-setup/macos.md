@@ -35,8 +35,6 @@ In the hub web UI, click **Add device**:
 - **macOS username:** the short name (`whoami`), not the display name
 - **Password:** the password you use to log in to the Mac, not the VNC password
 - **Platform:** macOS
-- **Also open a raw VNC port for agents:** check it if an agent should connect
-  with a standard VNC client; leave it off for browser-only.
 
 The card should turn **online**. If it shows
 `macOS: switch Sign-in to "macOS account"`, the device is still using the
@@ -71,8 +69,8 @@ session.
 
 abacad's hub performs the type 30 exchange itself and still presents a plain
 `None` handshake to the browser. noVNC does not need to know about Apple DH, and
-the account password never reaches the browser. The raw VNC endpoint works the
-same way: the agent uses the hub token, and the hub signs in to the Mac.
+the account password never reaches the browser. Agents get the same: they open
+the device's WebSocket with the admin token, and the hub signs in to the Mac.
 
 ## If the Mac is locked
 

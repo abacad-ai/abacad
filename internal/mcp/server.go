@@ -8,7 +8,6 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -34,15 +33,11 @@ func New(inv *inventory.Inventory, version string) *Server {
 // browser cookie.
 func (s *Server) HTTPHandler() http.Handler {
 	handler := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
-		host := r.Host
-		if h, _, err := net.SplitHostPort(host); err == nil {
-			host = h
-		}
 		scheme := "http"
 		if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
 			scheme = "https"
 		}
-		return s.server(host, scheme+"://"+r.Host)
+		return s.server(scheme + "://" + r.Host)
 	}, &mcp.StreamableHTTPOptions{
 		JSONResponse:   true,
 		SessionTimeout: 30 * time.Minute,
@@ -67,15 +62,17 @@ func bearerOK(r *http.Request, token string) bool {
 	return subtle.ConstantTimeCompare([]byte(strings.TrimSpace(h[len(prefix):])), []byte(token)) == 1
 }
 
-func (s *Server) server(host, baseURL string) *mcp.Server {
+func (s *Server) server(baseURL string) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{Name: "abacad", Version: s.version}, nil)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: "list_devices",
-		Description: "List the VNC devices configured in this hub and the standard VNC endpoint to use. " +
-			"Connect with any VNC client to vnc_host:vnc_port and use token as the VNC password. " +
-			"Devices without a vnc_port are browser-only; open browser_url instead.",
+		Description: "List the VNC devices configured in this hub. Each device has a ws_url: a " +
+			"websockify-style WebSocket carrying plain RFB. Authenticate with the same key you use " +
+			"for this MCP server, as an Authorization: Bearer header or a ?token= query parameter. " +
+			"Use a WebSocket VNC client (noVNC, py-wsvnc) or bridge it to a local TCP port with " +
+			"websocat for any VNC client. auth tells you whether the VNC handshake needs a password.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
-		return s.listDevices(ctx, host, baseURL)
+		return s.listDevices(ctx, baseURL)
 	})
 	return srv
 }
@@ -88,9 +85,7 @@ type deviceOut struct {
 	Known      bool   `json:"known"`
 	Status     string `json:"status"`
 	Mode       string `json:"mode"`
-	VNCHost    string `json:"vnc_host,omitempty"`
-	VNCPort    int    `json:"vnc_port,omitempty"`
-	Token      string `json:"token,omitempty"`
+	WSURL      string `json:"ws_url,omitempty"`
 	Auth       string `json:"auth,omitempty"`
 	SignIn     string `json:"sign_in,omitempty"`
 	Username   string `json:"username,omitempty"`
@@ -114,7 +109,8 @@ func deviceStatus(known, online bool) string {
 	return "offline"
 }
 
-func (s *Server) listDevices(ctx context.Context, host, baseURL string) (*mcp.CallToolResult, any, error) {
+func (s *Server) listDevices(ctx context.Context, baseURL string) (*mcp.CallToolResult, any, error) {
+	wsBase := "ws" + strings.TrimPrefix(baseURL, "http")
 	devices := s.inv.Devices()
 	out := listOut{Devices: make([]deviceOut, 0, len(devices))}
 	for _, d := range devices {
@@ -130,23 +126,22 @@ func (s *Server) listDevices(ctx context.Context, host, baseURL string) (*mcp.Ca
 			Username:  d.Username,
 			LastError: d.LastError,
 		}
-		if d.Mode != config.ModeDirect {
-			item.BrowserURL = fmt.Sprintf("%s/vnc/%s", baseURL, d.ID)
-		}
-		switch {
-		case d.Mode == config.ModeDirect:
+		switch d.Mode {
+		case config.ModeDirect:
 			item.Auth = "device"
 			item.DirectHost = d.Host
 			item.DirectPort = d.Port
-		case d.VNCPort > 0 && d.Mode == config.ModeL4:
+		case config.ModeL4:
+			// The hub pipes bytes blindly; the client answers the device's
+			// own VNC password.
 			item.Auth = "device"
-			item.VNCHost = host
-			item.VNCPort = d.VNCPort
-		case d.VNCPort > 0:
-			item.Auth = "hub-token"
-			item.VNCHost = host
-			item.VNCPort = d.VNCPort
-			item.Token = d.Token
+			item.WSURL = fmt.Sprintf("%s/ws/vnc/%s", wsBase, d.ID)
+			item.BrowserURL = fmt.Sprintf("%s/vnc/%s", baseURL, d.ID)
+		default:
+			// The hub signs in to the device; the client sees no password.
+			item.Auth = "none"
+			item.WSURL = fmt.Sprintf("%s/ws/vnc/%s", wsBase, d.ID)
+			item.BrowserURL = fmt.Sprintf("%s/vnc/%s", baseURL, d.ID)
 		}
 		out.Devices = append(out.Devices, item)
 	}

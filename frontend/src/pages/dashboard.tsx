@@ -397,8 +397,8 @@ export default function Dashboard({ view = "devices" }: { view?: "devices" | "sk
           <AlertDialogHeader>
             <AlertDialogTitle>Remove {removing?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              The hub forgets the address, the sign-in and the agent token. The VNC server on the
-              machine keeps running.
+              The hub forgets the address and the sign-in. The VNC server on the machine keeps
+              running.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

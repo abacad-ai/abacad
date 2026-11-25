@@ -10,8 +10,6 @@ export interface Device {
   auth?: SignIn
   platform?: string
   mode: DeviceMode
-  vnc_port?: number
-  token?: string
   created_at?: string
   online: boolean
   known?: boolean
@@ -48,5 +46,4 @@ export interface DevicePayload {
   password?: string
   platform: string
   mode: DeviceMode
-  expose: boolean
 }

@@ -54,6 +54,8 @@ export const api = {
   logout: () => request<{ ok: boolean }>("/api/logout", { method: "POST" }),
   info: () => request<HubInfo>("/api/info"),
   devices: () => request<DevicesResponse>("/api/devices"),
+  // The admin token, for baking into the agent skill. Requires a signed-in session.
+  token: () => request<{ token: string }>("/api/token"),
   addDevice: (payload: DevicePayload) =>
     request<DeviceResponse>("/api/devices", {
       method: "POST",

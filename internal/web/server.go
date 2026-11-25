@@ -54,6 +54,7 @@ func (s *Server) Handler() http.Handler {
 	}
 
 	mux.HandleFunc("GET /api/devices", s.auth(s.listDevices))
+	mux.HandleFunc("GET /api/token", s.auth(s.token))
 	mux.HandleFunc("POST /api/devices", s.auth(s.addDevice))
 	mux.HandleFunc("PATCH /api/devices/{id}", s.auth(s.updateDevice))
 	mux.HandleFunc("DELETE /api/devices/{id}", s.auth(s.deleteDevice))
@@ -194,6 +195,14 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+// token returns the admin token to a caller that is already signed in, so the agent
+// skill page can bake it into SKILL.md. A signed-in browser can already do
+// everything the token can; this only hands over the same power in portable form.
+func (s *Server) token(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"token": s.inv.Config().AdminToken})
+}
+
 func (s *Server) listDevices(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"devices": s.inv.Devices(),
@@ -240,7 +249,10 @@ func (s *Server) deleteDevice(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {
-	if !s.loggedIn(r) {
+	// Besides the browser cookie and a Bearer header, the token may come as
+	// ?token=. Agents and websockify-style clients (py-wsvnc, websocat)
+	// often take only a URL; noVNC and Proxmox put their ticket there too.
+	if !s.loggedIn(r) && !s.tokenOK(r.URL.Query().Get("token")) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -273,12 +285,23 @@ func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// loggedIn accepts the one secret abacad has, the admin token, in either form:
+// the session cookie the web UI gets from /api/login, or the token itself as a
+// Bearer header, which is what agents and scripts send.
 func (s *Server) loggedIn(r *http.Request) bool {
+	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
+		return s.tokenOK(strings.TrimPrefix(h, "Bearer "))
+	}
 	c, err := r.Cookie("abacad_session")
 	if err != nil {
 		return false
 	}
 	return subtle.ConstantTimeCompare([]byte(c.Value), []byte(s.sessionValue())) == 1
+}
+
+func (s *Server) tokenOK(token string) bool {
+	token = strings.TrimSpace(token)
+	return token != "" && subtle.ConstantTimeCompare([]byte(token), []byte(s.inv.Config().AdminToken)) == 1
 }
 
 func (s *Server) sessionValue() string {

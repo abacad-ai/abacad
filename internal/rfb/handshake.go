@@ -144,11 +144,11 @@ func Proxy(ctx context.Context, down net.Conn, opt Options) error {
 	if err != nil {
 		return err
 	}
-	if _, err := down.Write(si.Header); err != nil {
+	// One write per RFB message: over WebSocket each write becomes one frame,
+	// and websockify-era clients (py-wsvnc, older noVNC forks) expect a
+	// message not to be split across frames.
+	if _, err := down.Write(append(append([]byte{}, si.Header...), si.DesktopName...)); err != nil {
 		return fmt.Errorf("write ServerInit: %w", err)
-	}
-	if _, err := io.WriteString(down, si.DesktopName); err != nil {
-		return fmt.Errorf("write desktop name: %w", err)
 	}
 
 	_ = down.SetDeadline(time.Time{})
@@ -178,10 +178,7 @@ func beginDownstreamAuth(in *bufio.Reader, out io.Writer, mode AuthMode, token s
 			return nil, &DownstreamAuthError{Err: errors.New("hub token must be 8 characters")}
 		}
 	}
-	if err := writeByte(out, 1); err != nil { // one security type
-		return nil, err
-	}
-	if err := writeByte(out, typ); err != nil {
+	if _, err := out.Write([]byte{1, typ}); err != nil { // one security type, in one frame
 		return nil, err
 	}
 	selected, err := in.ReadByte()
@@ -206,8 +203,7 @@ func beginDownstreamAuth(in *bufio.Reader, out io.Writer, mode AuthMode, token s
 		}
 		want := Response(challenge, token)
 		if want == nil || subtle.ConstantTimeCompare(resp, want) != 1 {
-			_ = binary.Write(out, binary.BigEndian, uint32(1))
-			_ = writeReason(out, "invalid hub token")
+			_ = writeFailure(out, "invalid hub token")
 			return nil, &DownstreamAuthError{Err: errors.New("invalid hub token")}
 		}
 	}
@@ -233,8 +229,15 @@ func (d *downstreamAuth) fail(reason string) {
 	if len(reason) > 1024 {
 		reason = reason[:1024]
 	}
-	_ = binary.Write(d.out, binary.BigEndian, uint32(1))
-	_ = writeReason(d.out, reason)
+	_ = writeFailure(d.out, reason)
+}
+
+// writeFailure sends a failed SecurityResult and its reason as one message.
+func writeFailure(w io.Writer, reason string) error {
+	buf := binary.BigEndian.AppendUint32(nil, 1)
+	buf = binary.BigEndian.AppendUint32(buf, uint32(len(reason)))
+	_, err := w.Write(append(buf, reason...))
+	return err
 }
 
 func upstreamFailureReason(err error) string {
@@ -403,14 +406,6 @@ func readReason(r *bufio.Reader) error {
 		msg = "authentication failed"
 	}
 	return &SecurityError{Reason: msg}
-}
-
-func writeReason(w io.Writer, msg string) error {
-	if err := binary.Write(w, binary.BigEndian, uint32(len(msg))); err != nil {
-		return err
-	}
-	_, err := io.WriteString(w, msg)
-	return err
 }
 
 func writeByte(w io.Writer, b byte) error {

@@ -18,8 +18,6 @@ Click **Add device** in the hub and fill in:
 - **Port:** `5900` (or the custom port you set)
 - **VNC password:** the droidVNC-NG password
 - **Platform:** Android
-- **Also open a raw VNC port for agents:** optional; leave it off for
-  browser-only.
 
 ## Android 10+ screen capture
 

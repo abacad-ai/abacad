@@ -1,11 +1,10 @@
 import { statusLabel, deviceStatus } from "@/lib/device"
 import type { Device } from "@/lib/types"
 
-// Two ways to hand a machine to an agent. "baked" is a static file that already
-// lists every endpoint and token, so the agent needs no access to the hub API.
-// "live" makes the agent fetch the list each run, which stays correct when
-// machines or tokens change but requires the hub's admin token.
-export type SkillVariant = "baked" | "live"
+// The agent skill: one SKILL.md that names the hub, carries the hub admin token and
+// lists the machines. Every machine is reached the way the browser reaches it:
+// a websockify-style WebSocket at /ws/vnc/{id} that carries plain RFB, through
+// whatever HTTPS front the hub already has.
 
 export const SKILL_FILENAME = "SKILL.md"
 
@@ -25,74 +24,31 @@ export function hubOrigin(value: string): string {
   }
 }
 
-// Raw VNC ports live on the hub host but not on the hub's web port, so an
-// endpoint is host:59xx, never host:8787:59xx.
-export function hubHost(value: string): string {
-  try {
-    return new URL(normalizeHub(value)).hostname
-  } catch {
-    return normalizeHub(value)
-      .replace(/^https?:\/\//i, "")
-      .replace(/[/:].*$/, "")
-  }
+// ws:// for an http hub, wss:// for an https one.
+export function wsOrigin(value: string): string {
+  return hubOrigin(value).replace(/^http/i, "ws")
 }
 
 export interface AgentEndpoint {
   device: Device
-  // host:port the agent's VNC client dials. Empty when there is no endpoint.
-  address: string
-  // null means the hub does not hold this password; the user has to supply it.
-  password: string | null
-  usable: boolean
-  note: string
+  // The WebSocket an agent opens. Empty for catalog-only devices.
+  url: string
+  // What the VNC handshake inside the WebSocket asks for.
+  password: "none" | "device" | "direct"
 }
 
 export function agentEndpoints(devices: Device[], hub: string): AgentEndpoint[] {
-  const host = hubHost(hub)
+  const ws = wsOrigin(hub)
   return devices.map((device) => {
     if (device.mode === "direct") {
-      return {
-        device,
-        address: `${device.host}:${device.port}`,
-        password: null,
-        usable: true,
-        note: "catalog only — the hub carries no traffic, connect to the device itself",
-      }
-    }
-    if (!device.vnc_port) {
-      return {
-        device,
-        address: "",
-        password: null,
-        usable: false,
-        note: "browser only — no raw VNC port",
-      }
-    }
-    const address = `${host}:${device.vnc_port}`
-    if (device.mode === "l4") {
-      return {
-        device,
-        address,
-        password: null,
-        usable: true,
-        note: "l4 — the device's own VNC password",
-      }
-    }
-    if (!device.token) {
-      return {
-        device,
-        address,
-        password: null,
-        usable: true,
-        note: "gateway — no token on this device yet",
-      }
+      return { device, url: "", password: "direct" }
     }
     return {
       device,
-      address,
-      password: device.token,
-      usable: true,
-      note: "gateway — token issued by the hub",
+      url: `${ws}/ws/vnc/${encodeURIComponent(device.id)}`,
+      // gateway: the hub signs in to the device. l4: bytes pass through
+      // untouched, so the client answers the device's own password.
+      password: device.mode === "l4" ? "device" : "none",
     }
   })
 }
@@ -102,163 +58,162 @@ function cell(value: string): string {
 }
 
 function tableRow(endpoint: AgentEndpoint): string {
-  const state = statusLabel(deviceStatus(endpoint.device))
-  const password = endpoint.password ? `\`${endpoint.password}\`` : "_ask the user_"
-  return `| ${cell(endpoint.device.name)} | \`${endpoint.address}\` | ${password} | ${state} |`
+  const { device } = endpoint
+  const state = statusLabel(deviceStatus(device))
+  const where =
+    endpoint.password === "direct"
+      ? `not through the hub: \`${device.host}:${device.port}\``
+      : `\`${endpoint.url}\``
+  const password = endpoint.password === "none" ? "none" : "the machine's own — ask the user"
+  return `| ${cell(device.name)} | \`${device.id}\` | ${cell(device.platform || "—")} | ${where} | ${password} | ${state} |`
 }
 
-// vncdotool takes host::port, so "10.0.0.4:5901" becomes "10.0.0.4::5901".
-function vncdotoolAddress(address: string): string {
-  return address.replace(/^(.*):(\d+)$/, "$1::$2")
-}
-
-function frontmatter(origin: string, how: string): string {
+function frontmatter(origin: string): string {
   return [
     "---",
     "name: abacad",
-    `description: See and drive the real machines registered on this abacad VNC hub at ${origin}. Use when the user asks you to open a machine, look at another computer's screen, take a screenshot of a device, click or type on it, or run something on a named computer (macOS, Linux, Windows, Android, iOS). ${how} Every machine is a standard VNC (RFB) endpoint; no MCP server is involved and no project-specific API has to be learned.`,
+    `description: See and drive the real machines registered on the abacad VNC hub at ${origin}. Use when the user asks you to open a machine, look at another computer's or phone's screen, take a screenshot of a device, click, tap or type on it, or run something on a named computer (macOS, Linux, Windows, Android, iOS). Every machine is plain VNC (RFB) carried over a WebSocket, the websockify convention noVNC uses; any VNC client works through a local websocat bridge.`,
     "---",
     "",
   ].join("\n")
 }
 
-const RULES = [
-  "## Rules",
-  "",
-  "- Use only the machines the hub reports. Do not scan the LAN or probe ports on the hub.",
-  "- Open one session per task and reuse it. Do not capture frames in a tight loop; one frame per action is enough.",
-  "- A rejected password is a stop sign. The hub rate-limits failed handshakes and some VNC servers blacklist a client IP after repeated failures. If an endpoint rejects you twice, stop and ask the user.",
-  "- A machine's state is a hint, not a probe. The hub only marks a machine `online` after a real session authenticated, and that mark goes stale after ten minutes. `not seen` usually still connects.",
-  "- Treat the password column as a secret: do not paste it into chat, logs, commits or screenshots of your own terminal.",
-  "",
-]
-
 const CONNECT = [
   "## Connect",
   "",
-  "Any VNC client or library works. With Python's `vncdotool`:",
+  "Most VNC clients speak raw TCP, so bridge the WebSocket to a local port with",
+  "[websocat](https://github.com/vi/websocat) (one static binary: `brew install",
+  "websocat`, or a release download), then point any VNC client at `127.0.0.1`.",
   "",
   "```bash",
-  "python3 -m pip install --quiet vncdotool",
-  "",
-  "# one frame",
-  "vncdotool -s {address} -p '{password}' capture screen.png",
-  "",
-  "# pointer and keyboard, same session flags",
-  "vncdotool -s {address} -p '{password}' move 640 400 click 1",
-  "vncdotool -s {address} -p '{password}' type 'hello'",
-  "vncdotool -s {address} -p '{password}' key enter",
+  "websocat --binary -H=\"Authorization: Bearer $ABACAD_TOKEN\" \\",
+  "  tcp-l:127.0.0.1:5900 {url} &",
   "```",
   "",
-  "`vncviewer {hostport}` and macOS Screen Sharing (`vnc://{hostport}`) connect the same way.",
-  "The port belongs to the hub; you never need the device's own address.",
+  "Every TCP connection to the bridge is one VNC session on the machine. Keep",
+  "**one session for the whole task**; reconnecting per action repeats the",
+  "handshake with the device each time. With Python's `vncdotool` (use a venv",
+  "if pip refuses to install system-wide):",
+  "",
+  "```python",
+  "from vncdotool import api",
+  "",
+  "c = api.connect(\"127.0.0.1::5900\", password={password})  # host::port",
+  "",
+  "# look",
+  "c.captureScreen(\"screen.png\")",
+  "# click / tap",
+  "c.mouseMove(200, 400); c.mousePress(1)",
+  "# drag / swipe",
+  "c.mouseMove(200, 700); c.mouseDown(1); c.mouseDrag(200, 300, step=20); c.mouseUp(1)",
+  "# the API has no type(): press keys one by one",
+  "for ch in \"hello\":",
+  "    c.keyPress(ch)",
+  "c.keyPress(\"enter\")",
+  "",
+  "c.disconnect()",
+  "```",
+  "",
+  "If each of your shell commands runs in a fresh process, start that connection",
+  "once as a long-running background process and send it commands (for example",
+  "over a Unix socket) instead of reconnecting per action.",
+  "",
+  "Clients that speak WebSocket themselves skip the bridge: noVNC, or",
+  "[py-wsvnc](https://pypi.org/project/py-wsvnc/) in Python with",
+  "`WSVNCClient(ticket_url=\"{url}?token=$ABACAD_TOKEN\")`. py-wsvnc assumes one",
+  "RFB message per WebSocket frame and can lose sync on large screen updates;",
+  "prefer the bridge for real work.",
+  "",
+  "## Phones and tablets",
+  "",
+  "- A black frame usually means the screen is off. Tap once or press `home`, then",
+  "  capture again.",
+  "- Key events reach Android as a hardware keyboard and fight the input method;",
+  "  non-ASCII text cannot be typed that way. For Chinese and other IME text, tap",
+  "  the on-screen keyboard (for example type pinyin, then tap the candidate).",
+  "- Coordinates are framebuffer pixels, which may be scaled from the physical",
+  "  screen. Take them from the frame you just captured.",
+  "",
+]
+
+const RULES = [
+  "## Rules",
+  "",
+  "- Use only the machines the hub lists. Do not scan the LAN or probe ports.",
+  "- Open one session per task and reuse it. Do not capture frames in a tight loop; one frame per action is enough.",
+  "- A rejected password is a stop sign. Some VNC servers blacklist a client after repeated failures. If a machine rejects you twice, stop and ask the user.",
+  "- A machine's state is a hint, not a probe. The hub only marks a machine `online` after a real session authenticated, and that mark goes stale after ten minutes. `not seen` usually still connects.",
+  "- The token opens every machine on this hub and the hub's settings. Keep it out of chat, logs, commits and screenshots of your own terminal.",
   "",
 ]
 
 export function buildSkill({
   devices,
   hub,
-  variant,
+  hubToken,
 }: {
   devices: Device[]
   hub: string
-  variant: SkillVariant
+  hubToken: string
 }): string {
   const origin = hubOrigin(hub)
-  const host = hubHost(hub)
   const endpoints = agentEndpoints(devices, hub)
-  const usable = endpoints.filter((endpoint) => endpoint.usable)
-  const browserOnly = endpoints.filter((endpoint) => !endpoint.usable)
-
-  if (variant === "live") {
-    return [
-      frontmatter(origin, "The list is fetched from the hub at run time."),
-      "# abacad",
-      "",
-      `\`${origin}\` is a small VNC hub on this machine's LAN. It is the only host`,
-      "that can reach the machines below, so you connect to the hub and it forwards",
-      "you to the device. The machine list changes, so fetch it instead of trusting",
-      "an old copy.",
-      "",
-      "## Credentials",
-      "",
-      "The hub's admin token must be in the environment as `ABACAD_TOKEN`. Ask the",
-      "user to set it; never write it to a file or into the conversation.",
-      "",
-      "```bash",
-      "jar=$(mktemp)",
-      `curl -fsS -c "$jar" -X POST '${origin}/api/login' \\`,
-      "  -H 'content-type: application/json' \\",
-      '  -d "{\\"token\\":\\"$ABACAD_TOKEN\\"}" > /dev/null',
-      `curl -fsS -b "$jar" '${origin}/api/devices'`,
-      "```",
-      "",
-      "## Reading the answer",
-      "",
-      "- `host` / `port` — where the VNC server really is. Usually not reachable from",
-      "  where you run; the hub is.",
-      "- `vnc_port` — a port on the hub that forwards to that machine. Absent means",
-      "  browser only: ask the user to enable a raw VNC port for agents.",
-      `- Connect to \`${host}:<vnc_port>\` with \`token\` as the VNC password (\`mode: gateway\`).`,
-      "  In `mode: l4` the password is the machine's own; in `mode: direct` there is",
-      "  no hub port and you dial `host:port` directly.",
-      "- `online` is \"seen in the last ten minutes\", not a live check.",
-      "",
-      ...RULES,
-    ].join("\n")
-  }
-
-  const sample = usable.find((endpoint) => endpoint.password) ?? usable[0]
-  const hostport = sample ? sample.address : `${host}:5901`
-  const address = vncdotoolAddress(hostport)
-  const password = sample?.password ?? "<password>"
+  const sample = endpoints.find((endpoint) => endpoint.password === "none") ??
+    endpoints.find((endpoint) => endpoint.url) ?? {
+      url: `${wsOrigin(hub)}/ws/vnc/<id>`,
+      password: "none" as const,
+    }
 
   const connect = CONNECT.join("\n")
-    .replaceAll("{address}", address)
-    .replaceAll("{hostport}", hostport)
-    .replaceAll("{password}", password)
+    .replaceAll("{url}", sample.url)
+    .replaceAll("{password}", sample.password === "none" ? "None" : '"<the machine\'s own password>"')
 
   const lines = [
-    frontmatter(origin, "A fixed list of endpoints is included below."),
+    frontmatter(origin),
     "# abacad",
     "",
-    `\`${origin}\` is a small VNC hub on this machine's LAN. The machines below are`,
-    "real desktops and phones; the hub is the only host that can reach them, so you",
-    "connect to the hub and it forwards you to the device.",
+    `\`${origin}\` is a VNC hub on the user's network. The machines below are real`,
+    "desktops and phones; the hub is the only host that can reach them. Each one is",
+    "a WebSocket on the hub that carries plain VNC (RFB), the same one the hub's web",
+    "page uses.",
     "",
-    "| machine | endpoint | password | state |",
-    "| --- | --- | --- | --- |",
-    ...usable.map(tableRow),
+    "## Admin token",
+    "",
+    "One token opens everything on this hub: the API, the WebSockets and the web UI.",
+    "",
+    "```bash",
+    `export ABACAD_TOKEN='${hubToken || "<ask the user for the abacad admin token>"}'`,
+    "```",
+    "",
+    "- HTTP and WebSocket: `Authorization: Bearer $ABACAD_TOKEN`.",
+    "- A WebSocket client that takes only a URL: append `?token=$ABACAD_TOKEN`.",
+    "",
+    "## Machines",
+    "",
+    "| machine | id | platform | WebSocket | VNC password | state |",
+    "| --- | --- | --- | --- | --- | --- |",
+    ...endpoints.map(tableRow),
     "",
   ]
 
-  if (usable.length === 0) {
-    lines.push(
-      "> No machine currently has a raw VNC port. Ask the user to edit a machine in",
-      "> abacad and enable \"open a raw VNC port for agents\".",
-      "",
-    )
+  if (endpoints.length === 0) {
+    lines.push("> The hub has no machines yet. Ask the user to add one in abacad.", "")
   }
 
-  if (browserOnly.length > 0) {
-    lines.push(
-      "Not available to you (browser only, no raw VNC port): " +
-        browserOnly.map((endpoint) => cell(endpoint.device.name)).join(", ") +
-        ". Ask the user to enable a raw VNC port if a task needs them.",
-      "",
-    )
-  }
-
-  const needsOwnPassword = usable.some((endpoint) => !endpoint.password)
-  lines.push(connect)
-  if (needsOwnPassword) {
-    lines.push(
-      "For rows whose password is \"ask the user\", the hub does not store that",
-      "machine's VNC password. Ask for it before connecting; it is the machine's own.",
-      "",
-    )
-  }
-  lines.push(...RULES)
+  lines.push(
+    "The list changes. Fetch the current one, with live state, before you rely on it:",
+    "",
+    "```bash",
+    `curl -fsS -H "Authorization: Bearer $ABACAD_TOKEN" '${origin}/api/devices'`,
+    "```",
+    "",
+    `A machine's WebSocket is \`${wsOrigin(hub)}/ws/vnc/<id>\`. \`mode: l4\` machines`,
+    "pass VNC through untouched, so their own VNC password is asked inside the",
+    "session; `mode: direct` machines are catalog entries the hub does not carry.",
+    "",
+    connect,
+    ...RULES,
+  )
 
   return lines.join("\n")
 }

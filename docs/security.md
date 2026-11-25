@@ -8,7 +8,7 @@ mattering.
 
 ```
 device VNC server  ──RFB──▶  hub  ──HTTPS/WSS──▶ browser
-                               └──RFB/TCP────▶ agent
+                               └──HTTPS/WSS──▶ agent
 ```
 
 - The hub is the only host that needs to reach every device. Scope each device's
@@ -26,7 +26,7 @@ device VNC server  ──RFB──▶  hub  ──HTTPS/WSS──▶ browser
 | Weak point | Why | Mitigation |
 |---|---|---|
 | Classic VNC auth | 8-character password, DES challenge; not strong by modern standards | Trusted path; firewall to the hub IP; a VPN for untrusted links; prefer VeNCrypt where the device supports it |
-| 8-character device token | RFB VNC auth carries only 8 bytes | Random alphabet, rotatable; gateway rate-limits failed handshakes; treat it as a capability for your network path, not an internet secret |
+| One admin token for everything | Web login, API, MCP and every device WebSocket accept the same token, so whoever holds it controls every machine | 32 random bytes; keep generated `SKILL.md` files out of git; rotate it if a file leaks. `?token=` puts it in URLs, so keep proxy access logs private or use the `Authorization` header |
 | No TLS on hub → device | Many VNC servers do not speak TLS | Keep that leg on a trusted path; use VeNCrypt/TLS where available; use a VPN for untrusted links |
 | Password at rest | v0.1 stores device passwords in `~/.config/abacad/config.yaml` | File is `0600`; full-disk encryption; a later version can use the OS keychain |
 | Hub compromise | The hub can reach every device and holds their passwords | Patch the host, run as a non-root user, don't co-host unrelated services, back up the config securely |
@@ -42,15 +42,19 @@ device VNC server  ──RFB──▶  hub  ──HTTPS/WSS──▶ browser
 - There is no CSRF token because the API is JSON-only and the cookie is
   SameSite=Lax. If you put the hub behind a reverse proxy, keep the same origin.
 
-## Device tokens
+## One token
 
-Each device gets an 8-character token. It is the VNC password an agent uses when
-connecting to the hub's raw port. The real device password never leaves the hub
-in `gateway` mode.
+The admin token is the only credential the hub issues. The web UI trades it for
+a session cookie; agents send it as `Authorization: Bearer` on the API, `/mcp`
+and the device WebSockets at `/ws/vnc/<id>`, or as `?token=` for a WebSocket
+client that takes only a URL. Inside the WebSocket, a `gateway` device asks for
+no VNC password: the hub has already authenticated the caller and signs in to
+the device itself. The real device password never leaves the hub.
 
-The `/skill` page can bake those tokens into a `SKILL.md` for an agent. That file
-is as sensitive as the config: keep it out of git, and regenerate it after
-rotating a token.
+The `/skill` page bakes the token into a `SKILL.md` for an agent (it reads it
+from `GET /api/token`, which needs a signed-in session). That file is as
+sensitive as the config: keep it out of git, and regenerate it after rotating
+the token.
 
 On macOS, the hub can authenticate with the **macOS account** (Apple DH, RFB
 type 30) instead of a legacy VNC password. That stores a more capable
@@ -59,10 +63,6 @@ dedicated local account for remote control if you do not want to store your
 main account's password. The config file remains `0600`; there is no OS
 keychain yet.
 
-To rotate a token, edit `token:` in the config and restart the hub (or update the
-device through the API in a later version). Removing the device closes its
-listener immediately.
-
 ## Operational checklist
 
 - [ ] Hub listens on the address you chose, and that address sits behind the
@@ -70,17 +70,17 @@ listener immediately.
 - [ ] Device VNC ports accept connections only from the hub IP.
 - [ ] Hub config is `0600` and on an encrypted disk.
 - [ ] Admin token is stored in a password manager, not a shell history.
-- [ ] Raw VNC ports are opt-in per device; most devices can be browser-only.
+- [ ] The hub publishes one HTTP port; nothing else is forwarded to it.
 - [ ] No process port-scans 5900; the hub connects only for a real browser or agent session.
 - [ ] Hub is updated; no unrelated services share the host.
 - [ ] You have decided how remote access works (a VPN or an authenticated
-      tunnel), and it is not a raw VNC port on the internet.
+      tunnel), and it is not a VNC port on the internet.
 
 ## If something leaks
 
 1. Rotate the admin token by editing `admin_token` in the config and restarting
    the hub.
-2. Rotate the affected device token(s).
+2. Regenerate every `SKILL.md` you handed out.
 3. Change the device's VNC password, or the macOS account password if the
    device uses `auth: ard`.
 4. Remove the device from the hub if it is no longer trusted.

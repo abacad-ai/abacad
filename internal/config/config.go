@@ -21,9 +21,7 @@ import (
 )
 
 const (
-	DefaultListen       = "0.0.0.0:8787"
-	DefaultVNCPortStart = 5901
-	DefaultVNCPortEnd   = 5999
+	DefaultListen = "0.0.0.0:8787"
 
 	// Container deployments configure the hub through the environment
 	// instead of editing YAML inside a volume. An unset variable is
@@ -60,8 +58,6 @@ type Device struct {
 	Password  string    `yaml:"password,omitempty" json:"-"`
 	Platform  string    `yaml:"platform,omitempty" json:"platform,omitempty"`
 	Mode      string    `yaml:"mode,omitempty" json:"mode"`
-	VNCPort   int       `yaml:"vnc_port,omitempty" json:"vnc_port,omitempty"`
-	Token     string    `yaml:"token,omitempty" json:"token,omitempty"`
 	CreatedAt time.Time `yaml:"created_at,omitempty" json:"created_at,omitempty"`
 }
 
@@ -70,8 +66,6 @@ type Config struct {
 	Listen       string   `yaml:"listen"`
 	AdminToken   string   `yaml:"admin_token"`
 	CookieSecret string   `yaml:"cookie_secret"`
-	VNCPortStart int      `yaml:"vnc_port_start"`
-	VNCPortEnd   int      `yaml:"vnc_port_end"`
 	Devices      []Device `yaml:"devices"`
 
 	path string
@@ -160,15 +154,6 @@ func (c *Config) normalize() error {
 	if c.Listen == "" {
 		c.Listen = DefaultListen
 	}
-	if c.VNCPortStart == 0 {
-		c.VNCPortStart = DefaultVNCPortStart
-	}
-	if c.VNCPortEnd == 0 {
-		c.VNCPortEnd = DefaultVNCPortEnd
-	}
-	if c.VNCPortStart < 1 || c.VNCPortEnd > 65535 || c.VNCPortStart > c.VNCPortEnd {
-		return fmt.Errorf("invalid vnc port range %d-%d", c.VNCPortStart, c.VNCPortEnd)
-	}
 	if c.AdminToken == "" {
 		c.AdminToken = randomHex(32)
 	}
@@ -192,9 +177,6 @@ func (c *Config) normalize() error {
 		if d.ID == "" {
 			d.ID = slug(d.Name)
 		}
-		if d.Token == "" {
-			d.Token = RandomDeviceToken()
-		}
 		if d.CreatedAt.IsZero() {
 			d.CreatedAt = time.Now().UTC()
 		}
@@ -208,7 +190,6 @@ func (c *Config) Validate() error {
 		return errors.New("listen address is empty")
 	}
 	ids := map[string]bool{}
-	ports := map[int]bool{}
 	for i, d := range c.Devices {
 		if d.ID == "" {
 			return fmt.Errorf("device %d: id is empty", i)
@@ -235,15 +216,6 @@ func (c *Config) Validate() error {
 		}
 		if d.Auth == AuthARD && d.Username == "" {
 			return fmt.Errorf("device %q: macOS account name is required for auth %q", d.ID, d.Auth)
-		}
-		if d.VNCPort != 0 {
-			if d.VNCPort < c.VNCPortStart || d.VNCPort > c.VNCPortEnd {
-				return fmt.Errorf("device %q: vnc port %d outside range %d-%d", d.ID, d.VNCPort, c.VNCPortStart, c.VNCPortEnd)
-			}
-			if ports[d.VNCPort] {
-				return fmt.Errorf("duplicate vnc port %d", d.VNCPort)
-			}
-			ports[d.VNCPort] = true
 		}
 	}
 	return nil
@@ -307,15 +279,7 @@ func (c *Config) AddDevice(d Device) (Device, error) {
 	if _, ok := c.Device(d.ID); ok {
 		d.ID = uniqueID(c, d.ID)
 	}
-	if d.Token == "" {
-		d.Token = RandomDeviceToken()
-	}
 	d.CreatedAt = time.Now().UTC()
-	if d.VNCPort != 0 {
-		if err := c.checkPortFree(d.VNCPort); err != nil {
-			return Device{}, err
-		}
-	}
 	c.Devices = append(c.Devices, d)
 	if err := c.Validate(); err != nil {
 		c.Devices = c.Devices[:len(c.Devices)-1]
@@ -363,35 +327,6 @@ func (c *Config) UpdateDevice(id string, fn func(*Device) error) (Device, error)
 	return Device{}, fmt.Errorf("device %q not found", id)
 }
 
-// AllocatePort returns the first unused port in the configured range and
-// verifies that it is currently bindable.
-func (c *Config) AllocatePort() (int, error) {
-	used := map[int]bool{}
-	for _, d := range c.Devices {
-		if d.VNCPort != 0 {
-			used[d.VNCPort] = true
-		}
-	}
-	for p := c.VNCPortStart; p <= c.VNCPortEnd; p++ {
-		if used[p] {
-			continue
-		}
-		if err := c.checkPortFree(p); err == nil {
-			return p, nil
-		}
-	}
-	return 0, fmt.Errorf("no free VNC port in %d-%d", c.VNCPortStart, c.VNCPortEnd)
-}
-
-func (c *Config) checkPortFree(p int) error {
-	for _, d := range c.Devices {
-		if d.VNCPort == p {
-			return fmt.Errorf("vnc port %d already assigned to %s", p, d.ID)
-		}
-	}
-	return nil
-}
-
 func uniqueID(c *Config, base string) string {
 	for i := 2; ; i++ {
 		id := fmt.Sprintf("%s-%d", base, i)
@@ -422,22 +357,6 @@ func slug(s string) string {
 		out = "device"
 	}
 	return out
-}
-
-const tokenAlphabet = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-
-// RandomDeviceToken returns the 8 characters a RFB VNC-auth password can carry.
-// It is deliberately not a general-purpose secret; the gateway rate-limits
-// failed attempts and the token can be rotated.
-func RandomDeviceToken() string {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	for i := range b {
-		b[i] = tokenAlphabet[int(b[i])%len(tokenAlphabet)]
-	}
-	return string(b)
 }
 
 func randomHex(n int) string {

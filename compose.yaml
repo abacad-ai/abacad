@@ -3,10 +3,10 @@
 #   docker compose up -d
 #   docker compose logs abacad | grep "admin token"
 #
-# Host networking matters here: real client IPs and the dynamically allocated
-# raw VNC ports (5901-5999) depend on it. On macOS and Windows, Docker Desktop's
-# host networking is limited — run the native binary there instead, or use
-# compose.bridge.yaml.
+# Host networking keeps real client IPs in the hub's logs. On macOS and
+# Windows, Docker Desktop's host networking is limited — run the native binary
+# there instead, or use compose.bridge.yaml. Either way the hub needs only its
+# one HTTP port.
 services:
   abacad:
     image: ghcr.io/abacad-ai/abacad:latest

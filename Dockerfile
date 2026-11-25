@@ -33,8 +33,7 @@ USER abacad
 ENV ABACAD_CONFIG=/config/config.yaml \
     ABACAD_LISTEN=0.0.0.0:8787
 VOLUME ["/config"]
-# Raw VNC listeners are allocated from 5901-5999 at runtime. With
-# --network host they need no publish; with bridge networking, publish the range.
+# One port carries everything: web UI, API, MCP and every device's VNC WebSocket.
 EXPOSE 8787
 
 # Follows ABACAD_LISTEN, so a different port keeps working. TLS deployments

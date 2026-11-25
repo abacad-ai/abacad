@@ -4,8 +4,8 @@
 #   make dev            → http://127.0.0.1:8899  (admin token: $DEV_TOKEN)
 #
 # The hub keeps its state in .dev/ inside the checkout, never in
-# ~/.config/abacad, so a real hub on the same machine is left alone. Its raw
-# VNC ports use 6901-6999 for the same reason. Ctrl-C stops both processes.
+# ~/.config/abacad, so a real hub on the same machine is left alone. Ctrl-C
+# stops both processes.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -28,8 +28,6 @@ mkdir -p "$DEV_DIR"
 if [ ! -f "$DEV_CONFIG" ]; then
 	cat >"$DEV_CONFIG" <<EOF
 listen: $DEV_HUB_ADDR
-vnc_port_start: 6901
-vnc_port_end: 6999
 devices: []
 EOF
 fi

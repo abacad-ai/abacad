@@ -274,7 +274,7 @@ func newTestServer(t *testing.T, upstreamAddr string) (*httptest.Server, *invent
 		_, _ = fmt.Sscanf(p, "%d", &port)
 		cfg.Devices = append(cfg.Devices, config.Device{
 			ID: "mock", Name: "Mock", Host: host, Port: port,
-			Auth: config.AuthVNC, Password: "device-pass", Mode: config.ModeGateway, Token: "Abcd1234",
+			Auth: config.AuthVNC, Password: "device-pass", Mode: config.ModeGateway,
 		})
 	}
 	if err := cfg.Validate(); err != nil {
@@ -283,7 +283,6 @@ func newTestServer(t *testing.T, upstreamAddr string) (*httptest.Server, *invent
 	inv := inventory.New(cfg)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	gw := gateway.New(inv, log)
-	gw.Sync(inv.Devices())
 	mcpSrv := mcpserver.New(inv, "test")
 	s := New(inv, gw, mcpSrv, log, "test")
 	return httptest.NewServer(s.Handler()), inv
@@ -412,7 +411,9 @@ func (t bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func TestMCPOfficialClient(t *testing.T) {
-	srv, _ := newTestServer(t, "")
+	addr, _, stop := startMockVNC(t)
+	defer stop()
+	srv, _ := newTestServer(t, addr)
 	defer srv.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -436,5 +437,124 @@ func TestMCPOfficialClient(t *testing.T) {
 	text, ok := res.Content[0].(*sdk.TextContent)
 	if !ok || !strings.Contains(text.Text, "devices") {
 		t.Fatalf("content: %+v", res.Content[0])
+	}
+	var out struct {
+		Devices []map[string]any `json:"devices"`
+	}
+	if err := json.Unmarshal([]byte(text.Text), &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Devices) != 1 {
+		t.Fatalf("devices = %v", out.Devices)
+	}
+	d := out.Devices[0]
+	want := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws/vnc/mock"
+	if d["ws_url"] != want || d["auth"] != "none" {
+		t.Fatalf("device = %v, want ws_url %s and auth none", d, want)
+	}
+	for _, gone := range []string{"vnc_host", "vnc_port", "token"} {
+		if _, ok := d[gone]; ok {
+			t.Fatalf("%s should no longer be reported: %v", gone, d)
+		}
+	}
+}
+
+func TestTokenEndpoint(t *testing.T) {
+	srv, _ := newTestServer(t, "")
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/api/token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("signed-out /api/token = %d", resp.StatusCode)
+	}
+	req, _ := http.NewRequest("GET", srv.URL+"/api/token", nil)
+	req.Header.Set("Authorization", "Bearer test-admin")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if out["token"] != "test-admin" || resp.Header.Get("Cache-Control") != "no-store" {
+		t.Fatalf("token = %v, cache-control = %q", out, resp.Header.Get("Cache-Control"))
+	}
+}
+
+// One admin token opens everything: the web UI trades it for a cookie, agents send it
+// as a Bearer header, and WebSocket clients that only take a URL put it in
+// ?token=.
+func TestOneToken(t *testing.T) {
+	addr, _, stop := startMockVNC(t)
+	defer stop()
+	srv, _ := newTestServer(t, addr)
+	defer srv.Close()
+
+	get := func(key string) int {
+		req, _ := http.NewRequest("GET", srv.URL+"/api/devices", nil)
+		if key != "" {
+			req.Header.Set("Authorization", "Bearer "+key)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+	if got := get("test-admin"); got != http.StatusOK {
+		t.Fatalf("bearer key on /api/devices = %d", got)
+	}
+	if got := get("wrong"); got != http.StatusUnauthorized {
+		t.Fatalf("wrong bearer key on /api/devices = %d", got)
+	}
+
+	base := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws/vnc/mock"
+	dial := func(url string, header http.Header) (*websocket.Conn, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		c, _, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: header, Subprotocols: []string{"binary"}})
+		return c, err
+	}
+	banner := func(c *websocket.Conn) string {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		b := make([]byte, 12)
+		if _, err := io.ReadFull(&wsReader{c: c, ctx: ctx}, b); err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+
+	for name, try := range map[string]func() (*websocket.Conn, error){
+		"query": func() (*websocket.Conn, error) { return dial(base+"?token=test-admin", nil) },
+		"bearer": func() (*websocket.Conn, error) {
+			return dial(base, http.Header{"Authorization": {"Bearer test-admin"}})
+		},
+	} {
+		c, err := try()
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got := banner(c); got != "RFB 003.008\n" {
+			t.Fatalf("%s: banner = %q", name, got)
+		}
+		_ = c.Close(websocket.StatusNormalClosure, "done")
+	}
+
+	for name, try := range map[string]func() (*websocket.Conn, error){
+		"no key":       func() (*websocket.Conn, error) { return dial(base, nil) },
+		"wrong query":  func() (*websocket.Conn, error) { return dial(base+"?token=wrong", nil) },
+		"wrong bearer": func() (*websocket.Conn, error) { return dial(base, http.Header{"Authorization": {"Bearer wrong"}}) },
+	} {
+		if c, err := try(); err == nil {
+			_ = c.Close(websocket.StatusNormalClosure, "done")
+			t.Fatalf("%s: websocket opened without the key", name)
+		}
 	}
 }

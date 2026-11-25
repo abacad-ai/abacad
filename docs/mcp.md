@@ -48,51 +48,62 @@ Output: a JSON object with a `devices` array:
       "name": "Mac mini",
       "platform": "macos",
       "online": true,
+      "status": "online",
       "mode": "gateway",
-      "vnc_host": "192.168.1.10",
-      "vnc_port": 5901,
-      "auth": "hub-token",
+      "ws_url": "wss://abacad.example.com/ws/vnc/mac-mini",
+      "auth": "none",
       "sign_in": "ard",
       "username": "li",
-      "token": "Abcd1234",
-      "browser_url": "http://192.168.1.10:8787/vnc/mac-mini",
-      "banner": "RFB 003.889"
+      "browser_url": "https://abacad.example.com/vnc/mac-mini"
     }
   ]
 }
 ```
 
-- `vnc_host:vnc_port` + `token` is a **standard VNC endpoint**. Connect with any
-  VNC client or library; use `token` as the VNC password.
-- `auth: "hub-token"` means use `token`. `auth: "device"` means the hub is not
-  terminating authentication (L4 or direct mode); use the device's own VNC
-  password.
+- `ws_url` is the device: a WebSocket carrying plain RFB, the websockify
+  convention noVNC uses. It goes through the same HTTP port (and the same
+  reverse proxy) as the web UI. Authenticate with the admin token you already
+  use for MCP: `Authorization: Bearer <admin token>`, or `?token=<admin token>`
+  for a client that only takes a URL.
+- `auth` is what the VNC handshake *inside* the WebSocket asks for. `none`
+  (gateway mode): the hub signs in to the device, the client sees no password.
+  `device` (l4 mode, or direct): answer with the device's own VNC password.
+- `direct` devices are catalog entries: no `ws_url`; `direct_host` and
+  `direct_port` say where the VNC server is.
 - `sign_in: "ard"` means the hub signs in to the device with a macOS account
   (Apple DH, type 30); `username` is that account. `sign_in: "vnc"` or an
   absent field means the hub uses the legacy VNC password. This is the device
-  sign-in, separate from `auth`, which describes the endpoint the agent uses.
-- `browser_url` is for a human. It is present even when `vnc_port` is absent.
-- `warning` is present when the hub knows the device's authentication is not
-  usable (for example, macOS Screen Sharing with only Apple-specific types).
-- Devices without `vnc_port` are browser-only. Enable the raw VNC port in the
-  device's edit dialog to give an agent a direct endpoint.
+  sign-in, separate from `auth`, which describes what the agent answers.
+- `browser_url` is the same device in the hub's noVNC page, for a human.
 
 ## What the agent does next
 
 1. Call `list_devices`.
-2. Pick a device with `vnc_port` and `online: true`.
-3. Connect a VNC client to `vnc_host:vnc_port`, using `token` or the device
-   password as indicated by `auth`.
+2. Pick a device with a `ws_url`, preferably `online: true`.
+3. Open the WebSocket with a WebSocket VNC client, or bridge it to a local TCP
+   port and use any VNC client:
+
+   ```bash
+   websocat --binary -H="Authorization: Bearer <admin token>" \
+     tcp-l:127.0.0.1:5900 wss://abacad.example.com/ws/vnc/mac-mini
+   vncdotool -s 127.0.0.1::5900 capture screen.png
+   ```
+
 4. Drive it with the client's normal screenshot/pointer/keyboard operations.
 
 There is no `observe`, `frame_id`, or `act` tool. Those belong to the VNC client
 the agent already has. abacad only routes and authenticates.
 
-## If the agent has no VNC client
+## Clients
 
-An agent with a shell can use any VNC CLI/library (for example `vncdotool` in
-Python, or a Go VNC package). A future optional adapter may wrap one; it is
-deliberately not part of the hub.
+- **websocat + any VNC client** (vncdotool, TigerVNC, macOS Screen Sharing on
+  `127.0.0.1`). Most robust: the client is a standard one.
+- **noVNC** speaks WebSocket natively; it is what the hub's own page runs.
+- **py-wsvnc** is a Python VNC client that dials `ws(s)://` directly. It assumes
+  one RFB message per WebSocket frame and can lose sync on large updates.
+
+Common desktop viewers (TigerVNC, RealVNC, Remmina) do not speak WebSocket; use
+the bridge.
 
 An agent that only has MCP tool calls, with no shell and no VNC client, would
 need a separate adapter that exposes screenshot/click. That adapter would be an
@@ -102,24 +113,20 @@ the core.
 ## Without MCP: the `/skill` page
 
 Not every agent speaks MCP. Open **Skill for agents** in the hub (or go to
-`/skill`) and the page generates a `SKILL.md` — a self-contained agent skill that
-needs no server-side integration:
-
-- **Fixed list** (default) bakes the machine table, the `host:port` endpoints and
-  the per-device tokens into the file. Nothing else has to be configured, and the
-  agent does not need any access to the hub API. The file is a secret: it holds
-  the VNC tokens.
-- **Live API** points the agent at `POST /api/login` and `GET /api/devices` and
-  keeps the credential in the `ABACAD_TOKEN` environment variable. The file holds
-  no secret, but that token is the hub's admin token, which controls every
-  machine.
+`/skill`) and the page generates a `SKILL.md`: the admin token, the machine table
+with each `ws_url`, how to fetch the current list with
+`GET /api/devices` and a Bearer header, and how to connect. The file is a
+secret — it holds the admin token, which controls every machine.
 
 The hub address field defaults to the page's own origin; set it if the agent
 reaches the hub under a different name. Save the file as
 `<agent>/skills/abacad/SKILL.md` (for example `~/.claude/skills/abacad/` or
 `~/.dsh/skills/abacad/`).
 
-The page is only a generator: `/skill` serves the same SPA and the same session
-cookie as the rest of the UI, and it adds no new endpoint. The REST API itself
-authenticates with the browser cookie, not with a Bearer token — only `/mcp`
-accepts `Authorization: Bearer <admin token>`.
+## One secret
+
+The hub has one credential, the admin token. The web UI exchanges it for a
+session cookie at `POST /api/login`; everything else — the REST API, `/mcp` and
+the device WebSockets — accepts it directly as `Authorization: Bearer`. The
+WebSockets also accept `?token=`. `GET /api/token` returns it to a signed-in
+browser so the `/skill` page can bake it into the file.

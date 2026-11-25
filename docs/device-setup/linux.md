@@ -103,8 +103,6 @@ In the hub web UI, click **Add device**:
 - **Port:** `5900`
 - **VNC password:** the password from the server above
 - **Platform:** Linux
-- **Also open a raw VNC port for agents:** optional; leave it off for
-  browser-only.
 
 There is no health check to configure: abacad never probes the port. After
 saving, click **Open** once. The rail shows **online** when that session

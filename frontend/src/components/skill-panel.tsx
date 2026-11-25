@@ -1,38 +1,19 @@
-import { Bot, Copy, Download, KeyRound, ShieldAlert } from "lucide-react"
+import { Bot, Copy, Download, ShieldAlert } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import { api } from "@/lib/api"
 import { copyText } from "@/lib/clipboard"
-import {
-  agentEndpoints,
-  buildSkill,
-  normalizeHub,
-  SKILL_FILENAME,
-  type SkillVariant,
-} from "@/lib/skill"
+import { buildSkill, normalizeHub, SKILL_FILENAME } from "@/lib/skill"
 import type { Device } from "@/lib/types"
-import { cn } from "@/lib/utils"
 
 // Remember the address the human typed so a reverse proxy or a second LAN name
 // does not have to be retyped on every visit.
 const HUB_KEY = "abacad.skill.hub"
 
-const VARIANTS: { id: SkillVariant; label: string; hint: string }[] = [
-  {
-    id: "baked",
-    label: "Fixed list",
-    hint: "The machines, endpoints and tokens are baked into the file. Nothing else to set up.",
-  },
-  {
-    id: "live",
-    label: "Live API",
-    hint: "The agent fetches the list from the hub each run, so new machines appear.",
-  },
-]
-
 export function SkillPanel({ devices }: { devices: Device[] }) {
-  const [variant, setVariant] = useState<SkillVariant>("baked")
+  const [hubToken, setHubToken] = useState("")
   const [hub, setHub] = useState(() => {
     if (typeof window === "undefined") return ""
     return window.localStorage.getItem(HUB_KEY) || window.location.origin
@@ -43,10 +24,24 @@ export function SkillPanel({ devices }: { devices: Device[] }) {
     if (normalized) window.localStorage.setItem(HUB_KEY, normalized)
   }, [hub])
 
-  const endpoints = useMemo(() => agentEndpoints(devices, hub), [devices, hub])
-  const ready = endpoints.filter((endpoint) => endpoint.usable)
-  const markdown = useMemo(() => buildSkill({ devices, hub, variant }), [devices, hub, variant])
-  const active = VARIANTS.find((option) => option.id === variant) ?? VARIANTS[0]
+  // The page is behind the signed-in session; the admin token is baked into the file so
+  // the agent needs nothing else.
+  useEffect(() => {
+    let cancelled = false
+    api
+      .token()
+      .then((response) => {
+        if (!cancelled) setHubToken(response.token)
+      })
+      .catch(() => {
+        if (!cancelled) toast.error("Could not read the admin token")
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const markdown = useMemo(() => buildSkill({ devices, hub, hubToken }), [devices, hub, hubToken])
 
   async function copy() {
     const copied = await copyText(markdown)
@@ -83,49 +78,20 @@ export function SkillPanel({ devices }: { devices: Device[] }) {
           <code className="rounded-[4px] border border-border bg-card px-1 py-px font-mono text-[11px] text-foreground/80">
             SKILL.md
           </code>{" "}
-          in your agent&apos;s skills folder. No MCP server and no new protocol — every machine is a
-          standard VNC endpoint.
+          in your agent&apos;s skills folder. No MCP server and no new protocol — every machine is
+          plain VNC over the same WebSocket this page uses.
         </p>
 
-        {ready.length === 0 ? (
-          <div className="mt-6 flex gap-3 rounded-xl border border-brand/25 bg-brand-soft px-4 py-3">
-            <KeyRound className="mt-0.5 size-3.5 shrink-0 text-brand-ink" />
-            <p className="text-[12.5px] leading-relaxed text-foreground/80">
-              No machine has a raw VNC port yet, so there is nothing an agent can connect to. Edit a
-              machine and check <strong className="font-medium text-foreground">Also open a raw VNC port for agents</strong>{" "}
-              — that is what creates the endpoint.
-            </p>
-          </div>
-        ) : (
-          <p className="mt-4 font-mono text-[10.5px] tracking-[0.04em] text-muted-foreground">
-            {ready.length === devices.length
-              ? `${ready.length} machine${ready.length === 1 ? "" : "s"} ready`
-              : `${ready.length} of ${devices.length} machines ready`}
-            <span className="text-faint"> · </span>
-            {normalizeHub(hub)}
-          </p>
-        )}
+        <p className="mt-4 font-mono text-[10.5px] tracking-[0.04em] text-muted-foreground">
+          {devices.length === 0
+            ? "No machines yet"
+            : `${devices.length} machine${devices.length === 1 ? "" : "s"}`}
+          <span className="text-faint"> · </span>
+          {normalizeHub(hub)}
+        </p>
 
         <div className="mt-5 overflow-hidden rounded-xl border border-border bg-card shadow-card">
           <div className="flex flex-wrap items-center gap-2 border-b border-border px-2.5 py-2.5">
-            <div className="flex rounded-lg bg-muted p-0.5">
-              {VARIANTS.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  onClick={() => setVariant(option.id)}
-                  aria-pressed={variant === option.id}
-                  className={cn(
-                    "h-6 rounded-md px-2.5 text-[11.5px] font-medium transition-colors",
-                    variant === option.id
-                      ? "bg-card text-foreground shadow-pill"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
             <input
               value={hub}
               onChange={(event) => setHub(event.target.value)}
@@ -148,31 +114,10 @@ export function SkillPanel({ devices }: { devices: Device[] }) {
           </pre>
 
           <div className="flex items-start gap-2.5 border-t border-border px-4 py-3">
-            {variant === "baked" ? (
-              <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-faint" />
-            ) : (
-              <KeyRound className="mt-0.5 size-3.5 shrink-0 text-faint" />
-            )}
+            <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-faint" />
             <p className="text-[11px] leading-relaxed text-muted-foreground">
-              {variant === "baked" ? (
-                ready.length === 0 ? (
-                  <>
-                    This file has no endpoints yet. Enable a raw VNC port on a machine and download
-                    it again.
-                  </>
-                ) : (
-                  <>
-                    This file contains the VNC token for every machine listed. Treat it like a
-                    password and keep it out of git. Rotate a token by editing the machine.
-                  </>
-                )
-              ) : (
-                <>
-                  The live variant authenticates with the hub&apos;s admin token from{" "}
-                  <code className="font-mono text-foreground/75">ABACAD_TOKEN</code> — that token
-                  controls every machine on the hub. The file itself holds no secret.
-                </>
-              )}
+              This file contains the admin token, which opens every machine and the hub&apos;s
+              settings. Treat it like a password and keep it out of git.
             </p>
           </div>
         </div>
@@ -196,9 +141,13 @@ export function SkillPanel({ devices }: { devices: Device[] }) {
           </div>
           <div className="rounded-xl border border-border bg-card px-4 py-3">
             <p className="font-mono text-[9.5px] tracking-[0.14em] text-muted-foreground uppercase">
-              {active.label}
+              How it connects
             </p>
-            <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">{active.hint}</p>
+            <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
+              Each machine is a WebSocket at{" "}
+              <code className="font-mono text-[11px] text-foreground/80">/ws/vnc/&lt;id&gt;</code>.
+              The agent bridges it to a local port with websocat and uses any VNC client.
+            </p>
           </div>
         </div>
       </div>

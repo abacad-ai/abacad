@@ -7,7 +7,6 @@ package inventory
 import (
 	"context"
 	"fmt"
-	"net"
 	"strings"
 	"sync"
 	"time"
@@ -22,7 +21,7 @@ import (
 const staleAfter = 10 * time.Minute
 
 // View is a device plus its live state. Password is never serialized because
-// config.Device hides it; Token is only returned to an authenticated caller.
+// config.Device hides it.
 type View struct {
 	config.Device
 	Online    bool       `json:"online"`
@@ -51,7 +50,6 @@ type AddRequest struct {
 	Password string `json:"password"`
 	Platform string `json:"platform"`
 	Mode     string `json:"mode"`
-	Expose   bool   `json:"expose"`
 }
 
 // UpdateRequest is a sparse update; nil fields are left alone.
@@ -64,23 +62,17 @@ type UpdateRequest struct {
 	Password *string `json:"password"`
 	Platform *string `json:"platform"`
 	Mode     *string `json:"mode"`
-	Expose   *bool   `json:"expose"`
 }
 
 type Inventory struct {
-	mu       sync.RWMutex
-	cfg      *config.Config
-	status   map[string]Status
-	onChange func()
+	mu     sync.RWMutex
+	cfg    *config.Config
+	status map[string]Status
 }
 
 func New(cfg *config.Config) *Inventory {
 	return &Inventory{cfg: cfg, status: map[string]Status{}}
 }
-
-// OnChange installs a callback fired after a successful mutation, outside the
-// inventory lock. The hub uses it to start/stop per-device listeners.
-func (in *Inventory) OnChange(fn func()) { in.onChange = fn }
 
 func (in *Inventory) Config() *config.Config { return in.cfg }
 
@@ -126,7 +118,7 @@ func viewOf(d config.Device, s Status) View {
 	}
 }
 
-// Add validates, optionally allocates a raw-VNC port, and saves. It never
+// Add validates and saves. It never
 // connects to the device: the UI shows the new machine as "not seen" until a
 // real browser or agent session authenticates.
 func (in *Inventory) Add(ctx context.Context, req AddRequest) (View, error) {
@@ -144,15 +136,6 @@ func (in *Inventory) Add(ctx context.Context, req AddRequest) (View, error) {
 	}
 
 	in.mu.Lock()
-	port := 0
-	var err error
-	if req.Expose && mode != config.ModeDirect {
-		port, err = in.allocatePortLocked()
-	}
-	if err != nil {
-		in.mu.Unlock()
-		return View{}, err
-	}
 	d, err := in.cfg.AddDevice(config.Device{
 		Name:     req.Name,
 		Host:     req.Host,
@@ -162,16 +145,10 @@ func (in *Inventory) Add(ctx context.Context, req AddRequest) (View, error) {
 		Password: req.Password,
 		Platform: req.Platform,
 		Mode:     mode,
-		VNCPort:  port,
 	})
-	if err != nil {
-		in.mu.Unlock()
-		return View{}, err
-	}
 	in.mu.Unlock()
-
-	if in.onChange != nil {
-		in.onChange()
+	if err != nil {
+		return View{}, err
 	}
 	v, _ := in.Device(d.ID)
 	return v, nil
@@ -179,7 +156,6 @@ func (in *Inventory) Add(ctx context.Context, req AddRequest) (View, error) {
 
 func (in *Inventory) Update(ctx context.Context, id string, req UpdateRequest) (View, error) {
 	in.mu.Lock()
-	var allocate, release bool
 	if req.Mode != nil {
 		switch *req.Mode {
 		case config.ModeGateway, config.ModeL4, config.ModeDirect:
@@ -187,28 +163,6 @@ func (in *Inventory) Update(ctx context.Context, id string, req UpdateRequest) (
 			in.mu.Unlock()
 			return View{}, fmt.Errorf("invalid mode %q", *req.Mode)
 		}
-	}
-	if req.Expose != nil {
-		cur, ok := in.cfg.Device(id)
-		if !ok {
-			in.mu.Unlock()
-			return View{}, fmt.Errorf("device %q not found", id)
-		}
-		if *req.Expose && cur.VNCPort == 0 {
-			allocate = true
-		}
-		if !*req.Expose && cur.VNCPort != 0 {
-			release = true
-		}
-	}
-	port := 0
-	if allocate {
-		p, err := in.allocatePortLocked()
-		if err != nil {
-			in.mu.Unlock()
-			return View{}, err
-		}
-		port = p
 	}
 	connChanged := req.Host != nil || req.Port != nil || req.Password != nil ||
 		req.Auth != nil || req.Username != nil
@@ -237,15 +191,6 @@ func (in *Inventory) Update(ctx context.Context, id string, req UpdateRequest) (
 		if req.Mode != nil {
 			d.Mode = *req.Mode
 		}
-		if allocate {
-			d.VNCPort = port
-		}
-		if release {
-			d.VNCPort = 0
-		}
-		if d.Mode == config.ModeDirect {
-			d.VNCPort = 0
-		}
 		return nil
 	})
 	if err != nil {
@@ -260,9 +205,6 @@ func (in *Inventory) Update(ctx context.Context, id string, req UpdateRequest) (
 	}
 	in.mu.Unlock()
 
-	if in.onChange != nil {
-		in.onChange()
-	}
 	v, _ := in.Device(d.ID)
 	return v, nil
 }
@@ -275,9 +217,6 @@ func (in *Inventory) Remove(id string) error {
 	}
 	delete(in.status, id)
 	in.mu.Unlock()
-	if in.onChange != nil {
-		in.onChange()
-	}
 	return nil
 }
 
@@ -330,27 +269,4 @@ func describeError(err error) string {
 		return rfb.TooManySecurityFailuresHint
 	}
 	return err.Error()
-}
-
-// allocatePortLocked finds a port in the range that is neither assigned in the
-// config nor currently bindable. Caller must hold in.mu.
-func (in *Inventory) allocatePortLocked() (int, error) {
-	used := map[int]bool{}
-	for _, d := range in.cfg.Devices {
-		if d.VNCPort != 0 {
-			used[d.VNCPort] = true
-		}
-	}
-	for p := in.cfg.VNCPortStart; p <= in.cfg.VNCPortEnd; p++ {
-		if used[p] {
-			continue
-		}
-		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", p))
-		if err != nil {
-			continue
-		}
-		_ = ln.Close()
-		return p, nil
-	}
-	return 0, fmt.Errorf("no free VNC port in %d-%d", in.cfg.VNCPortStart, in.cfg.VNCPortEnd)
 }

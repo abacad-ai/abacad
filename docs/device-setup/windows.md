@@ -31,8 +31,6 @@ In the hub web UI, click **Add device**:
 - **Port:** `5900`
 - **VNC password:** the TigerVNC password
 - **Platform:** Windows
-- **Also open a raw VNC port for agents:** optional; leave it off for
-  browser-only.
 
 The card should turn **online**. If it stays offline, check the inbound firewall
 rule and that TigerVNC is running as a service.
