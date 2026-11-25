@@ -21,3 +21,10 @@ config.yaml
 
 # Logs
 *.log
+.venv/
+.home-pmd3/
+.cap*.png
+.vnc.png
+
+# make dev state
+/.dev/

@@ -1,4 +1,4 @@
-.PHONY: build test vet fmt run clean version docker frontend-deps frontend-build
+.PHONY: build test vet fmt run dev clean version docker frontend-deps frontend-build
 
 BIN := bin/abacad
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
@@ -25,6 +25,11 @@ fmt:
 
 run:
 	go run ./cmd/abacad serve --listen 127.0.0.1:8787
+
+# Local hub (state in .dev/) + Vite with HMR on http://127.0.0.1:8899.
+# Override with DEV_WEB_PORT, DEV_HUB_ADDR, DEV_TOKEN.
+dev:
+	./scripts/dev.sh
 
 version:
 	@echo $(VERSION)
