@@ -28,6 +28,8 @@ const platformOptions = [
   { value: "linux", label: "Linux" },
   { value: "windows", label: "Windows" },
   { value: "android", label: "Android" },
+  { value: "ios", label: "iOS" },
+  { value: "ipados", label: "iPadOS" },
 ]
 
 const modeOptions: { value: DeviceMode; label: string }[] = [

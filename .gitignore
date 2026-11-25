@@ -28,3 +28,7 @@ config.yaml
 
 # make dev state
 /.dev/
+
+# browser automation artifacts
+.playwright-cli/
+iosvnc/iosvnc

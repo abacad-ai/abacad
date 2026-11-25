@@ -6,9 +6,10 @@ Your machines already have VNC servers. abacad gives them one quiet place: a bro
 
 ```
   macOS Screen Sharing ─┐
-  Linux x11vnc/wayvnc  ─┼── RFB ──▶  abacad hub  ── HTTPS/WSS ──▶ browser (noVNC)
-  Windows TigerVNC     ─┤              │
-  Android droidVNC-NG  ─┘              └── same WSS ──▶ agent's VNC client
+  Linux x11vnc/wayvnc  ─┤
+  Windows TigerVNC     ─┼── RFB ──▶  abacad hub  ── HTTPS/WSS ──▶ browser (noVNC)
+  Android droidVNC-NG  ─┤              │
+  iOS/iPadOS via iosvnc─┘              └── same WSS ──▶ agent's VNC client
 ```
 
 In the default `gateway` mode the hub terminates only the RFB handshake (so neither the browser nor an agent ever sees a device password). After that it is a blind byte pipe. It never decodes a framebuffer and never synthesizes input.
@@ -17,6 +18,10 @@ In the default `gateway` mode the hub terminates only the RFB handshake (so neit
   choose **macOS account** sign-in: the hub speaks Apple DH (type 30), which
   attaches to the logged-in user's console session. The legacy VNC password has
   no user identity and can land on the login window.
+- **iPhone and iPad** have no VNC server of their own, so they reach the hub
+  through [iosvnc](iosvnc): a small bridge on a Mac the device is paired to,
+  which speaks plain RFB to the hub. No jailbreak. See
+  [docs/device-setup/ios.md](docs/device-setup/ios.md).
 - **One binary.** Go + an embedded Vite/React frontend. Node is a build-time dependency only; the running hub needs no Node, database, or CDN.
 - **No relay, no public forwarding.** abacad is not a hosted service. You run the hub and own the network path — a VPN, a tunnel, your own firewall. The hub connects directly to the addresses you add, which is faster and safer than forwarding traffic through a relay.
 - **One port, one secret.** Browser, API, MCP and every device's VNC stream go
