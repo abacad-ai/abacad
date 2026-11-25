@@ -34,3 +34,7 @@ config.yaml
 iosvnc/iosvnc
 # scratch probes used while bringing the iOS bridge up (see iosvnc/README.md)
 iosvnc/.scratch/
+
+# python bytecode from importing the bridge (tests, probes)
+__pycache__/
+iosvnc/bridge/__pycache__/

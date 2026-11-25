@@ -41,6 +41,9 @@ type Config struct {
 	Python string
 	Script string
 	UDID   string
+	// Connection is "usb" (default) or "wifi". Wi-Fi needs the device paired
+	// for the network; see bridge/iosbridge.py.
+	Connection string
 	// StartTimeout bounds the wait for the first frame, both at startup and on
 	// every restart. A cold userspace tunnel handshake takes a few seconds; a
 	// stale one can take a minute before it gives up.
@@ -265,6 +268,9 @@ func (s *Supervisor) spawn(ctx context.Context) (*child, error) {
 		args = append(args, s.cfg.UDID)
 	}
 	cmd := exec.CommandContext(ctx, s.cfg.Python, args...)
+	if s.cfg.Connection != "" {
+		cmd.Env = append(os.Environ(), "IOSVNC_CONNECTION="+s.cfg.Connection)
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err

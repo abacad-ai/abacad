@@ -57,3 +57,7 @@ per-device raw VNC ports are gone.
 - **Protected video renders black**, as it does in any screen recording.
 - It drives the device through **Developer Mode**, so treat the Mac as a
   privileged host: keep the RFB port on the LAN and always set a password.
+- **Wi-Fi works** once the device is set to "connect over network"
+  (`pymobiledevice3 lockdown wifi-connections on`, cable in, one time). Start
+  with `--connection wifi`; USB remains the default because it cannot be flaky,
+  and pairing always needs the cable.

@@ -146,6 +146,7 @@ func runServe(args []string) {
 	helperScript := fs.String("helper", "", "run the Python bridge at this path (bridge/iosbridge.py) to own the device session")
 	helperPython := fs.String("helper-python", "", "interpreter for -helper (default: iosvnc/.venv/bin/python if present, else python3)")
 	helperUDID := fs.String("udid", "", "device UDID for -helper")
+	connection := fs.String("connection", "usb", "reach the device over \"usb\" or \"wifi\"")
 	_ = fs.Parse(args)
 
 	// Both real and synthetic sources are an rfbserver.Source plus a Run loop.
@@ -163,10 +164,11 @@ func runServe(args []string) {
 			python = "python3"
 		}
 		sup := helper.NewSupervisor(helper.Config{
-			Python: python,
-			Script: *helperScript,
-			UDID:   *helperUDID,
-			Logf:   log.Printf,
+			Python:     python,
+			Script:     *helperScript,
+			UDID:       *helperUDID,
+			Connection: *connection,
+			Logf:       log.Printf,
 		})
 		if err := sup.Start(context.Background()); err != nil {
 			fail(err)

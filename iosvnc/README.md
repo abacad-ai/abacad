@@ -56,6 +56,26 @@ its shutdown joins VideoToolbox threads, and a bridge that lingers after a
 dropped tunnel keeps its stdout open — which is exactly how a viewer ends up
 staring at yesterday's screenshot while the status says connected.
 
+## Wi-Fi
+
+The device can be reached over the network instead of the cable:
+
+```bash
+pymobiledevice3 lockdown wifi-connections on   # once, with the cable in
+./serve-ios.sh 0.0.0.0:5970 --password PW --connection wifi
+```
+
+The switch is the standard "connect to this iPhone over network" one; it makes
+usbmuxd list the device twice, once per interface, and `--connection wifi` builds
+the whole session (tunnel, display stream, HID) from the network entry. Measured
+on an iPhone 15 Pro, same Wi-Fi: 34 fps under continuous motion, and a swipe
+takes the same ~105 ms to reach the first framebuffer update as USB does. The
+first touch after a long quiet spell is slower on both connections, because the
+device has to send a fresh keyframe.
+
+USB stays the default: it is the connection that cannot be flaky, and pairing
+still requires a cable.
+
 ## Requirements
 
 - macOS with **Xcode 27**, a device **paired**, **Developer Mode** on, **unlocked**

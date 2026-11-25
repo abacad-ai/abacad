@@ -67,19 +67,61 @@ def emit_frame(jpeg: bytes) -> None:
     sys.stdout.buffer.flush()
 
 
-async def establish_rsd(udid: str | None):
-    """Native tunnel first, userspace fallback — the same order the CLI uses.
+# Tunnels are kept reachable for the life of the process: PyTCP's stack is a
+# process-global singleton, and dropping the handle would close the only route
+# to the device.
+_tunnels: list = []
 
-    The native (remoted-piggyback) tunnel goes stale after the host has held it
-    for a while and then times out; the in-process userspace tunnel needs no
-    root and is the reliable path.
+
+async def _wifi_provider(udid: str | None):
+    """A tunnel provider that reaches the device through usbmuxd's Network entry.
+
+    This is the whole difference between USB and Wi-Fi: the same CoreDevice
+    tunnel proxy, opened over a lockdown connection that usbmuxd carries to the
+    device's Wi-Fi address instead of the USB one.
     """
+    from pymobiledevice3.lockdown import create_using_usbmux
+    from pymobiledevice3.remote.tunnel_service import CoreDeviceTunnelProxy
+    from pymobiledevice3.remote.userspace_tunnel import TunnelProvider
+
+    lockdown = await create_using_usbmux(serial=udid, connection_type="Network", autopair=True)
+    try:
+        return TunnelProvider(await CoreDeviceTunnelProxy.create(lockdown), lockdown)
+    except BaseException:
+        await lockdown.close()
+        raise
+
+
+async def establish_rsd(udid: str | None, connection: str = "usb"):
+    """Return an RSD for the device over USB (default) or Wi-Fi.
+
+    Both paths are no-root userspace tunnels; USB is the native (remoted
+    piggyback) fallback's territory too, Wi-Fi is not. A Wi-Fi device has to be
+    paired for the network already: on the Mac, "Connect to this iPhone over
+    network" (lockdown -wifi-connections on), which makes usbmuxd list it twice,
+    once per interface.
+    """
+    from pymobiledevice3.remote import userspace_tunnel
+
+    if connection == "wifi":
+        tunnel = userspace_tunnel.UserspaceRsdTunnel(
+            serial=udid, provider_factory=lambda: _wifi_provider(udid)
+        )
+        try:
+            rsd = await tunnel.aopen()
+        except Exception as e:
+            raise RuntimeError(
+                f"no device of this UDID answered over Wi-Fi ({type(e).__name__}: {e}). "
+                "Check that it is on the same network and that 'Connect to this iPhone "
+                "over network' is enabled (pymobiledevice3 lockdown wifi-connections on)."
+            ) from e
+        _tunnels.append(tunnel)
+        return rsd
+
     # Userspace first: it needs no root and it does not race remoted for the
     # NCM link. The native path is kept as a fallback for hosts where the
     # userspace stack cannot be built, and it is slow to fail (a 60 s timeout),
     # so it must not be the first thing tried.
-    from pymobiledevice3.remote import userspace_tunnel
-
     try:
         return await userspace_tunnel.establish_userspace_rsd(serial=udid)
     except Exception as e:
@@ -242,9 +284,10 @@ class FramePump:
 
 async def main() -> int:
     udid = sys.argv[1] if len(sys.argv) > 1 else None
+    connection = os.environ.get("IOSVNC_CONNECTION", "usb").strip().lower() or "usb"
 
-    rsd = await establish_rsd(udid)
-    log(f"rsd up: {rsd.udid}")
+    rsd = await establish_rsd(udid, connection)
+    log(f"rsd up: {rsd.udid} over {connection}")
 
     display = DisplayService(rsd)
     await display.connect()
@@ -277,7 +320,6 @@ async def main() -> int:
     log(f"hid ready: touchscreen {service_id}")
 
     async def receive_loop() -> None:
-        last = time.monotonic()
         while True:
             packet = await transport.recv()
             pump.feed_packet(packet)
@@ -285,19 +327,31 @@ async def main() -> int:
             # which starves the input coroutine and turns taps into long presses.
             if pump.packets % 16 == 0:
                 await asyncio.sleep(0)
+
+    async def heartbeat() -> None:
+        """Log once every two seconds, whether or not the screen is changing.
+
+        The parent decides whether this process is alive from this line, so it
+        must not depend on the device sending anything: a locked or still screen
+        sends no video at all, and a stats line driven by packet arrival would
+        make a healthy idle session look wedged.
+        """
+        last = time.monotonic()
+        while True:
+            await asyncio.sleep(2.0)
             now = time.monotonic()
-            if now - last >= 2.0:
-                log(
-                    f"stats: {pump.packets/2:.0f} pkt/s, aus {pump.aus/2:.0f}/s, "
-                    f"corrupt {pump.dropped/2:.0f}/s, decoder {pump.decoded/2:.1f} fps, "
-                    f"emitted {pump.frames/2:.1f} fps"
-                )
-                pump.packets = 0
-                pump.decoded = 0
-                pump.frames = 0
-                pump.aus = 0
-                pump.dropped = 0
-                last = now
+            dt = max(1e-6, now - last)
+            last = now
+            log(
+                f"stats: {pump.packets/dt:.0f} pkt/s, aus {pump.aus/dt:.0f}/s, "
+                f"corrupt {pump.dropped/dt:.0f}/s, decoder {pump.decoded/dt:.1f} fps, "
+                f"emitted {pump.frames/dt:.1f} fps"
+            )
+            pump.packets = 0
+            pump.decoded = 0
+            pump.frames = 0
+            pump.aus = 0
+            pump.dropped = 0
 
     def build_rr() -> bytes:
         rr = struct.pack("!BBHII BBBB IIII", 0x81, 0xC9, 7,
@@ -388,6 +442,7 @@ async def main() -> int:
 
     tasks = [
         asyncio.create_task(receive_loop()),
+        asyncio.create_task(heartbeat()),
         asyncio.create_task(command_loop()),
         asyncio.create_task(rtcp_loop()),
         asyncio.create_task(keep_awake()),
