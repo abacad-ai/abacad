@@ -25,7 +25,7 @@ src/pages/index.astro            English landing
 src/pages/zh/index.astro         Chinese landing
 src/content/landing.ts           all landing copy, both languages
 src/layouts/Landing.astro        head, nav, sections, footer, copy button
-src/components/landing/          brand mark, console illustration, flow diagram
+src/components/landing/          the brand mark
 src/content/docs/docs/           English docs → /docs/**
 src/content/docs/zh/docs/        Chinese docs → /zh/docs/**
 src/content/docs/404?            Starlight's 404
@@ -35,7 +35,7 @@ src/styles/tokens.css            the porcelain tokens (one source)
 src/styles/landing.css           the marketing page
 src/styles/docs.css              Starlight token overrides
 public/                          favicons, OG cards, robots.txt, _headers
-public/screens/                  sanitized product screenshots (login, Add device, Skill)
+public/screens/                  live device screens + sanitized console UI shots
 ```
 
 ### Content rules
@@ -59,7 +59,7 @@ The build emits:
 
 - `sitemap-index.xml` and `sitemap-0.xml` with every page
 - canonical, `hreflang` (`en`, `zh-CN`, `x-default`), Open Graph and Twitter tags
-- `SoftwareApplication` + `FAQPage` JSON-LD on the landing pages
+- `SoftwareApplication` JSON-LD on the landing pages
 - `TechArticle` + `BreadcrumbList` JSON-LD on every docs page
 - `llms.txt`, `llms-small.txt`, `llms-full.txt` via `starlight-llms-txt`
 - static Pagefind search (no server)
@@ -68,11 +68,14 @@ The build emits:
 The OG cards are committed. Regenerate them with `npm run og` after changing the
 hero or the brand mark.
 
-The screenshots are from a real hub, with device names, addresses, and the hub
-URL replaced by examples. They are referenced from the docs with
-`/screens/*.webp`; the docs stylesheet caps them at 640px so the UI text stays
-legible. If the console changes, recapture and replace the files; do not add a
-screenshot that contains an admin token, a real hostname, or a private IP.
+The screenshots are from a real hub. The console UI shots in the docs have
+device names, addresses, and the hub URL replaced by examples; the landing uses
+three live framebuffer crops (`/screens/live-*.webp`) with the hub chrome and
+the device rail cropped out, so no hostname or token is visible. The docs
+stylesheet caps UI shots at 640px so the text stays legible.
+
+If the console changes, recapture and replace the files. Do not add a screenshot
+that contains an admin token, a real hostname, or a private IP.
 
 ## Deploy
 

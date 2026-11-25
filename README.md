@@ -4,7 +4,7 @@ A small, self-hosted **VNC hub**.
 
 Public site and docs: <https://abacad.ai> (source: [`site/`](site/)).
 
-Your machines already have VNC servers. abacad gives them one quiet place: a browser page for you, the same VNC stream for an agent, and one entry point for any VNC server the hub can reach. No client to install on each device, no cloud, no relay, no public forwarding.
+Your machines already have VNC servers. abacad gives them one browser tab: a page for you, the same VNC stream for an agent, and one entry point for any VNC server the hub can reach. No client to install on each device, no cloud, no relay, no public forwarding.
 
 ```
   macOS Screen Sharing ─┐
