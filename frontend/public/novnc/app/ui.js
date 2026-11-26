@@ -1215,8 +1215,9 @@ const UI = {
     },
 
     handleBeforeUnload(e) {
-        // Trigger a "Leave site?" warning prompt before closing the
-        // page. Modern browsers (Oct 2025) accept either (or both)
+        // Upstream's "Leave site?" prompt for a connected session. Its code is
+        // unchanged, but updateBeforeUnload below no longer registers it — see
+        // the note there. Modern browsers (Oct 2025) accept either (or both)
         // preventDefault() or a nonempty returnValue, though the latter is
         // considered legacy. The custom string is ignored by modern browsers,
         // which display a native message, but older browsers will show it.
@@ -1227,9 +1228,12 @@ const UI = {
     updateBeforeUnload() {
         // Remove first to avoid adding duplicates
         window.removeEventListener("beforeunload", UI.handleBeforeUnload);
-        if (!UI.rfb?.viewOnly && UI.connected) {
-            window.addEventListener("beforeunload", UI.handleBeforeUnload);
-        }
+        // abacad: never arm the "Leave site?" prompt. A screen here is a remote
+        // view of a device, so closing the tab loses nothing typed into it — the
+        // prompt would only stand between the human and the tab they meant to
+        // close. Upstream registers this handler whenever a session connects;
+        // dropping the registration is the only line of this tree we change.
+        // See docs/vendored-novnc.md ("Patches").
     },
 
 /* ------^-------

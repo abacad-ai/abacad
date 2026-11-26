@@ -24,10 +24,28 @@ Proxmox VE solves the same problem the same way: ship the application under
 | `AUTHORS`, `LICENSE.txt` | required by the license |
 
 Not copied: `vnc_lite.html`, `docs/`, `po/`, `tests/`, `utils/`, `snap/`,
-`eslint.config.mjs`, `karma.conf.cjs`. **Nothing is patched** — the tree is the
-release tarball, so an upgrade is a copy, not a merge. (The one earlier attempt
-to patch `core/rfb.js` was reverted for exactly this reason; see commit
-`898b0d7`.)
+`eslint.config.mjs`, `karma.conf.cjs`. Apart from the one change listed under
+[Patches](#patches) the tree is the release tarball, so an upgrade is a copy, not
+a merge. (The one earlier attempt to patch `core/rfb.js` was reverted for exactly
+this reason; see commit `898b0d7`.)
+
+## Patches
+
+| File | Change |
+| --- | --- |
+| `app/ui.js` | `updateBeforeUnload()` only removes the `beforeunload` listener; it never registers it |
+
+noVNC arms a `beforeunload` handler whenever a session connects, so closing the
+tab popped the browser's "Leave site?" — for a remote screen, with nothing typed
+into the page to lose. A screen is a view of a device, not a document, and the
+prompt only stood between the human and the tab they meant to close. The prompt
+is therefore off: `handleBeforeUnload` keeps its upstream code, and the single
+dropped registration is the whole diff.
+
+A re-vendor copies the tarball over that line and quietly brings the prompt
+back, so `frontend/scripts/check-novnc-patches.mjs` (run by `npm run lint`, and
+so by CI) fails when any file under `public/novnc` registers a `beforeunload`
+handler again.
 
 ## How it is served
 
@@ -55,12 +73,15 @@ tmp=$(mktemp -d)
 curl -sL "https://codeload.github.com/novnc/noVNC/tar.gz/refs/tags/v${V}" | tar -xz -C "$tmp"
 rm -rf frontend/public/novnc && mkdir -p frontend/public/novnc
 cp -R "$tmp/noVNC-${V}"{/app,/core,/vendor,/vnc.html,/defaults.json,/mandatory.json,/package.json,/AUTHORS,/LICENSE.txt} frontend/public/novnc/
+# Re-apply the patch from the table above, then let the check confirm it:
+node frontend/scripts/check-novnc-patches.mjs
 npm --prefix frontend run build
 ```
 
 Then open a device and check that the control bar still appears, a session
-connects, and the keyboard works. The version label in noVNC's settings panel
-comes from the copied `package.json`, so it proves the tree is consistent.
+connects, the keyboard works, and closing the tab asks nothing. The version
+label in noVNC's settings panel comes from the copied `package.json`, so it
+proves the tree is consistent.
 
 Adding a file to the app (a new theme, an extra locale) is a patch: prefer
 upstreaming it to noVNC and bumping the version instead.

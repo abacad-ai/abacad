@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "oxlint --ignore-pattern=public/novnc && node scripts/check-theme.mjs",
+    "lint": "oxlint --ignore-pattern=public/novnc && node scripts/check-theme.mjs && node scripts/check-novnc-patches.mjs",
     "theme:check": "node scripts/check-theme.mjs",
     "preview": "vite preview"
   },

@@ -13,8 +13,8 @@ const ICONS: Record<string, typeof Power> = {
 }
 
 // The screen's own buttons, for devices that have them. They sit over the frame
-// rather than inside it: the vendored noVNC app is upstream's tree, unpatched,
-// and these chords are ours to keep.
+// rather than inside it: the vendored noVNC app is upstream's tree (one dropped
+// beforeunload aside, docs/vendored-novnc.md), and these chords are ours to keep.
 export function DeviceKeys({ frame }: { frame: RefObject<HTMLIFrameElement | null> }) {
   return (
     <div className="absolute top-3 left-3 z-10 flex items-center overflow-hidden rounded-lg border border-white/12 bg-ink-raised/85 backdrop-blur-sm">
