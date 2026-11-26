@@ -2,62 +2,40 @@
 
 An iPhone or iPad has **no VNC server** and cannot run one without a jailbreak.
 The hub still lists one, because a Mac the device is paired to can bridge it:
-[`iosvnc`](../../iosvnc) turns the device into a standard RFB endpoint using
-Apple's developer services, and the hub treats that endpoint like any other VNC
-server.
+[iOS VNC Bridge](https://github.com/abacad-ai/ios-vnc-bridge) turns the device
+into a standard RFB endpoint using Apple's developer services, and the hub
+treats that endpoint like any other VNC server.
 
 ```
-iPhone ──USB──▶ Mac running iosvnc ──RFB :5970──▶ abacad ──▶ browser
+iPhone / iPad ──USB──▶ Mac running iOS VNC Bridge ──RFB :5970──▶ abacad ──▶ browser
 ```
 
-## What the Mac needs
+## Start it
 
-- macOS with **Xcode 27** (the CoreDevice developer services)
-- the device **paired and trusted**, **Developer Mode** enabled
-- the device **unlocked** and on **USB** when the bridge starts
-- Python 3.9+ with `pymobiledevice3` in a venv next to the bridge
-- **no root**: on macOS the bridge reaches the device over the in-process
-  userspace tunnel
+Install the menu-bar app from
+[its releases](https://github.com/abacad-ai/ios-vnc-bridge/releases), open it, and
+follow its first-run flow: install the device runtime once, pick the device,
+press **Start**. The app shows the address and the password to use.
 
-## Start the bridge
-
-```bash
-cd iosvnc
-python3 -m venv .venv && .venv/bin/pip install pymobiledevice3
-./serve-ios.sh 192.168.1.10:5970 --password Abcd1234
-```
-
-The first frame takes 15–30 s (tunnel, stream, keyframe). Once it is up the
-bridge holds a power assertion on the device, so the screen does not lock
-mid-session.
+Full setup, requirements and troubleshooting live in the app's own docs:
+<https://github.com/abacad-ai/ios-vnc-bridge/tree/main/docs/ios.md>.
 
 ## Add it to the hub
 
-Click **Add device** and fill in:
-
-- **Name:** `iphone`
-- **Host:** the Mac's LAN address, e.g. `192.168.1.10`
+- **Name:** `iphone` or `ipad`
+- **Host:** the Mac's LAN address, shown in the app
 - **Port:** `5970`
-- **Sign-in → VNC password:** the `--password` you passed to `serve-ios.sh`
+- **Sign-in → VNC password:** the password from the app
 - **Platform:** iOS (or iPadOS)
 - **Mode:** Gateway
 
-Agents reach it through the hub's `/ws/vnc/<id>` like any other device; the
-per-device raw VNC ports are gone.
+Agents reach it through the hub's `/ws/vnc/<id>` like any other device.
 
 ## Limits
 
-- **No typing.** Tap, drag and swipe work; there is no keyboard path yet.
-- **25–40 fps**, ~78 KB per frame at 592×1280. The device only encodes when the
-  screen changes, so a still screen costs almost nothing.
-- **The device must stay connected over USB.** Pulling the cable ends the
-  session; it comes back by itself within a few seconds of the device being
-  reachable again, and viewers are disconnected the moment it goes away instead
-  of being left with a frozen picture.
-- **Protected video renders black**, as it does in any screen recording.
-- It drives the device through **Developer Mode**, so treat the Mac as a
-  privileged host: keep the RFB port on the LAN and always set a password.
-- **Wi-Fi works** once the device is set to "connect over network"
-  (`pymobiledevice3 lockdown wifi-connections on`, cable in, one time). Start
-  with `--connection wifi`; USB remains the default because it cannot be flaky,
-  and pairing always needs the cable.
+- Tap, drag and swipe; no keyboard, no pinch.
+- Rotation is not handled yet — start the device in the orientation you want.
+- The device must stay reachable; the app rebuilds the session when the link
+  returns and disconnects viewers in the meantime.
+- Wi-Fi works after "connect over network" has been enabled once with the cable
+  in.

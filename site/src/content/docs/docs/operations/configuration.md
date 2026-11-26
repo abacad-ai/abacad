@@ -73,7 +73,7 @@ devices:
 
 | Auth | RFB security | Use |
 | --- | --- | --- |
-| `vnc` | Type 2 (classic VNC password) | Windows, Linux, Android, iosvnc, legacy macOS. |
+| `vnc` | Type 2 (classic VNC password) | Windows, Linux, Android, iOS VNC Bridge, legacy macOS. |
 | `ard` | Type 30 (Apple DH) | macOS with a real account. Attaches to the console session. |
 
 ## Environment and flags

@@ -12,7 +12,7 @@ There is no software to install on the devices, no cloud, and no relay.
   Linux x11vnc/wayvnc  ─┤
   Windows TigerVNC     ─┼── RFB ──▶  abacad hub  ── HTTPS/WSS ──▶ browser (noVNC)
   Android droidVNC-NG  ─┤              │
-  iOS/iPadOS via iosvnc─┘              └── same WSS ──▶ agent's VNC client
+  iOS/iPadOS via the Mac app─┘         └── same WSS ──▶ agent's VNC client
 ```
 
 <dl class="glance">
@@ -103,7 +103,7 @@ that usually go wrong.
   </a>
   <a class="platform-card" href="/docs/devices/ios/">
     <strong>iOS &amp; iPadOS</strong>
-    <span>A paired Mac runs the iosvnc bridge; no jailbreak</span>
+    <span>A paired Mac runs iOS VNC Bridge; no jailbreak</span>
   </a>
 </div>
 

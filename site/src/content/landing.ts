@@ -76,7 +76,7 @@ export const en = {
   ],
   works: {
     label: "Works with the VNC server you already run",
-    items: ["macOS Screen Sharing", "TigerVNC", "x11vnc", "wayvnc", "droidVNC-NG", "iosvnc"],
+    items: ["macOS Screen Sharing", "TigerVNC", "x11vnc", "wayvnc", "droidVNC-NG", "iOS VNC Bridge"],
   },
   agents: {
     kicker: "For agents",
@@ -199,7 +199,7 @@ export const zh: LandingCopy = {
   ],
   works: {
     label: "兼容你已经在用的 VNC 服务",
-    items: ["macOS 屏幕共享", "TigerVNC", "x11vnc", "wayvnc", "droidVNC-NG", "iosvnc"],
+    items: ["macOS 屏幕共享", "TigerVNC", "x11vnc", "wayvnc", "droidVNC-NG", "iOS VNC Bridge"],
   },
   agents: {
     kicker: "给 agent",
