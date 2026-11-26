@@ -53,7 +53,7 @@ devices:
 | `devices[].id` | URL segment in `/ws/vnc/<id>`. Generated from the name; must be unique. |
 | `devices[].name` | Display name in the rail. |
 | `devices[].host` | Address **the hub** uses to reach the device: LAN IP, VPN address, DNS name, or forwarded local port. |
-| `devices[].port` | VNC port, usually 5900. |
+| `devices[].port` | VNC port on the device, usually 5900 (5902 for TigerVNC's `:2` display, 5970 for the iOS VNC Bridge). The hub dials it outbound; the hub never publishes it. |
 | `devices[].auth` | `vnc` for a VNC password, `ard` for a macOS account (RFB type 30). |
 | `devices[].username` | macOS short name. Required when `auth: ard`. |
 | `devices[].password` | The VNC or account password. Omitted in `l4` mode if you do not want it stored. |
@@ -68,6 +68,9 @@ devices:
 | `gateway` | Terminates the RFB handshake, signs in to the device, then pipes bytes. | None; the hub handles it. |
 | `l4` | Blind TCP forwarding over the WebSocket. | The client answers the device's VNC password. |
 | `direct` | Catalog only; no WebSocket. | The client connects to `host:port` itself. |
+
+Mode changes what happens inside the WebSocket, not what you publish: whatever the mode,
+the hub listens on its one HTTP port.
 
 ### Auth types
 

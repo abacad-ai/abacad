@@ -1,6 +1,10 @@
 # abacad v2（薄版）：自托管 VNC 聚合网关
 
-> 状态：计划稿。
+> 状态：计划稿，**已被 3.0 取代**。
+> 2026-11-26 更新：3.0 起每台设备都走 hub 的 `/ws/vnc/<id>`，hub 只监听一个 HTTP 端口，管理员
+> token 是唯一密钥。本文 D4–D6、D8、D9、D11 以及 §2.2、§2.4、§6 里「裸 VNC / 一设备一端口 /
+> per-device token」的方案**已作废**，保留作历史记录。现行部署说明见 [README](../README.md) 和
+> [install](../site/src/content/docs/docs/install.md)。
 > 2026-11-24 更新：mDNS 与主动探测已完全移除；定位已改为「自托管、不做公网转发/中继」，hub 可连接任意可达的 VNC 端点。
 > 一句话：**一个自托管的 VNC 聚合站**。设备端用各平台现成的 VNC server，人不写客户端，agent 直接说 VNC。我们只做「目录 + 入口 + 认证 + 转发」。
 
@@ -60,18 +64,21 @@
 | D1 | 自托管，不做公网转发/中继 | 公网中继成本高、更慢更暴露；网络路径交给用户 | 极高 |
 | D2 | 设备协议只用 VNC/RFB | 各平台有现成 server，零自研客户端 | 极高 |
 | D3 | Hub 只做聚合网关，不做 RFB 客户端 | 不解码画面/不合成输入，1.8k 行而非 5k | 高 |
-| D4 | 两个前门：WSS 给浏览器，TCP 给 agent | 两边都说自己的标准协议 | 中 |
-| D5 | 浏览器默认，裸 VNC 按设备 opt-in | 避免默认铺端口，降低暴露面 | 低 |
-| D6 | 裸 VNC 一设备一端口 | RFB 没有 Host/SNI，无法单端口路由 | 中 |
+| D4 | ~~两个前门：WSS 给浏览器，TCP 给 agent~~ **3.0 已作废** | 两边都说自己的标准协议 | 中 |
+| D5 | ~~浏览器默认，裸 VNC 按设备 opt-in~~ **3.0 已作废** | 避免默认铺端口，降低暴露面 | 低 |
+| D6 | ~~裸 VNC 一设备一端口~~ **3.0 已作废** | RFB 没有 Host/SNI，无法单端口路由 | 中 |
 | D7 | L7 握手网关为核心，L4 direct 为模式 | 密码不下发、token 可吊销，但仍只碰握手 | 中 |
-| D8 | AI 接口 = MCP `list_devices` + 裸 VNC | agent 用自己的 VNC 客户端，不学新 API | 中 |
-| D9 | 设备密码存 hub，设备 token 8 字符 | 浏览器免密、可吊销；受 VNC auth 限制 | 中 |
+| D8 | AI 接口 = MCP `list_devices` + `ws_url` | agent 用自己的 VNC 客户端，不学新 API | 中 |
+| D9 | ~~设备密码存 hub，设备 token 8 字符~~ **3.0 已作废** | 浏览器免密、可吊销；受 VNC auth 限制 | 中 |
 | D10 | 单二进制、YAML/JSONL、React 前端、无 DB | 运行时仍是一个二进制；前端只在构建时要 Node | 中 |
-| D11 | Docker 首选 host network | mDNS/源 IP/动态端口；bridge 有硬限制 | 低 |
+| D11 | Docker 首选 host network | 只为日志里的真实客户端 IP；端口只有一个，bridge 不再缺功能 | 低 |
 | D12 | v2 从 main 切普通分支，删 v1 目录 | 保留历史；不做 orphan | 低 |
 | D13 | macOS + Android 先打通 | 覆盖 Apple RFB 变体和最难移动端 | 低 |
 | D14 | v0.1 不做缩略图/录像/OCR | 这些会把 hub 变成 RFB 客户端 | 中 |
 | D15 | macOS 用账户认证（Apple DH type 30） | legacy VNC 密码没有用户身份，会落到 loginwindow，画面冻结且无法输入 | 中 |
+
+标了「3.0 已作废」的条目只在历史语境里成立：3.0 之后每台设备都是 `/ws/vnc/<id>`，hub 只监听
+一个 HTTP 端口，管理员 token 是唯一密钥。
 
 ### D1 — 自托管，不做公网转发/中继
 
@@ -99,6 +106,9 @@
 
 ### D4 — 两个前门：WSS 给浏览器，TCP 给 agent
 
+> **已作废（3.0）**：agent 也走 WSS —— 同一个 `/ws/vnc/<id>`。只有 VNC 客户端不支持 WebSocket
+> 时，才在 agent 本机用 `websocat` 桥一个本地 TCP 端口。
+
 - **决定**：浏览器走 HTTPS/WSS；agent 走 RFB/TCP。
 - **为什么**：浏览器必须 WebSocket；原生 VNC 客户端必须 TCP；把 RFB 包成 HTTPS 只有 noVNC 这类客户端支持，不是通用做法。
 - **放弃的方案**：只做 WSS（agent 只能走 noVNC/CLI）；只做 TCP（没有网页）；HTTP API 截图（重）。
@@ -107,6 +117,9 @@
 
 ### D5 — 浏览器默认，裸 VNC 按设备 opt-in
 
+> **已作废（3.0）**：没有裸 VNC 入口了。所有设备（浏览器和 agent）都走 hub 的 `/ws/vnc/<id>`，
+> 端口只开一个，token 只有一个。
+
 - **决定**：默认只开 443（浏览器）；裸 VNC 端口按设备显式开启。
 - **为什么**：多数人只需要网页；避免默认铺 100 个端口；减少暴露面；Docker bridge 也更容易。
 - **放弃的方案**：每台设备默认分配端口；完全不分配（agent 只能走 CLI/适配器）。
@@ -114,6 +127,9 @@
 - **可逆性**：低；配置开关。
 
 ### D6 — 裸 VNC 一设备一端口
+
+> **已作废（3.0）**：不需要裸 VNC 入口。设备按 URL path 区分（`/ws/vnc/<id>`），hub 只有一个
+> 监听端口；agent 用支持 WebSocket 的 VNC 客户端，或者在本机用 `websocat` 桥一个本地 TCP 端口。
 
 - **决定**：raw VNC 每台设备一个 hub 端口（5901–5999）。
 - **为什么**：RFB 没有 `Host`/SNI，所有 server 开场白相同，无法在握手前路由；端口是最透明的区分方式。
@@ -131,6 +147,9 @@
 
 ### D8 — AI 接口 = MCP `list_devices` + 裸 VNC
 
+> **部分作废（3.0）**：`list_devices` 还在，但返回的是 `ws_url`（`.../ws/vnc/<id>`），不再是
+> `vnc_host/port/token`。agent 用 WebSocket VNC 客户端连它，或者本机 `websocat` 桥一下。
+
 - **决定**：MCP 只暴露 `list_devices`，返回 `vnc_host/port/token`；不做 `screenshot/click`；CLI 后置为可选。
 - **为什么**：裸 VNC 是 agent 的通用接口；不做帧协议/状态机；agent 用现成 VNC 客户端。
 - **放弃的方案**：完整 MCP 动作工具、`frame_id`、控制权租约；只做 CLI；完全不做 MCP。
@@ -138,6 +157,9 @@
 - **可逆性**：中；加可选适配器，不动核心。
 
 ### D9 — 设备密码存 hub，设备 token 8 字符
+
+> **部分作废（3.0）**：per-device token 已移除，管理员 token 是唯一密钥。hub 仍在 `gateway`
+> 模式存设备密码（配置文件 0600），这部分没变。
 
 - **决定**：hub 存设备密码（v0.1 配置文件 0600，后续钥匙串）；每设备 8 字符 token；token 可轮换。
 - **为什么**：浏览器免密；密码只存一处；token 吊销即可踢人；VNC auth 只支持 8 字节，token 也只能 8 字符。
@@ -154,6 +176,9 @@
 - **可逆性**：中；前端是独立目录，后端 API 和 WebSocket 不变；可以换框架而不动 Go。
 
 ### D11 — Docker 首选 host network
+
+> **已作废（3.0）**：hub 只有一个 HTTP 端口，bridge 和 host 不再有端口段上的差别，选择标准只剩
+> 「是否要保留真实客户端 IP」。bridge 的代价只是日志里看到 NAT 地址，功能不缺。
 
 - **决定**：Docker 首选 `--network host`；bridge + 端口段作为受限方案；macOS 首选原生二进制。
 - **为什么**：host 保留 mDNS/源 IP/动态端口；bridge 端口段固定、mDNS 不通、源 IP 被 NAT；Docker Desktop host networking 有限。
@@ -280,6 +305,9 @@ hub 只做目录，不碰流量。配置里 `mode: direct` 即可。
 
 ### 2.2 为什么 raw VNC 需要「一设备一端口」
 
+> **已作废（3.0）**：3.0 不再提供 raw VNC 入口，所以这个路由问题不存在了 —— 每台设备是
+> `/ws/vnc/<id>`，WebSocket 握手里有 URL path。下面的分析只解释当年为什么要一设备一端口。
+
 RFB 没有 `Host` 头、没有 SNI、没有 URL 路由；所有 server 的开场白都是 `RFB 003.008\n`。所以在一个 TCP 端口上，hub 无法在握手前知道客户端想连哪台设备。可选方案：
 
 1. **一设备一端口**（`5901`, `5902`, ...）——最简单，仍然是裸 VNC。推荐。
@@ -310,6 +338,9 @@ RFB 没有 `Host` 头、没有 SNI、没有 URL 路由；所有 server 的开场
 这不是「单入口」和「不自建公网转发」的矛盾：**单入口是拓扑收敛；网络怎么进来，是用户网络层的事，不是 hub 的功能。**
 
 ### 2.4 Docker 与端口：100 个端口行不行？
+
+> **已作废（3.0）**：3.0 只监听一个 HTTP 端口，bridge 网络下发布 `8787:8787` 就够，没有端口段。
+> host 与 bridge 的差别只剩「是否保留真实客户端 IP」。下面的端口段分析保留作历史记录。
 
 **行。** 一个进程监听 100 个端口没有任何问题：Go 里就是 100 次 `net.Listen`，每个 listener 一个 goroutine，内存和 fd 开销都很小。端口本身不是稀缺资源。
 
@@ -477,6 +508,10 @@ agent 的 VNC 客户端                              hub / 设备
 ---
 
 ## 6. 用户流程
+
+> **已作废（3.0）**：流程里「分配一个 hub 端口 + 一个 per-device token」「复制 `vnc://hub:5901`」
+> 已经不成立。现在是：添加设备只存 `host:port` 和密码，hub 返回 `ws_url`
+> （`.../ws/vnc/<id>`），浏览器和 agent 都用它 + 管理员 token。
 
 ### 加一台设备
 
@@ -681,3 +716,10 @@ docs/
 - D12：实际用普通 `v2` 分支（从 main 切出）并删除 v1 目录，没有用 orphan；历史保留，树是干净的。
 - D7：`direct` 是 catalog-only；盲转发是 `l4`，两者分开。
 - D9：v0.1 先用配置文件存密码，钥匙串后置；这是有意的临时简化。
+
+### 3.0 的偏差（2026-11-26）
+
+- **单端口取代端口段。** hub 只监听 `ABACAD_LISTEN` 一个 HTTP 端口；所有设备（浏览器和
+  agent）都走 `/ws/vnc/<id>`，管理员 token 是唯一密钥。D5、D6、D11 和 §2.2、§2.4 因此作废。
+- **per-device token 移除。** 旧的设备 token 字段在升级时被丢弃，不再接受。
+- `l4` 和 `direct` 保留：前者仍是盲转发（客户端回答设备自己的密码），后者仍是只做目录。

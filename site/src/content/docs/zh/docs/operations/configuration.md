@@ -53,7 +53,7 @@ devices:
 | `devices[].id` | `/ws/vnc/<id>` 的路径段。从名称生成；必须唯一。 |
 | `devices[].name` | 设备栏里的显示名。 |
 | `devices[].host` | **hub** 访问设备用的地址：局域网 IP、VPN 地址、DNS 名，或转发到本地的端口。 |
-| `devices[].port` | VNC 端口，通常 5900。 |
+| `devices[].port` | 设备上的 VNC 端口，通常 5900（TigerVNC 的 `:2` 显示是 5902，iOS VNC Bridge 是 5970）。hub 出站去连它；hub 从不发布它。 |
 | `devices[].auth` | `vnc` 用 VNC 密码；`ard` 用 macOS 账户（RFB type 30）。 |
 | `devices[].username` | macOS 短名。`auth: ard` 时必填。 |
 | `devices[].password` | VNC 密码或账户密码。`l4` 模式下如果不想保存可以不填。 |
@@ -68,6 +68,9 @@ devices:
 | `gateway` | 终止 RFB 握手，替设备登录，然后传字节。 | 无；hub 处理。 |
 | `l4` | 通过 WebSocket 做盲 TCP 转发。 | 客户端回答设备自己的 VNC 密码。 |
 | `direct` | 只做目录，没有 WebSocket。 | 客户端自己连 `host:port`。 |
+
+模式改变的是 WebSocket 里面怎么处理，不是你要发布什么：不管哪种模式，hub 都只监听那一个
+HTTP 端口。
 
 ### 认证类型
 

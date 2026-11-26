@@ -4,8 +4,10 @@
 #   docker compose -f compose.bridge.yaml up -d
 #
 # Everything — the web UI, the API and every device's VNC WebSocket — goes
-# through the one HTTP port. The trade-off against host networking is that the
-# hub sees Docker's NAT address instead of the real client IP.
+# through the one HTTP port. This is the whole port mapping: there is no
+# 5901-5999 range, because every device is a path (/ws/vnc/<id>) on 8787.
+# The trade-off against host networking is that the hub sees Docker's NAT
+# address instead of the real client IP.
 services:
   abacad:
     image: ghcr.io/abacad-ai/abacad:latest

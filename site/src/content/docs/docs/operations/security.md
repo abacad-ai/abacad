@@ -24,7 +24,8 @@ That is why the network boundary matters more than any single feature.
 - **Bind to the interface you mean.** `--listen 127.0.0.1:8787` behind a local proxy, or a
   private LAN address. The default `0.0.0.0:8787` listens on every interface.
 - **Restrict each device's VNC port to the hub's IP.** The hub is the only machine that
-  needs to reach 5900 (or 5901, 5970, and so on). Do not open those ports to the internet.
+  needs to reach 5900 (or 5902 for TigerVNC's `:2` display, 5970 for the iOS VNC Bridge).
+  Do not open those ports to the internet, and do not forward them to the hub host.
 - **Use TLS for the browser.** Clipboard access in most browsers requires a secure context,
   and the admin token should not cross a network you do not control in clear text.
 - **Keep the hub patched.** It is one binary with a small dependency surface; updating is

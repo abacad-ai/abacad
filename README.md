@@ -215,6 +215,25 @@ Linux: it keeps real client IPs in the hub's logs. The compose file in this repo
 docker compose up -d
 ```
 
+### Ports
+
+One port in. The console, the API, MCP and every device's VNC stream are served
+from `ABACAD_LISTEN` (`8787` by default), so there is no port pool and no port
+range to publish — device two and device fifty ride the same port, at
+`/ws/vnc/<id>`:
+
+```yaml
+# compose, bridge networking: the whole mapping. there is no 5901-5999 to add
+ports:
+  - "8787:8787"
+```
+
+The hub dials each device's own VNC port **outbound** — `5900` by default,
+`5902` for TigerVNC's `:2` display, `5970` for the iOS VNC Bridge. Those ports
+must be reachable from the hub and should be firewalled to the hub's IP; they
+are never published on the hub host. A `direct` device is the exception: the hub
+carries no traffic for it and the client connects to the device itself.
+
 ### Configuration
 
 The image keeps state in `/config` on a volume and takes deployment settings

@@ -51,8 +51,9 @@ sudo systemctl restart tigervncserver@:2.service   # Linux
 - **页面能开但会话失败：** 看浏览器控制台的 WebSocket 错误。不转发 `Upgrade`/`Connection`
   的代理会破坏 `/ws`。
 - **剪贴板不能用：** 大多数浏览器要求 HTTPS 才能访问剪贴板。给 hub 配 TLS。
-- **hub 不可达：** 检查 `--listen` 和端口映射。Docker 在 Linux 上建议 host 网络；bridge
-  网络要发布 `8787`。
+- **hub 不可达：** 检查 `--listen`，以及发布的端口和它一致。Docker 在 Linux 上建议 host
+  网络；bridge 网络只需要发布 `8787` —— 这一个端口承载控制台、API、MCP 和所有设备
+  WebSocket。没有按设备分配的端口要发布或转发。
 
 ## 反向代理
 

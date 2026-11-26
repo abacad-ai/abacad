@@ -62,8 +62,10 @@ tab that reconnects in a loop.
   A proxy that does not forward `Upgrade`/`Connection` will break `/ws`.
 - **Clipboard does not work:** most browsers require HTTPS for clipboard access. Put the
   hub behind TLS.
-- **The hub is unreachable:** check `--listen` and the port mapping. With Docker, host
-  networking is recommended on Linux; with bridge networking, publish `8787`.
+- **The hub is unreachable:** check `--listen` and that the published port matches it. With
+  Docker, host networking is recommended on Linux; with bridge networking, publish `8787` —
+  that one port carries the console, API, MCP and every device WebSocket. There is no
+  per-device port to publish or forward.
 
 ## A proxy in front
 

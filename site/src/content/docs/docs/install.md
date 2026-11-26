@@ -29,6 +29,22 @@ file in the repository is the same setup:
 docker compose up -d
 ```
 
+### Ports
+
+The hub publishes one port. Every device is a path on it — `/ws/vnc/<id>` — so adding
+devices never adds ports, and no compose file needs a `5901-5999` range.
+
+- **Inbound, on the hub host:** `8787`, or `443` if a reverse proxy terminates TLS. Nothing
+  else. In bridge networking that is the whole mapping: `-p 8787:8787`.
+- **Outbound, from the hub:** each device's own VNC port — `5900` by default, `5902` for
+  TigerVNC's `:2` display, `5970` for the iOS VNC Bridge. They must be reachable from the
+  hub and should be allowed only from the hub's IP. They are never published on the hub.
+- **`direct` mode** is the one exception: the hub carries no traffic for that device and
+  the client dials its `host:port` itself.
+
+An agent whose VNC client speaks only TCP bridges on its own machine (`websocat`), not on
+the hub; the hub is still one port.
+
 ### Environment
 
 The image keeps state in `/config` on a volume and takes deployment settings from the
