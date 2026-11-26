@@ -41,6 +41,8 @@
   --shadow-lift: 0 1px 2px rgb(21 23 26 / 0.05), 0 10px 24px -18px rgb(21 23 26 / 0.28);
   --shadow-float: 0 1px 2px rgb(21 23 26 / 0.04), 0 24px 48px -28px rgb(21 23 26 / 0.34);
 
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+
   --max: 1120px;
   --gutter: 24px;
 }
@@ -63,7 +65,6 @@ body {
   font-family: var(--font-sans);
   font-size: 16px;
   line-height: 1.6;
-  letter-spacing: -0.011em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -180,12 +181,16 @@ svg {
   font-size: 13px;
   font-weight: 500;
   line-height: 1;
-  letter-spacing: -0.01em;
   white-space: nowrap;
   transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease;
+    background-color 120ms var(--ease),
+    border-color 120ms var(--ease),
+    color 120ms var(--ease),
+    transform 120ms var(--ease);
+}
+
+.btn:active {
+  transform: scale(0.98);
 }
 
 .btn-sm {
@@ -217,8 +222,8 @@ svg {
 .text-link {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 26px;
+  gap: 4px;
+  margin-top: 24px;
   color: var(--brand-ink);
   font-size: 13px;
   font-weight: 500;
