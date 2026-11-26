@@ -1,12 +1,14 @@
-import { useMemo, type ReactNode, type Ref } from "react"
+import { useEffect, useMemo, useRef, type ReactNode, type Ref } from "react"
 
+import { attachClipboardPanel } from "@/lib/novnc-clipboard"
 import type { Device } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 // The screen is noVNC's own application, vendored under /novnc and loaded in an
 // iframe — the same split Proxmox VE uses. Its control bar already carries the
 // keyboard, clipboard, fullscreen, scaling and reconnect controls, so the hub
-// only hands it the WebSocket path and gets out of the way.
+// only hands it the WebSocket path and gets out of the way. The clipboard is
+// the one corner that needs a nudge; see lib/novnc-clipboard.ts.
 export function vncAppUrl(id: string, nonce = 0) {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
   const params = new URLSearchParams({
@@ -42,6 +44,11 @@ export function VncFrame({
   children?: ReactNode
 }) {
   const src = useMemo(() => vncAppUrl(device.id, nonce), [device.id, nonce])
+  // The noVNC application is a page of ours (same origin), so its clipboard
+  // panel can be kept sending from here; the vendored tree stays untouched.
+  // Re-attach on reload, detach when the pane goes away.
+  const detach = useRef<(() => void) | null>(null)
+  useEffect(() => () => detach.current?.(), [])
 
   return (
     <div className={cn("relative h-full w-full bg-screen", className)}>
@@ -51,6 +58,10 @@ export function VncFrame({
         title={`${device.name} screen`}
         className="absolute inset-0 h-full w-full border-0"
         allow="clipboard-read; clipboard-write; fullscreen"
+        onLoad={(event) => {
+          detach.current?.()
+          detach.current = attachClipboardPanel(event.currentTarget)
+        }}
       />
       {children}
     </div>
