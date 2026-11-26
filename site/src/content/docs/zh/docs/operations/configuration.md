@@ -73,7 +73,7 @@ devices:
 
 | auth | RFB 安全类型 | 用于 |
 | --- | --- | --- |
-| `vnc` | Type 2（经典 VNC 密码） | Windows、Linux、Android、iosvnc、旧版 macOS。 |
+| `vnc` | Type 2（经典 VNC 密码） | Windows、Linux、Android、iOS VNC Bridge、旧版 macOS。 |
 | `ard` | Type 30（Apple DH） | 使用真实账户的 macOS，附着到 console 会话。 |
 
 ## 环境变量和参数

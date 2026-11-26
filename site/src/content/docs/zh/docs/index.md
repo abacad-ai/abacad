@@ -12,7 +12,7 @@ agent 用同一个管理员 token 打开同一个画面。设备上不用装任�
   Linux x11vnc/wayvnc ──┤
   Windows TigerVNC ─────┼── RFB ──▶  abacad hub  ── HTTPS/WSS ──▶ 浏览器 (noVNC)
   Android droidVNC-NG ──┤              │
-  iOS/iPadOS 经 iosvnc ─┘              └── 同一个 WSS ──▶ agent 的 VNC 客户端
+  iOS/iPadOS 经 Mac 应用 ─┘            └── 同一个 WSS ──▶ agent 的 VNC 客户端
 ```
 
 <dl class="glance">
@@ -94,7 +94,7 @@ abacad **永远不会主动连接设备**。没有定时检查、没有健康检
   </a>
   <a class="platform-card" href="/zh/docs/devices/ios/">
     <strong>iOS 与 iPadOS</strong>
-    <span>由已配对的 Mac 运行 iosvnc 桥，不需要越狱</span>
+    <span>由已配对的 Mac 运行 iOS VNC Bridge，不需要越狱</span>
   </a>
 </div>
 
