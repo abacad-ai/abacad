@@ -345,7 +345,7 @@ export default function Dashboard({ view = "devices" }: { view?: "devices" | "sk
           device={selected}
           frameRef={frameRef}
         >
-          {selected.platform === "android" && <DeviceKeys frame={frameRef} />}
+          <DeviceKeys frame={frameRef} platform={selected.platform} />
         </VncFrame>
       )
   } else if (devices.length === 0) {

@@ -91,7 +91,7 @@ export default function Viewer() {
   return (
     <div className="relative h-dvh w-full">
       <VncFrame device={device} frameRef={frameRef}>
-        {device.platform === "android" && <DeviceKeys frame={frameRef} />}
+        <DeviceKeys frame={frameRef} platform={device.platform} />
       </VncFrame>
       <Button
         asChild

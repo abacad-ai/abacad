@@ -26,7 +26,8 @@ Full setup, requirements and troubleshooting live in the app's own docs:
 - **Host:** the Mac's LAN address, shown in the app
 - **Port:** `5970`
 - **Sign-in → VNC password:** the password from the app
-- **Platform:** iOS (or iPadOS)
+- **Platform:** iOS (or iPadOS) — this is also what puts the phone's button bar
+  over the console: Home, Lock and the volume keys.
 - **Mode:** Gateway
 
 Agents reach it through the hub's `/ws/vnc/<id>` like any other device.
@@ -34,6 +35,10 @@ Agents reach it through the hub's `/ws/vnc/<id>` like any other device.
 ## Limits
 
 - Tap, drag and swipe; no keyboard, no pinch.
+- Home, Lock and the volume keys work from the console's button bar, and from
+  the same key chords in any other VNC client; the bridge's
+  [button table](https://github.com/abacad-ai/ios-vnc-bridge/blob/main/docs/ios.md#buttons)
+  is the reference. There is no Back button on iOS: back is a left-edge swipe.
 - Rotation is not handled yet — start the device in the orientation you want.
 - The device must stay reachable; the app rebuilds the session when the link
   returns and disconnects viewers in the meantime.
