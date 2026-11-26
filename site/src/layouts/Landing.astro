@@ -2,8 +2,8 @@
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 
-import { Code } from "astro:components";
 
+import AgentLogos from "../components/landing/AgentLogos.astro";
 import Brand from "../components/landing/Brand.astro";
 import type { LandingCopy } from "../content/landing";
 import "../styles/tokens.css";
@@ -14,6 +14,7 @@ interface Props {
 }
 
 const { copy } = Astro.props;
+const devices = copy.shelf.devices;
 const isZh = copy.lang === "zh";
 const origin = "https://abacad.ai";
 const canonical = new URL(isZh ? "/zh/" : "/", origin).href;
@@ -113,134 +114,146 @@ const softwareSchema = {
 
     <main id="main">
       <section class="hero">
-        <div class="container">
-          <p class="kicker">{copy.hero.kicker}</p>
-          <h1>{copy.hero.title[0]}<br />{copy.hero.title[1]}</h1>
-          <p class="hero-lead" set:html={copy.hero.lead} />
+        <div class="hero-atmos" aria-hidden="true"></div>
+        <div class="container hero-grid">
+          <p class="hero-eyebrow"><span class="live-dot" aria-hidden="true"></span>{copy.hero.eyebrow}</p>
+          <h1>
+            <span class="h1-line">{copy.hero.title[0]}</span>{" "}
+            <span class="h1-line h1-accent">{copy.hero.title[1]}</span>
+          </h1>
+          <div class="hero-side">
+            <p class="hero-lead">{copy.hero.lead}</p>
+            <div class="hero-actions">
+              <a class="btn btn-ink" href={copy.hero.primaryHref}>{copy.hero.primary}</a>
+              <a class="btn btn-ghost" href={copy.hero.secondaryHref}>{copy.hero.secondary}</a>
+            </div>
+          </div>
+        </div>
+      </section>
 
-          <div class="hero-actions">
-            <a class="btn btn-ink" href={copy.hero.primaryHref}>{copy.hero.primary}</a>
-            <a class="btn btn-ghost" href={copy.hero.secondaryHref}>{copy.hero.secondary}</a>
+      <section class="platforms" aria-labelledby="platforms-title">
+        <div class="container">
+          <div class="section-head">
+            <div>
+              <span class="beat" aria-hidden="true">01</span>
+              <h2 id="platforms-title">{copy.platforms.title}</h2>
+            </div>
+            <p class="section-note">{copy.platforms.note}</p>
           </div>
 
-          <p class="hero-note">{copy.hero.note}</p>
+          <div class="showcase" data-carousel>
+            <div class="showcase-nav">
+              <div class="showcase-tabs" role="tablist" aria-label={copy.shelf.railLabel}>
+                {devices.map((device, index) => (
+                  <button
+                    class:list={["showcase-tab", { active: index === 0 }]}
+                    type="button"
+                    role="tab"
+                    id={`tab-${device.id}`}
+                    aria-controls={`screen-${device.id}`}
+                    aria-selected={index === 0 ? "true" : "false"}
+                    tabindex={index === 0 ? 0 : -1}
+                    data-tab
+                    data-index={String(index)}
+                  >
+                    <span class="tab-index" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+                    <span>{device.os}</span>
+                  </button>
+                ))}
+              </div>
 
-          <div class="shelf">
-            <div class="shelf-head">
-              <span class="shelf-live"><i class="dot live"></i>{copy.shelf.live}</span>
-              <span class="shelf-meta">{copy.shelf.meta}</span>
-            </div>
-
-            <div class="shelf-grid">
-              <figure class="shot phone">
-                <figcaption>
-                  <span class="shot-os"><i class="dot live"></i>{copy.shelf.android.os}</span>
-                  <span class="shot-name">{copy.shelf.android.name}</span>
-                </figcaption>
-                <img
-                  src={copy.shelf.android.src}
-                  width={copy.shelf.android.width}
-                  height={copy.shelf.android.height}
-                  alt={copy.shelf.android.alt}
-                  fetchpriority="high"
-                />
-              </figure>
-
-              <div class="shot-stack">
-                <figure class="shot">
-                  <figcaption>
-                    <span class="shot-os"><i class="dot live"></i>{copy.shelf.windows.os}</span>
-                    <span class="shot-name">{copy.shelf.windows.name}</span>
-                  </figcaption>
-                  <img
-                    src={copy.shelf.windows.src}
-                    width={copy.shelf.windows.width}
-                    height={copy.shelf.windows.height}
-                    alt={copy.shelf.windows.alt}
-                    fetchpriority="high"
-                  />
-                </figure>
-
-                <figure class="shot">
-                  <figcaption>
-                    <span class="shot-os"><i class="dot live"></i>{copy.shelf.debian.os}</span>
-                    <span class="shot-name">{copy.shelf.debian.name}</span>
-                  </figcaption>
-                  <img
-                    src={copy.shelf.debian.src}
-                    width={copy.shelf.debian.width}
-                    height={copy.shelf.debian.height}
-                    alt={copy.shelf.debian.alt}
-                  />
-                </figure>
+              <div class="showcase-controls">
+                <button
+                  class="showcase-toggle"
+                  type="button"
+                  data-toggle
+                  data-pause={copy.shelf.pause}
+                  data-play={copy.shelf.play}
+                  aria-label={copy.shelf.pause}
+                >
+                  <span data-toggle-label>{copy.shelf.pause}</span>
+                </button>
               </div>
             </div>
 
-            <div class="shelf-foot">
-              <span>{copy.shelf.caption}</span>
-              <span>{copy.shelf.foot}</span>
+            <div
+              class="showcase-stage"
+              data-stage
+              role="group"
+              aria-roledescription="carousel"
+              aria-label={copy.shelf.stageLabel}
+              tabindex="0"
+            >
+              <div class="showcase-viewport" data-stage-viewport>
+                {devices.map((device, index) => (
+                  <figure
+                    class:list={["slide", device.kind, { active: index === 0 }]}
+                    id={`screen-${device.id}`}
+                    role="tabpanel"
+                    aria-labelledby={`tab-${device.id}`}
+                    data-slide
+                    aria-hidden={index === 0 ? "false" : "true"}
+                  >
+                    <img
+                      src={device.src}
+                      width={device.width}
+                      height={device.height}
+                      alt={device.alt}
+                      loading={index === 0 ? "eager" : "lazy"}
+                      fetchpriority={index === 0 ? "high" : "auto"}
+                      decoding="async"
+                    />
+                    <figcaption class="slide-caption" aria-hidden="true">
+                      <span class="live-dot"></span>{device.name}
+                    </figcaption>
+                  </figure>
+                ))}
+
+                <button class="stage-arrow prev" type="button" aria-label={copy.shelf.prev} data-prev>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M15 18l-6-6 6-6"></path>
+                  </svg>
+                </button>
+                <button class="stage-arrow next" type="button" aria-label={copy.shelf.next} data-next>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M9 6l6 6-6 6"></path>
+                  </svg>
+                </button>
+              </div>
             </div>
+
           </div>
         </div>
       </section>
 
-      <section class="claims" aria-label="Why abacad">
-        <div class="container claim-grid">
-          {copy.claims.map((claim, index) => (
-            <article class="claim">
-              <span class="claim-index">{String(index + 1).padStart(2, "0")}</span>
-              <h2>{claim.title}</h2>
-              <p>{claim.body}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section class="works" aria-label={copy.works.label}>
-        <div class="container works-inner">
-          <span class="works-label">{copy.works.label}</span>
-          <ul class="works-list">
-            {copy.works.items.map((item) => <li>{item}</li>)}
-          </ul>
-        </div>
-      </section>
-
-      <section class="agents" id="agents">
-        <div class="container agent-grid">
-          <div class="agent-copy">
-            <p class="kicker">{copy.agents.kicker}</p>
-            <h2>{copy.agents.title}</h2>
-            <p class="agent-lead" set:html={copy.agents.lead} />
-            <p class="agent-note">{copy.agents.note}</p>
-            <a class="text-link" href={copy.agents.ctaHref}>{copy.agents.cta}</a>
+      <section class="agents" id="agents" aria-labelledby="agents-title">
+        <div class="container agents-grid">
+          <div class="agents-copy">
+            <span class="beat" aria-hidden="true">02</span>
+            <h2 id="agents-title">{copy.agents.title}</h2>
+            <p class="section-note">{copy.agents.lead}</p>
+            <a class="text-link" href={copy.agents.ctaHref}>{copy.agents.cta} →</a>
           </div>
-
-          <div class="code-card">
-            <div class="code-head">
-              <span>{copy.agents.codeTitle}</span>
-              <button
-                class="copy"
-                type="button"
-                data-copy={copy.agents.code}
-                data-copied={copy.agents.copied}
-                aria-label={copy.agents.copy}
-              >
-                <span>{copy.agents.copy}</span>
-              </button>
-            </div>
-            <Code code={copy.agents.code} lang="json" theme="github-dark" />
+          <div class="agents-wall">
+            <AgentLogos more={copy.agents.more} />
+            <p class="legal">{copy.agents.legal}</p>
           </div>
         </div>
       </section>
 
-      <section class="final">
-        <div class="container final-inner">
-          <h2>{copy.final.title}</h2>
-          <p class="final-lead">{copy.final.lead}</p>
+      <section class="final" aria-labelledby="final-title">
+        <div class="container final-grid">
+          <div class="final-copy">
+            <span class="beat" aria-hidden="true">03</span>
+            <h2 id="final-title">{copy.final.title}</h2>
+            <p class="section-note">{copy.final.lead}</p>
+            <a class="text-link" href={copy.final.docsHref}>{copy.final.docs} →</a>
+          </div>
 
           <div class="command">
             <div class="command-head">
-              <span>{copy.final.commandLabel}</span>
+              <span class="command-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="command-label">{copy.final.commandLabel}</span>
               <button
                 class="copy"
                 type="button"
@@ -251,10 +264,8 @@ const softwareSchema = {
                 <span>{copy.final.copy}</span>
               </button>
             </div>
-            <pre><code>{copy.final.command}</code></pre>
+            <pre><span class="prompt" aria-hidden="true">$</span><code>{copy.final.command}</code></pre>
           </div>
-
-          <a class="text-link final-link" href={copy.final.docsHref}>{copy.final.docs} →</a>
         </div>
       </section>
     </main>
@@ -312,6 +323,188 @@ const softwareSchema = {
           }, 1600);
         });
       });
+
+      const shelf = document.querySelector<HTMLElement>("[data-carousel]");
+
+      if (shelf) {
+        const slides = Array.from(shelf.querySelectorAll<HTMLElement>("[data-slide]"));
+        const tabs = Array.from(shelf.querySelectorAll<HTMLButtonElement>("[data-tab]"));
+        const stage = shelf.querySelector<HTMLElement>("[data-stage]");
+        const viewport = shelf.querySelector<HTMLElement>("[data-stage-viewport]");
+        const prev = shelf.querySelector<HTMLButtonElement>("[data-prev]");
+        const next = shelf.querySelector<HTMLButtonElement>("[data-next]");
+        const toggle = shelf.querySelector<HTMLButtonElement>("[data-toggle]");
+        const toggleLabel = shelf.querySelector<HTMLElement>("[data-toggle-label]");
+
+        if (slides.length > 0) {
+          const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+          const narrow = window.matchMedia("(max-width: 760px)").matches;
+          const autoPaused = reducedMotion || narrow;
+          const period = 6500;
+          let index = 0;
+          let timer: number | undefined;
+          let userPaused = false;
+          let hovering = false;
+          let focusWithin = false;
+
+          const isPaused = () =>
+            userPaused || hovering || focusWithin || document.hidden || autoPaused;
+
+          const clearTimer = () => {
+            if (timer !== undefined) {
+              window.clearTimeout(timer);
+              timer = undefined;
+            }
+            delete shelf.dataset.running;
+          };
+
+          const schedule = () => {
+            clearTimer();
+            if (isPaused()) return;
+            timer = window.setTimeout(() => setActive(index + 1), period);
+            delete shelf.dataset.running;
+            void shelf.offsetWidth;
+            shelf.dataset.running = "true";
+          };
+
+          const syncTimer = () => {
+            if (isPaused()) {
+              clearTimer();
+              return;
+            }
+            schedule();
+          };
+
+          const setUserPaused = (value: boolean) => {
+            userPaused = value;
+            const label = value ? toggle?.dataset.play ?? "" : toggle?.dataset.pause ?? "";
+            if (toggleLabel) toggleLabel.textContent = label;
+            toggle?.setAttribute("aria-label", label);
+          };
+
+          function setActive(nextIndex: number, moveFocus = false) {
+            index = (nextIndex + slides.length) % slides.length;
+
+            slides.forEach((element, i) => {
+              const active = i === index;
+              element.classList.toggle("active", active);
+              element.setAttribute("aria-hidden", active ? "false" : "true");
+            });
+
+            tabs.forEach((tab, i) => {
+              const active = i === index;
+              tab.classList.toggle("active", active);
+              tab.setAttribute("aria-selected", active ? "true" : "false");
+              tab.tabIndex = active ? 0 : -1;
+            });
+
+            const rail = tabs[index]?.parentElement;
+            const activeTab = tabs[index];
+            if (rail && activeTab && rail.scrollWidth > rail.clientWidth) {
+              const tabBox = activeTab.getBoundingClientRect();
+              const railBox = rail.getBoundingClientRect();
+              if (tabBox.left < railBox.left || tabBox.right > railBox.right) {
+                rail.scrollBy({
+                  left: tabBox.left - railBox.left - 8,
+                  behavior: reducedMotion ? "auto" : "smooth",
+                });
+              }
+            }
+
+            if (moveFocus) tabs[index]?.focus();
+
+            schedule();
+          }
+
+          toggle?.addEventListener("click", () => {
+            focusWithin = false;
+            setUserPaused(!userPaused);
+            syncTimer();
+          });
+
+          prev?.addEventListener("click", (event) => {
+            event.stopPropagation();
+            focusWithin = false;
+            setUserPaused(true);
+            setActive(index - 1);
+          });
+
+          next?.addEventListener("click", (event) => {
+            event.stopPropagation();
+            focusWithin = false;
+            setUserPaused(true);
+            setActive(index + 1);
+          });
+
+          viewport?.addEventListener("click", (event) => {
+            if ((event.target as HTMLElement).closest("button")) return;
+            focusWithin = false;
+            setUserPaused(true);
+            setActive(index + 1);
+          });
+
+          tabs.forEach((tab, i) => {
+            tab.addEventListener("click", () => {
+              focusWithin = false;
+              setUserPaused(true);
+              setActive(i);
+            });
+
+            tab.addEventListener("keydown", (event) => {
+              let target: number | undefined;
+              if (event.key === "ArrowRight") target = i + 1;
+              else if (event.key === "ArrowLeft") target = i - 1;
+              else if (event.key === "Home") target = 0;
+              else if (event.key === "End") target = tabs.length - 1;
+              if (target === undefined) return;
+              event.preventDefault();
+              setUserPaused(true);
+              setActive(target, true);
+            });
+          });
+
+          stage?.addEventListener("keydown", (event) => {
+            if (event.key === "ArrowRight") {
+              event.preventDefault();
+              setUserPaused(true);
+              setActive(index + 1);
+            } else if (event.key === "ArrowLeft") {
+              event.preventDefault();
+              setUserPaused(true);
+              setActive(index - 1);
+            }
+          });
+
+          shelf.addEventListener("pointerenter", () => {
+            hovering = true;
+            syncTimer();
+          });
+
+          shelf.addEventListener("pointerleave", () => {
+            hovering = false;
+            syncTimer();
+          });
+
+          shelf.addEventListener("focusin", () => {
+            focusWithin = true;
+            syncTimer();
+          });
+
+          shelf.addEventListener("focusout", (event) => {
+            if (shelf.contains(event.relatedTarget as Node | null)) return;
+            focusWithin = false;
+            syncTimer();
+          });
+
+          document.addEventListener("visibilitychange", syncTimer);
+
+          if (autoPaused) {
+            toggle?.setAttribute("hidden", "");
+          }
+
+          setActive(0);
+        }
+      }
     </script>
   </body>
 </html>

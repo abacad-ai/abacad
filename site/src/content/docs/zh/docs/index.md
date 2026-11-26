@@ -73,7 +73,31 @@ abacad **永远不会主动连接设备**。没有定时检查、没有健康检
 
 ## 平台
 
-每篇平台指南都覆盖 VNC 服务、凭据、防火墙，以及最容易卡住的地方。
+每篇平台指南都覆盖 VNC 服务、凭据、防火墙，以及最容易卡住的地方。下面这五块屏幕都来自
+同一个 hub、同一个浏览器控制台：
+
+<div class="platform-gallery">
+  <a class="platform-gallery-item" href="/zh/docs/devices/macos/">
+    <img src="/screens/live-macos-thumb.webp" alt="通过 VNC 截取的 Mac mini 桌面" loading="lazy" />
+    <span>macOS</span>
+  </a>
+  <a class="platform-gallery-item" href="/zh/docs/devices/windows/">
+    <img src="/screens/live-windows-thumb.webp" alt="通过 VNC 截取的 Windows 11 桌面" loading="lazy" />
+    <span>Windows</span>
+  </a>
+  <a class="platform-gallery-item" href="/zh/docs/devices/linux/">
+    <img src="/screens/live-linux-thumb.webp" alt="通过 VNC 截取的 Debian 锁屏" loading="lazy" />
+    <span>Linux</span>
+  </a>
+  <a class="platform-gallery-item" href="/zh/docs/devices/android/">
+    <img src="/screens/live-android-thumb.webp" alt="通过 VNC 截取的 Android 桌面" loading="lazy" />
+    <span>Android</span>
+  </a>
+  <a class="platform-gallery-item" href="/zh/docs/devices/ios/">
+    <img src="/screens/live-iphone-thumb.webp" alt="通过 VNC 截取的 iPhone 桌面" loading="lazy" />
+    <span>iOS</span>
+  </a>
+</div>
 
 <div class="platform-cards">
   <a class="platform-card" href="/zh/docs/devices/macos/">

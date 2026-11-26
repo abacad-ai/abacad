@@ -1,5 +1,5 @@
-// The landing page is deliberately short. The docs carry the detail; this page
-// has one job: show the product in the first screen, then get out of the way.
+// The landing page is a picture, not a pitch. The docs carry the detail; this
+// page has one job: show the product, then get out of the way.
 // Both locales have the same shape, so a missing line is a type error.
 
 export const en = {
@@ -7,9 +7,9 @@ export const en = {
   htmlLang: "en",
   skip: "Skip to content",
   meta: {
-    title: "abacad — every screen you own, one browser tab",
+    title: "abacad — every screen, one VNC hub",
     description:
-      "A self-hosted VNC hub. Open your Mac, PC, Linux box or phone in the browser — or let an agent drive the same screen. No cloud, no relay, nothing installed on the device.",
+      "A simple, self-hosted VNC hub. Every screen on every platform, in one browser tab — or handed to any agent over MCP.",
   },
   nav: {
     agents: "Agents",
@@ -21,88 +21,89 @@ export const en = {
     switchLang: "zh-CN",
   },
   hero: {
-    kicker: "Self-hosted VNC hub",
-    title: ["Every screen you own.", "One tab."],
-    lead: "Open your Mac, PC, Linux box or phone in the browser — or let your agent drive the same screen. No cloud, no relay, nothing installed on the device.",
+    eyebrow: "Self-hosted · no account",
+    title: ["Every screen.", "One VNC hub."],
+    lead: "Macs, PCs, Linux boxes and phones — live in one browser tab, on your own network.",
     primary: "Run the hub",
     primaryHref: "/docs/getting-started/",
-    secondary: "Read the docs",
+    secondary: "Docs",
     secondaryHref: "/docs/",
-    note: "One Docker command · one port · one token",
   },
   shelf: {
-    live: "Live from one hub",
-    meta: "3 machines · 23:22",
-    android: {
-      os: "Android",
-      name: "Galaxy S10",
-      src: "/screens/live-android.webp",
-      width: 512,
-      height: 1080,
-      alt: "A Galaxy S10 home screen with Chrome, Reddit, X and YouTube, captured live over VNC.",
-    },
-    windows: {
-      os: "Windows 11",
-      name: "NUC12",
-      src: "/screens/live-windows.webp",
-      width: 1200,
-      height: 681,
-      alt: "A Windows 11 desktop with a bamboo forest wallpaper, captured live over VNC.",
-    },
-    debian: {
-      os: "Debian",
-      name: "Locked",
-      src: "/screens/live-debian.webp",
-      width: 1200,
-      height: 681,
-      alt: "A Debian lock screen showing 11:21 PM, captured live over VNC.",
-    },
-    caption: "Real screens, captured live from a single hub.",
-    foot: "RFB · one WebSocket each",
+    stageLabel: "Device screens from one abacad hub",
+    railLabel: "Choose a device screen",
+    prev: "Previous screen",
+    next: "Next screen",
+    pause: "Pause",
+    play: "Resume",
+    devices: [
+      {
+        id: "mac-mini",
+        kind: "desktop",
+        os: "macOS",
+        name: "Mac mini",
+        src: "/screens/live-macos.webp",
+        width: 1600,
+        height: 900,
+        alt: "A Mac mini desktop with a turquoise lake wallpaper, captured live over VNC.",
+      },
+      {
+        id: "nuc12",
+        kind: "desktop",
+        os: "Windows 11",
+        name: "NUC12",
+        src: "/screens/live-windows.webp",
+        width: 1600,
+        height: 900,
+        alt: "A Windows 11 desktop with a hill-town wallpaper, captured live over VNC.",
+      },
+      {
+        id: "debian",
+        kind: "desktop",
+        os: "Debian",
+        name: "Locked",
+        src: "/screens/live-linux.webp",
+        width: 1440,
+        height: 810,
+        alt: "A Debian lock screen showing 4:43 PM, captured live over VNC.",
+      },
+      {
+        id: "galaxy-s10",
+        kind: "phone",
+        os: "Android",
+        name: "Galaxy S10",
+        src: "/screens/live-android.webp",
+        width: 411,
+        height: 868,
+        alt: "A Galaxy S10 home screen with WeChat, Xiaohongshu, Douyin and Bilibili, captured live over VNC.",
+      },
+      {
+        id: "iphone",
+        kind: "phone",
+        os: "iOS",
+        name: "iPhone",
+        src: "/screens/live-iphone.webp",
+        width: 592,
+        height: 1280,
+        alt: "An iPhone home screen with a full grid of apps, captured live over VNC.",
+      },
+    ],
   },
-  claims: [
-    {
-      title: "Watch or take over.",
-      body: "Any machine, any browser. Nothing to install on the device.",
-    },
-    {
-      title: "Step in when it's stuck.",
-      body: "A login, a code, a captcha — finish it on the same screen, then hand it back.",
-    },
-    {
-      title: "Keep it yours.",
-      body: "One port, one token, no relay. Your network is the boundary.",
-    },
-  ],
-  works: {
-    label: "Works with the VNC server you already run",
-    items: ["macOS Screen Sharing", "TigerVNC", "x11vnc", "wayvnc", "droidVNC-NG", "iOS VNC Bridge"],
+  platforms: {
+    title: "Every platform.",
+    note: "Five real screens, captured live from one hub. Nothing mocked up.",
   },
   agents: {
-    kicker: "For agents",
-    title: "The screen your agent is missing.",
-    lead: "One MCP tool, <code>list_devices</code>, returns every machine as a plain RFB WebSocket. Any VNC client can drive it — no new device API, no browser automation.",
-    note: "When the agent hits a login or a captcha, open the same screen and take over.",
-    codeTitle: "MCP client",
-    code: `{
-  "mcpServers": {
-    "abacad": {
-      "type": "http",
-      "url": "https://hub.local/mcp",
-      "headers": {
-        "Authorization": "Bearer $TOKEN"
-      }
-    }
-  }
-}`,
-    copy: "Copy",
-    copied: "Copied",
-    cta: "Set up MCP",
+    title: "Any agent.",
+    lead: "If it speaks MCP, it sees your screens — and can click, type and swipe on them.",
+    more: "Any MCP client",
+    cta: "Connect an agent",
+    legal: "Logos and names are trademarks of their respective owners. No endorsement implied.",
     ctaHref: "/docs/agents/mcp/",
   },
   final: {
-    title: "One command. Then every screen.",
-    lead: "Run the hub on the machine that is always on.",
+    title: "One command.",
+    lead: "One container, one volume. Your screens never leave your network.",
     commandLabel: "Terminal",
     command:
       "docker run -d --name abacad --network host \\\n  -v abacad-config:/config \\\n  ghcr.io/abacad-ai/abacad:latest",
@@ -112,14 +113,14 @@ export const en = {
     docsHref: "/docs/",
   },
   footer: {
-    tagline: "A self-hosted VNC hub. No cloud, no relay, no account.",
+    tagline: "Self-hosted VNC hub. No cloud, no relay.",
     links: [
       { label: "Docs", href: "/docs/" },
       { label: "GitHub", href: "https://github.com/abacad-ai/abacad" },
       { label: "Security", href: "/docs/operations/security/" },
     ],
     bottom: "© 2026 abacad",
-    privacy: "A static site. No cookies, no analytics.",
+    privacy: "No cookies, no analytics.",
   },
 };
 
@@ -130,9 +131,9 @@ export const zh: LandingCopy = {
   htmlLang: "zh-CN",
   skip: "跳到主要内容",
   meta: {
-    title: "abacad — 所有屏幕，一个标签页",
+    title: "abacad — 所有屏幕，一个 VNC hub",
     description:
-      "自托管 VNC hub。在浏览器里打开你的 Mac、PC、Linux 和手机，也可以让 agent 驱动同一个画面。没有云端，没有中继，设备上什么都不用装。",
+      "简单的自托管 VNC hub。所有平台、所有屏幕，一个浏览器标签页；也可以通过 MCP 交给任何 agent。",
   },
   nav: {
     agents: "给 agent",
@@ -144,88 +145,89 @@ export const zh: LandingCopy = {
     switchLang: "en",
   },
   hero: {
-    kicker: "自托管 VNC HUB",
-    title: ["所有屏幕，", "一个标签页。"],
-    lead: "在浏览器里打开你的 Mac、PC、Linux 和手机，也可以让 agent 驱动同一个画面。<br>没有云端，没有中继，设备上什么都不用装。",
+    eyebrow: "自托管 · 无需账号",
+    title: ["所有屏幕，", "一个 VNC hub。"],
+    lead: "Mac、PC、Linux 和手机，实时汇进一个浏览器标签页，全在你自己的网络里。",
     primary: "启动 hub",
     primaryHref: "/zh/docs/getting-started/",
-    secondary: "读文档",
+    secondary: "文档",
     secondaryHref: "/zh/docs/",
-    note: "一条 Docker 命令 · 一个端口 · 一个 token",
   },
   shelf: {
-    live: "来自一个 hub 的实时画面",
-    meta: "3 台机器 · 23:22",
-    android: {
-      os: "Android",
-      name: "Galaxy S10",
-      src: "/screens/live-android.webp",
-      width: 512,
-      height: 1080,
-      alt: "通过 VNC 实时截取的 Galaxy S10 桌面，上面有 Chrome、Reddit、X 和 YouTube。",
-    },
-    windows: {
-      os: "Windows 11",
-      name: "NUC12",
-      src: "/screens/live-windows.webp",
-      width: 1200,
-      height: 681,
-      alt: "通过 VNC 实时截取的一台 Windows 11 桌面，竹子林壁纸。",
-    },
-    debian: {
-      os: "Debian",
-      name: "已锁屏",
-      src: "/screens/live-debian.webp",
-      width: 1200,
-      height: 681,
-      alt: "通过 VNC 实时截取的一台 Debian 锁屏界面，时间是 11:21 PM。",
-    },
-    caption: "真实屏幕，从同一个 hub 实时截取。",
-    foot: "RFB · 每台一个 WebSocket",
+    stageLabel: "来自同一个 hub 的设备画面",
+    railLabel: "选择设备画面",
+    prev: "上一块屏幕",
+    next: "下一块屏幕",
+    pause: "暂停",
+    play: "继续",
+    devices: [
+      {
+        id: "mac-mini",
+        kind: "desktop",
+        os: "macOS",
+        name: "Mac mini",
+        src: "/screens/live-macos.webp",
+        width: 1600,
+        height: 900,
+        alt: "通过 VNC 实时截取的一台 Mac mini 桌面，青绿色湖面壁纸。",
+      },
+      {
+        id: "nuc12",
+        kind: "desktop",
+        os: "Windows 11",
+        name: "NUC12",
+        src: "/screens/live-windows.webp",
+        width: 1600,
+        height: 900,
+        alt: "通过 VNC 实时截取的一台 Windows 11 桌面，山城小镇壁纸。",
+      },
+      {
+        id: "debian",
+        kind: "desktop",
+        os: "Debian",
+        name: "已锁屏",
+        src: "/screens/live-linux.webp",
+        width: 1440,
+        height: 810,
+        alt: "通过 VNC 实时截取的一台 Debian 锁屏界面，时间是 4:43 PM。",
+      },
+      {
+        id: "galaxy-s10",
+        kind: "phone",
+        os: "Android",
+        name: "Galaxy S10",
+        src: "/screens/live-android.webp",
+        width: 411,
+        height: 868,
+        alt: "通过 VNC 实时截取的 Galaxy S10 桌面，上面有微信、小红书、抖音和哔哩哔哩。",
+      },
+      {
+        id: "iphone",
+        kind: "phone",
+        os: "iOS",
+        name: "iPhone",
+        src: "/screens/live-iphone.webp",
+        width: 592,
+        height: 1280,
+        alt: "通过 VNC 实时截取的一台 iPhone 桌面，上面有整屏应用图标。",
+      },
+    ],
   },
-  claims: [
-    {
-      title: "看着，或者直接接手。",
-      body: "任何机器，任何浏览器，设备上什么都不用装。",
-    },
-    {
-      title: "卡住的时候，你来。",
-      body: "登录、验证码、captcha——在同一个画面上做完，再交还给 agent。",
-    },
-    {
-      title: "留在你自己的网络里。",
-      body: "一个端口，一个 token，没有中继。网络边界就是安全边界。",
-    },
-  ],
-  works: {
-    label: "兼容你已经在用的 VNC 服务",
-    items: ["macOS 屏幕共享", "TigerVNC", "x11vnc", "wayvnc", "droidVNC-NG", "iOS VNC Bridge"],
+  platforms: {
+    title: "所有平台。",
+    note: "五块真实屏幕，都来自同一个 hub 的实时画面，没有效果图。",
   },
   agents: {
-    kicker: "给 agent",
-    title: "agent 缺的那块屏幕。",
-    lead: "一个 MCP 工具，<code>list_devices</code>，把每台机器变成一条裸 RFB 的 WebSocket。任何 VNC 客户端都能驱动——没有新的设备 API，也不需要浏览器自动化。",
-    note: "agent 卡在登录或验证码时，你在同一个画面上接手。",
-    codeTitle: "MCP 客户端",
-    code: `{
-  "mcpServers": {
-    "abacad": {
-      "type": "http",
-      "url": "https://hub.local/mcp",
-      "headers": {
-        "Authorization": "Bearer $TOKEN"
-      }
-    }
-  }
-}`,
-    copy: "复制",
-    copied: "已复制",
-    cta: "配置 MCP",
+    title: "任何 agent。",
+    lead: "只要支持 MCP，它就能看见你的屏幕，还能点击、输入、滑动。",
+    more: "任何 MCP 客户端",
+    cta: "接入 agent",
+    legal: "各标志与名称归其各自所有者所有，不代表任何背书。",
     ctaHref: "/zh/docs/agents/mcp/",
   },
   final: {
-    title: "一条命令，接进所有屏幕。",
-    lead: "把 hub 跑在那台一直开着的机器上。",
+    title: "一条命令。",
+    lead: "一个容器，一个数据卷。屏幕画面不出你的网络。",
     commandLabel: "终端",
     command:
       "docker run -d --name abacad --network host \\\n  -v abacad-config:/config \\\n  ghcr.io/abacad-ai/abacad:latest",
@@ -235,14 +237,14 @@ export const zh: LandingCopy = {
     docsHref: "/zh/docs/",
   },
   footer: {
-    tagline: "一个自托管的 VNC hub。没有云端，没有中继，没有账号。",
+    tagline: "自托管 VNC hub。没有云端，没有中继。",
     links: [
       { label: "文档", href: "/zh/docs/" },
       { label: "GitHub", href: "https://github.com/abacad-ai/abacad" },
       { label: "安全", href: "/zh/docs/operations/security/" },
     ],
     bottom: "© 2026 abacad",
-    privacy: "静态页面，不收集任何东西。",
+    privacy: "无 Cookie，无统计。",
   },
 };
 

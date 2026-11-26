@@ -82,7 +82,31 @@ blacklist.
 ## Platforms
 
 Each platform guide covers the VNC server, the credentials, the firewall, and the parts
-that usually go wrong.
+that usually go wrong. These are five real screens from one hub, in the same browser
+console:
+
+<div class="platform-gallery">
+  <a class="platform-gallery-item" href="/docs/devices/macos/">
+    <img src="/screens/live-macos-thumb.webp" alt="A Mac mini desktop captured over VNC" loading="lazy" />
+    <span>macOS</span>
+  </a>
+  <a class="platform-gallery-item" href="/docs/devices/windows/">
+    <img src="/screens/live-windows-thumb.webp" alt="A Windows 11 desktop captured over VNC" loading="lazy" />
+    <span>Windows</span>
+  </a>
+  <a class="platform-gallery-item" href="/docs/devices/linux/">
+    <img src="/screens/live-linux-thumb.webp" alt="A Debian lock screen captured over VNC" loading="lazy" />
+    <span>Linux</span>
+  </a>
+  <a class="platform-gallery-item" href="/docs/devices/android/">
+    <img src="/screens/live-android-thumb.webp" alt="An Android home screen captured over VNC" loading="lazy" />
+    <span>Android</span>
+  </a>
+  <a class="platform-gallery-item" href="/docs/devices/ios/">
+    <img src="/screens/live-iphone-thumb.webp" alt="An iPhone home screen captured over VNC" loading="lazy" />
+    <span>iOS</span>
+  </a>
+</div>
 
 <div class="platform-cards">
   <a class="platform-card" href="/docs/devices/macos/">

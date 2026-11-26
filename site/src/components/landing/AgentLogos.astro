@@ -1,0 +1,38 @@
+---
+import { agentLogos } from "../../content/agent-logos";
+
+interface Props {
+  more: string;
+}
+
+const { more } = Astro.props;
+---
+
+<ul class="agent-wall">
+  {agentLogos.map((logo) => (
+    <li class="agent-item">
+      <svg
+        class="agent-glyph"
+        viewBox={logo.viewBox}
+        style={`color: ${logo.color}`}
+        aria-hidden="true"
+      >
+        {logo.paths.map((path) => (
+          <path
+            d={path.d}
+            fill={path.fill ?? "currentColor"}
+            fill-rule={path.fillRule as "nonzero" | "evenodd" | undefined}
+            clip-rule={path.clipRule as "nonzero" | "evenodd" | undefined}
+          />
+        ))}
+      </svg>
+      <span class="agent-name">{logo.name}</span>
+    </li>
+  ))}
+  <li class="agent-item agent-more">
+    <svg class="agent-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+      <path d="M12 5v14M5 12h14"></path>
+    </svg>
+    <span class="agent-name">{more}</span>
+  </li>
+</ul>

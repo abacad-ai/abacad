@@ -12,8 +12,8 @@ const mark = `
 const cards = {
   "og.png": {
     eyebrow: "SELF-HOSTED VNC HUB · NO CLOUD · NO RELAY",
-    lines: ["Every screen you own.", "One tab."],
-    lead: ["Open your Mac, PC, Linux box or phone in the browser.", "Or let an agent drive the same screen. Nothing to install."],
+    lines: ["Every screen.", "One VNC hub."],
+    lead: ["Open your Mac, Windows PC, Linux, Android or iPhone.", "Or let an agent drive the same screen. Nothing to install."],
     foot: "ONE PORT · ONE TOKEN · NO RELAY",
     family: "Helvetica Neue, Helvetica, Arial, sans-serif",
     headlineSize: 76,
@@ -21,8 +21,8 @@ const cards = {
   },
   "og-zh.png": {
     eyebrow: "自托管 VNC HUB · 无云端 · 无中继",
-    lines: ["所有屏幕，", "一个标签页。"],
-    lead: ["在浏览器里打开你的 Mac、PC、Linux 和手机。", "同一个画面也可以交给 agent。设备上什么都不用装。"],
+    lines: ["所有屏幕，", "一个 VNC hub。"],
+    lead: ["在浏览器里打开 Mac、Windows、Linux、Android 和 iPhone。", "同一个画面也可以交给 agent。设备上什么都不用装。"],
     foot: "无云端 · 无中继 · 设备零安装",
     family: "PingFang SC, Hiragino Sans GB, Microsoft YaHei, sans-serif",
     headlineSize: 88,

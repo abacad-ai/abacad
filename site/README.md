@@ -25,7 +25,8 @@ src/pages/index.astro            English landing
 src/pages/zh/index.astro         Chinese landing
 src/content/landing.ts           all landing copy, both languages
 src/layouts/Landing.astro        head, nav, sections, footer, copy button
-src/components/landing/          the brand mark
+src/components/landing/          brand mark and agent logo wall
+src/content/agent-logos.ts       local SVG paths for the agent logo wall
 src/content/docs/docs/           English docs → /docs/**
 src/content/docs/zh/docs/        Chinese docs → /zh/docs/**
 src/content/docs/404?            Starlight's 404
@@ -42,6 +43,9 @@ public/screens/                  live device screens + sanitized console UI shot
 
 - Every landing string lives in `src/content/landing.ts`; the `zh` object is typed
   against `en`, so a missing field fails the build.
+- The agent logos are local SVG data in `src/content/agent-logos.ts`, extracted
+  once from the `@thesvg/react` dataset. There is no runtime icon dependency and
+  no external request. Keep the trademark line if the logo set changes.
 - Docs links are root-absolute and locale-specific: `/docs/...` in English,
   `/zh/docs/...` in Chinese. `scripts/check-links.mjs` resolves both paths and
   checks the target file and anchor after every build.
@@ -69,13 +73,15 @@ The OG cards are committed. Regenerate them with `npm run og` after changing the
 hero or the brand mark.
 
 The screenshots are from a real hub. The console UI shots in the docs have
-device names, addresses, and the hub URL replaced by examples; the landing uses
-three live framebuffer crops (`/screens/live-*.webp`) with the hub chrome and
-the device rail cropped out, so no hostname or token is visible. The docs
-stylesheet caps UI shots at 640px so the text stays legible.
+device names, addresses, and the hub URL replaced by examples. The landing
+carousel uses five live framebuffer crops (`/screens/live-*.webp`) with the hub
+chrome and the device rail cropped out, so no hostname or token is visible. The
+docs home uses 320/160px `-thumb.webp` variants of the same files as a contact
+sheet. The docs stylesheet caps UI shots at 640px so the text stays legible.
 
-If the console changes, recapture and replace the files. Do not add a screenshot
-that contains an admin token, a real hostname, or a private IP.
+If the console or the device set changes, recapture and replace the files. Keep
+one desktop and one phone screen per platform, keep the file names, and do not
+add a screenshot that contains an admin token, a real hostname, or a private IP.
 
 ## Deploy
 
